@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" role="img" aria-label="Concentric arcs motif">
+  <g fill="none" stroke="#6B5744" stroke-opacity="0.22" stroke-width="1.5">
+    <circle cx="600" cy="0" r="120"></circle>
+    <circle cx="600" cy="0" r="200"></circle>
+    <circle cx="600" cy="0" r="280"></circle>
+    <circle cx="600" cy="0" r="360"></circle>
+    <circle cx="600" cy="0" r="440"></circle>
+    <circle cx="600" cy="0" r="520"></circle>
+  </g>
+</svg>

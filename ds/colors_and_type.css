@@ -1,0 +1,167 @@
+/* ============================================================
+   Notati Design System — Colors, Type, Spacing, Radius, Motion
+   Import this into any artifact:
+     <link rel="stylesheet" href="../colors_and_type.css" />
+   Then use vars like color: var(--fg-1); font: var(--type-h1);
+   ============================================================ */
+
+/* ---------- Brand fonts (local) ----------
+   Caladea = brand serif (display, headings, brand moments).
+   Carlito = brand sans (body, UI, captions, labels).
+   DM Sans + DM Serif Display also bundled as a secondary system.
+   --------------------------------------- */
+
+@font-face { font-family: 'Caladea'; src: url('fonts/Caladea-Regular.ttf')   format('truetype'); font-weight: 400; font-style: normal;  font-display: swap; }
+@font-face { font-family: 'Caladea'; src: url('fonts/Caladea-Italic.ttf')    format('truetype'); font-weight: 400; font-style: italic;  font-display: swap; }
+@font-face { font-family: 'Caladea'; src: url('fonts/Caladea-Bold.ttf')      format('truetype'); font-weight: 700; font-style: normal;  font-display: swap; }
+@font-face { font-family: 'Caladea'; src: url('fonts/Caladea-BoldItalic.ttf') format('truetype'); font-weight: 700; font-style: italic; font-display: swap; }
+
+@font-face { font-family: 'Carlito'; src: url('fonts/Carlito-Regular.ttf')   format('truetype'); font-weight: 400; font-style: normal;  font-display: swap; }
+@font-face { font-family: 'Carlito'; src: url('fonts/Carlito-Italic.ttf')    format('truetype'); font-weight: 400; font-style: italic;  font-display: swap; }
+@font-face { font-family: 'Carlito'; src: url('fonts/Carlito-Bold.ttf')      format('truetype'); font-weight: 700; font-style: normal;  font-display: swap; }
+@font-face { font-family: 'Carlito'; src: url('fonts/Carlito-BoldItalic.ttf') format('truetype'); font-weight: 700; font-style: italic; font-display: swap; }
+
+/* Secondary system — DM Serif Display + DM Sans. Available but not the default. */
+@font-face { font-family: 'DM Serif Display'; src: url('fonts/DMSerifDisplay-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'DM Serif Display'; src: url('fonts/DMSerifDisplay-Italic.ttf')  format('truetype'); font-weight: 400; font-style: italic; font-display: swap; }
+
+@font-face { font-family: 'DM Sans'; src: url('fonts/DMSans-Regular.ttf')      format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'DM Sans'; src: url('fonts/DMSans-Italic.ttf')       format('truetype'); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: 'DM Sans'; src: url('fonts/DMSans-Medium.ttf')       format('truetype'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'DM Sans'; src: url('fonts/DMSans-SemiBold.ttf')     format('truetype'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'DM Sans'; src: url('fonts/DMSans-Bold.ttf')         format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'DM Sans'; src: url('fonts/DMSans-BoldItalic.ttf')   format('truetype'); font-weight: 700; font-style: italic; font-display: swap; }
+
+:root {
+  /* ---------- Brand palette (verbatim from guidelines) ---------- */
+  --notati-bark:    #3D2B1F;  /* primary text, deep headlines, "black" */
+  --notati-walnut:  #6B5744;  /* brand primary; buttons, marks */
+  --notati-clay:    #9E8878;  /* secondary text, subtitles */
+  --notati-sand:    #B5A090;  /* mid tone, borders, UI */
+  --notati-linen:   #C9B8A8;  /* light card backgrounds */
+  --notati-cream:   #EDE5DC;  /* section bg, note card bg */
+  --notati-paper:   #FBF7F3;  /* page bg, note bg — the canvas */
+
+  --notati-amber:   #C9902A;  /* emphasis only — title lines, stars */
+  --notati-sage:    #7A9B6B;  /* success / verified */
+  --notati-forest:  #4A7A3A;  /* deep sage — Do-indicators */
+  --notati-crimson: #A03030;  /* error / Don't-indicators */
+
+  /* ---------- Semantic color tokens ---------- */
+  --fg-1: var(--notati-bark);     /* primary text */
+  --fg-2: var(--notati-walnut);   /* strong secondary */
+  --fg-3: var(--notati-clay);     /* muted secondary */
+  --fg-on-dark: var(--notati-paper);
+
+  --bg-page:    var(--notati-paper);
+  --bg-section: var(--notati-cream);
+  --bg-card:    var(--notati-cream);
+  --bg-card-2:  var(--notati-linen);
+  --bg-dark:    var(--notati-bark);
+
+  --border-1: rgba(181, 160, 144, 0.55);  /* sand @ ~55% */
+  --border-2: rgba(181, 160, 144, 0.30);
+  --border-strong: var(--notati-walnut);
+
+  --accent: var(--notati-amber);
+  --accent-line: var(--notati-amber); /* the title-line bar on note cards */
+  --success: var(--notati-sage);
+  --success-strong: var(--notati-forest);
+  --danger: var(--notati-crimson);
+
+  --link: var(--notati-walnut);
+  --link-hover: var(--notati-bark);
+
+  /* ---------- Type families ---------- */
+  --font-serif: 'Caladea', 'Cambria', 'Georgia', serif;
+  --font-sans:  'Carlito', 'Calibri', 'Helvetica Neue', 'Arial', sans-serif;
+  --font-mono:  ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
+
+  /* ---------- Type scale (px, scaled up from brand pt for screen) ---------- */
+  --fs-display: 42px;  /* Brand display — Caladea Bold 32pt */
+  --fs-h1:      28px;  /* H1 — Caladea Bold 22pt */
+  --fs-h2:      20px;  /* H2 — Caladea Bold 16pt */
+  --fs-h3:      17px;  /* H3 — Carlito Bold 13pt */
+  --fs-body:    15px;  /* Body — Carlito 10pt */
+  --fs-caption: 13px;  /* Caption — Carlito Italic 9pt */
+  --fs-label:   11px;  /* Label/Tag — Carlito Bold 8pt all-caps */
+
+  --lh-tight:  1.15;
+  --lh-snug:   1.30;
+  --lh-normal: 1.50;
+  --lh-loose:  1.70;
+
+  /* ---------- Semantic type tokens (use as `font:` shorthand) ---------- */
+  --type-display: 700 var(--fs-display)/var(--lh-tight) var(--font-serif);
+  --type-h1:      700 var(--fs-h1)/var(--lh-tight) var(--font-serif);
+  --type-h2:      700 var(--fs-h2)/var(--lh-snug) var(--font-serif);
+  --type-h3:      700 var(--fs-h3)/var(--lh-snug) var(--font-sans);
+  --type-body:    400 var(--fs-body)/var(--lh-normal) var(--font-sans);
+  --type-body-bold: 700 var(--fs-body)/var(--lh-normal) var(--font-sans);
+  --type-caption: italic 400 var(--fs-caption)/var(--lh-normal) var(--font-sans);
+  --type-label:   700 var(--fs-label)/1.0 var(--font-sans);
+
+  /* ---------- Spacing scale ---------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  /* ---------- Corner radius ---------- */
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 6px;
+  --r-4: 8px;
+  --r-5: 12px;
+  --r-pill: 9999px;
+
+  /* ---------- Elevation (tinted with Bark, never neutral) ---------- */
+  --elev-0: none;
+  --elev-1: 0 1px 2px rgba(61, 43, 31, 0.06);
+  --elev-2: 0 2px 6px rgba(61, 43, 31, 0.08);
+  --elev-3: 0 8px 24px rgba(61, 43, 31, 0.10);
+
+  /* ---------- Motion ---------- */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+}
+
+/* ============================================================
+   Base element styles — opt-in by importing this file.
+   ============================================================ */
+
+html, body {
+  background: var(--bg-page);
+  color: var(--fg-1);
+  font: var(--type-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1, .h1 { font: var(--type-h1); color: var(--fg-1); margin: 0 0 var(--sp-4); }
+h2, .h2 { font: var(--type-h2); color: var(--fg-1); margin: 0 0 var(--sp-3); }
+h3, .h3 { font: var(--type-h3); color: var(--fg-1); margin: 0 0 var(--sp-2); }
+p       { margin: 0 0 var(--sp-3); }
+small, .caption { font: var(--type-caption); color: var(--fg-3); }
+
+.display { font: var(--type-display); color: var(--fg-1); }
+.label   { font: var(--type-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); }
+
+a { color: var(--link); text-decoration: none; border-bottom: 1px solid currentColor; }
+a:hover { color: var(--link-hover); }
+
+::selection { background: var(--notati-amber); color: var(--notati-paper); }
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border-2);
+  margin: var(--sp-5) 0;
+}
