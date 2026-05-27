@@ -120,7 +120,7 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
               return (
                 <div key={n.id} className={`notecard ${owned ? '' : 'notecard-locked'}`}
                      onClick={owned ? () => onOpenNote(n) : undefined}>
-                  <span className="course">{n.subject}</span>
+                  <span className="course">{n.courseName}</span>
                   <div className="title">{n.title}</div>
                   <div className="desc">{n.description}</div>
                   <div className="tags">
@@ -154,12 +154,15 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
    ============================================================ */
 function UploadContent({ user, onDone }) {
   const { toast } = useToast();
-  const [title, setTitle] = useStateC('');
-  const [description, setDescription] = useStateC('');
-  const [file, setFile] = useStateC(null);
-  const [err, setErr] = useStateC('');
-  const [busy, setBusy] = useStateC(false);
-  const [drag, setDrag] = useStateC(false);
+  const [college, setCollege]           = useStateC('');
+  const [courseName, setCourseName]     = useStateC('');
+  const [chapterNumber, setChapterNumber] = useStateC('');
+  const [chapterTitle, setChapterTitle] = useStateC('');
+  const [description, setDescription]   = useStateC('');
+  const [file, setFile]   = useStateC(null);
+  const [err, setErr]     = useStateC('');
+  const [busy, setBusy]   = useStateC(false);
+  const [drag, setDrag]   = useStateC(false);
   const inputRef = useRefC();
 
   function handleFile(f) {
@@ -172,8 +175,6 @@ function UploadContent({ user, onDone }) {
     }
     setErr('');
     setFile(f);
-    // pre-fill the title from the filename if empty
-    if (!title) setTitle(f.name.replace(/\.(pdf|pptx|docx)$/i, '').replace(/[_-]+/g, ' '));
   }
 
   function onDrop(e) {
@@ -182,16 +183,21 @@ function UploadContent({ user, onDone }) {
     handleFile(f);
   }
 
+  function clearForm() {
+    setCollege(''); setCourseName(''); setChapterNumber(''); setChapterTitle('');
+    setDescription(''); setFile(null); setErr('');
+  }
+
   function submit(e) {
     e.preventDefault();
     setBusy(true);
     setErr('');
     try {
       // // TODO: Replace with POST /api/uploads multipart
-      NotatiStore.addUpload({ userId: user.id, title, description, file });
+      NotatiStore.addUpload({ userId: user.id, college, courseName, chapterNumber, chapterTitle, description, file });
       toast.success('Submitted for review',
         "We'll be in touch when your Note is ready — usually within 48 hours.");
-      setTitle(''); setDescription(''); setFile(null);
+      clearForm();
       setTimeout(() => { setBusy(false); onDone && onDone(); }, 300);
     } catch (e2) {
       setErr(e2.message); setBusy(false);
@@ -262,15 +268,32 @@ function UploadContent({ user, onDone }) {
           <div className="panel-head"><h3>About this submission</h3></div>
           <div className="panel-body">
             <div className="field">
-              <label>Title</label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)}
-                     placeholder="e.g. Organizational Behavior — Chapter 4 slides" required/>
-              <div className="hint">What you'd call this if you were sending it to a friend.</div>
+              <label>College</label>
+              <input value={college} onChange={(e) => setCollege(e.target.value)}
+                     placeholder="e.g. College of Business, College of IT" required/>
+            </div>
+            <div className="field">
+              <label>Course name</label>
+              <input value={courseName} onChange={(e) => setCourseName(e.target.value)}
+                     placeholder="e.g. ACC112, MGMT 233, CS 220" required/>
+              <div className="hint">Use the official course code from your syllabus.</div>
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label>Chapter number</label>
+                <input value={chapterNumber} onChange={(e) => setChapterNumber(e.target.value)}
+                       placeholder="e.g. 4" required/>
+              </div>
+              <div className="field">
+                <label>Chapter title</label>
+                <input value={chapterTitle} onChange={(e) => setChapterTitle(e.target.value)}
+                       placeholder="e.g. Motivation Theories" required/>
+              </div>
             </div>
             <div className="field">
               <label>Description <span style={{ opacity: .5, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Anything we should know — topics, exam date, weak spots…"/>
+                        placeholder="Anything we should know — exam date, weak spots, specific topics…"/>
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
@@ -278,8 +301,7 @@ function UploadContent({ user, onDone }) {
                 {busy ? 'Submitting…' : 'Submit for review'}
                 {!busy && <Icons.ArrowRight size={16}/>}
               </button>
-              <button type="button" className="btn btn-ghost"
-                      onClick={() => { setTitle(''); setDescription(''); setFile(null); setErr(''); }}>
+              <button type="button" className="btn btn-ghost" onClick={clearForm}>
                 Clear
               </button>
             </div>
@@ -384,8 +406,10 @@ function MyUploads({ user, onNav, onOpenNote }) {
             <div key={up.id} className="filerow">
               <FileTypeChip type={up.fileType}/>
               <div className="body">
-                <div className="ttl">{up.title}</div>
+                <div className="ttl">{up.chapterTitle || up.title}</div>
                 <div className="meta">
+                  {up.college && <><span>{up.college}</span> · </>}
+                  {up.courseName && <><span>{up.courseName}</span>{up.chapterNumber ? ` Ch.${up.chapterNumber}` : ''} · </>}
                   {up.fileName} · {fmtSize(up.sizeKB)} · Uploaded {fmtRelative(up.uploadedAt)}
                   {up.description ? <> · <span style={{ fontStyle: 'italic' }}>"{up.description}"</span></> : null}
                 </div>
@@ -417,16 +441,16 @@ function NotesLibrary({ user, onOpenNote }) {
   const [subject, setSubject] = useStateC('all');
 
   const subjects = useMemoC(() => {
-    const s = new Set(notes.map(n => n.subject));
+    const s = new Set(notes.map(n => n.courseName));
     return ['all', ...Array.from(s)];
   }, [notes]);
 
   const filtered = useMemoC(() => {
     const ql = q.trim().toLowerCase();
     return notes.filter(n => {
-      if (subject !== 'all' && n.subject !== subject) return false;
+      if (subject !== 'all' && n.courseName !== subject) return false;
       if (!ql) return true;
-      return [n.title, n.subject, n.description, ...n.tags].some(s => (s || '').toLowerCase().includes(ql));
+      return [n.title, n.college, n.courseName, n.chapterTitle, n.description, ...n.tags].some(s => (s || '').toLowerCase().includes(ql));
     });
   }, [notes, q, subject]);
 
@@ -476,7 +500,7 @@ function NotesLibrary({ user, onOpenNote }) {
                 return (
                   <div key={n.id} className={`notecard ${owned ? '' : 'notecard-locked'}`}
                        onClick={owned ? () => onOpenNote(n) : undefined}>
-                    <span className="course">{n.subject}</span>
+                    <span className="course">{n.courseName}</span>
                     <div className="title">{n.title}</div>
                     <div className="desc">{n.description}</div>
                     <div className="tags">
@@ -526,7 +550,7 @@ function NoteReader({ note, open, onClose }) {
   return (
     <Modal open={open} onClose={onClose} size="lg"
            title={note.title}
-           subtitle={`${note.subject} · published ${fmtDate(note.publishedAt)} · ${fmtSize(note.sizeKB)}`}
+           subtitle={`${note.college} · ${note.courseName} · Ch.${note.chapterNumber}: ${note.chapterTitle} · ${fmtDate(note.publishedAt)}`}
            footer={<>
              <button className="btn btn-ghost" onClick={onClose}>Close</button>
              <button className="btn btn-primary" onClick={download}>
@@ -558,7 +582,7 @@ function NoteReader({ note, open, onClose }) {
         <div className="page">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
             <span style={{ font: 'var(--type-label)', letterSpacing: '.08em',
-                           color: 'var(--fg-3)', textTransform: 'uppercase' }}>{note.subject}</span>
+                           color: 'var(--fg-3)', textTransform: 'uppercase' }}>{note.courseName} · Ch.{note.chapterNumber}</span>
             <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 11, color: 'var(--fg-3)' }}>
               Notati · From the student, to the student
             </span>

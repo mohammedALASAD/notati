@@ -146,7 +146,8 @@ function AdminDashboard({ user, onNav }) {
               <div key={n.id} style={{ background: 'var(--notati-paper)', borderRadius: 'var(--r-5)',
                                        padding: 14, border: '1px solid var(--border-2)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span className="tag tag-walnut">{n.subject}</span>
+                  <span className="tag tag-walnut">{n.courseName}</span>
+                  {n.chapterNumber && <span className="tag tag-soft">Ch.{n.chapterNumber}</span>}
                   <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
                     {fmtRelative(n.publishedAt)}
                   </span>
@@ -155,7 +156,7 @@ function AdminDashboard({ user, onNav }) {
                   {n.title}
                 </div>
                 <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-                  {n.tags.slice(0, 3).join(' · ')}
+                  {n.college}{n.chapterTitle ? ` · ${n.chapterTitle}` : ''}
                 </div>
               </div>
             ))}
@@ -186,7 +187,7 @@ function ContentInbox({ user, onPublish }) {
       if (typeFilter !== 'all' && up.fileType !== typeFilter) return false;
       if (!ql) return true;
       const who = uploaderOf(up, users);
-      return [up.title, up.fileName, who.name, who.email].some(s => (s || '').toLowerCase().includes(ql));
+      return [up.title, up.college, up.courseName, up.chapterTitle, up.fileName, who.name, who.email].some(s => (s || '').toLowerCase().includes(ql));
     });
   }, [uploads, q, filter, typeFilter, users]);
 
@@ -309,28 +310,37 @@ function ContentInbox({ user, onPublish }) {
    ============================================================ */
 function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNote }) {
   const { toast } = useToast();
-  const [title, setTitle] = useStateAd('');
-  const [subject, setSubject] = useStateAd('');
-  const [tags, setTags] = useStateAd('');
-  const [description, setDescription] = useStateAd('');
-  const [pdfName, setPdfName] = useStateAd('');
-  const [pdfSize, setPdfSize] = useStateAd(0);
-  const [err, setErr] = useStateAd('');
+  const [title, setTitle]               = useStateAd('');
+  const [college, setCollege]           = useStateAd('');
+  const [courseName, setCourseName]     = useStateAd('');
+  const [chapterNumber, setChapterNumber] = useStateAd('');
+  const [chapterTitle, setChapterTitle] = useStateAd('');
+  const [tags, setTags]                 = useStateAd('');
+  const [description, setDescription]   = useStateAd('');
+  const [pdfName, setPdfName]           = useStateAd('');
+  const [pdfSize, setPdfSize]           = useStateAd(0);
+  const [err, setErr]                   = useStateAd('');
 
   useEffectAd(() => {
     if (open) {
       if (existingNote) {
         setTitle(existingNote.title);
-        setSubject(existingNote.subject);
+        setCollege(existingNote.college || '');
+        setCourseName(existingNote.courseName || '');
+        setChapterNumber(existingNote.chapterNumber || '');
+        setChapterTitle(existingNote.chapterTitle || '');
         setTags(existingNote.tags.join(', '));
         setDescription(existingNote.description);
         setPdfName(existingNote.fileName);
         setPdfSize(existingNote.sizeKB);
       } else {
-        setTitle(upload ? upload.title.replace(/\s*(slides|deck|lecture|chapter)\s*\d*/i, '').trim() : '');
-        setSubject('');
+        setTitle(upload && upload.chapterTitle ? upload.chapterTitle : '');
+        setCollege(upload ? upload.college || '' : '');
+        setCourseName(upload ? upload.courseName || '' : '');
+        setChapterNumber(upload ? upload.chapterNumber || '' : '');
+        setChapterTitle(upload ? upload.chapterTitle || '' : '');
         setTags('');
-        setDescription('');
+        setDescription(upload ? upload.description || '' : '');
         setPdfName(''); setPdfSize(0);
       }
       setErr('');
@@ -354,14 +364,17 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
       if (existingNote) {
         // // TODO: Replace with PATCH /api/notes/:id
         NotatiStore.updateNote(existingNote.id, {
-          title, subject, tags: tagArr, description, fileName: pdfName || existingNote.fileName, sizeKB: pdfSize || existingNote.sizeKB
+          title, college, courseName, chapterNumber, chapterTitle,
+          tags: tagArr, description,
+          fileName: pdfName || existingNote.fileName, sizeKB: pdfSize || existingNote.sizeKB
         });
         toast.success('Note updated', `${title} is live.`);
       } else {
         // // TODO: Replace with POST /api/notes (multipart)
         NotatiStore.addNote({
           uploadId: upload ? upload.id : null,
-          title, subject, tags: tagArr, description,
+          title, college, courseName, chapterNumber, chapterTitle,
+          tags: tagArr, description,
           fileName: pdfName, sizeKB: pdfSize, publishedBy: user.id
         });
         toast.success('Note published', `${title} is live in the library.`);
@@ -395,13 +408,31 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
       </div>
       <div className="field-row">
         <div className="field">
-          <label>Subject / course code</label>
-          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. MGMT 233"/>
+          <label>College</label>
+          <input value={college} onChange={(e) => setCollege(e.target.value)}
+                 placeholder="e.g. College of Business"/>
         </div>
         <div className="field">
-          <label>Tags (comma-separated)</label>
-          <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Management, Chapter 4, Motivation"/>
+          <label>Course name</label>
+          <input value={courseName} onChange={(e) => setCourseName(e.target.value)}
+                 placeholder="e.g. MGMT 233, ACC112"/>
         </div>
+      </div>
+      <div className="field-row">
+        <div className="field">
+          <label>Chapter number</label>
+          <input value={chapterNumber} onChange={(e) => setChapterNumber(e.target.value)}
+                 placeholder="e.g. 4"/>
+        </div>
+        <div className="field">
+          <label>Chapter title</label>
+          <input value={chapterTitle} onChange={(e) => setChapterTitle(e.target.value)}
+                 placeholder="e.g. Motivation Theories"/>
+        </div>
+      </div>
+      <div className="field">
+        <label>Tags <span style={{ opacity: .5, textTransform: 'none', letterSpacing: 0 }}>(comma-separated)</span></label>
+        <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Management, Chapter 4, Motivation"/>
       </div>
       <div className="field">
         <label>Short description</label>
@@ -455,7 +486,7 @@ function NotesManager({ user, onEdit, onAddNew }) {
     const ql = q.trim().toLowerCase();
     if (!ql) return notes;
     return notes.filter(n =>
-      [n.title, n.subject, n.description, ...n.tags].some(s => (s || '').toLowerCase().includes(ql))
+      [n.title, n.college, n.courseName, n.chapterTitle, n.description, ...n.tags].some(s => (s || '').toLowerCase().includes(ql))
     );
   }, [q, notes]);
 
@@ -525,7 +556,7 @@ function NotesManager({ user, onEdit, onAddNew }) {
                         <span className="em">{n.fileName} · {fmtSize(n.sizeKB)}</span>
                       </div>
                     </td>
-                    <td data-l="Subject"><span className="tag tag-walnut">{n.subject}</span></td>
+                    <td data-l="Subject"><span className="tag tag-walnut">{n.courseName}</span></td>
                     <td data-l="Tags">
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         {n.tags.slice(0, 3).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
@@ -570,7 +601,7 @@ function NotesManager({ user, onEdit, onAddNew }) {
             <div>
               <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>{confirmDel.title}</div>
               <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-                {confirmDel.subject} · published {fmtDate(confirmDel.publishedAt)}
+                {confirmDel.courseName} · Ch.{confirmDel.chapterNumber} · published {fmtDate(confirmDel.publishedAt)}
               </div>
             </div>
           </div>

@@ -6,12 +6,12 @@
    ============================================================ */
 
 (function () {
-  const NS = 'notati:v1';
+  const NS = 'notati:v2';
   const K = {
     users:     NS + ':users',     // [{id, name, email, password, role, joinedAt}]
     sessions:  NS + ':session',   // {userId, role}
-    uploads:   NS + ':uploads',   // [{id, userId, title, description, fileName, fileType, sizeKB, status, uploadedAt, noteId|null}]
-    notes:     NS + ':notes',     // [{id, uploadId, title, subject, tags[], description, fileName, sizeKB, publishedAt, publishedBy}]
+    uploads:   NS + ':uploads',   // [{id, userId, college, courseName, chapterNumber, chapterTitle, title, description, fileName, fileType, sizeKB, status, uploadedAt, noteId|null}]
+    notes:     NS + ':notes',     // [{id, uploadId, college, courseName, chapterNumber, chapterTitle, title, tags[], description, fileName, sizeKB, publishedAt, publishedBy}]
     purchases: NS + ':purchases', // [{userId, noteId, purchasedAt}]
     seeded:    NS + ':seeded'
   };
@@ -55,36 +55,44 @@
 
     const up1 = uid('up'), up2 = uid('up'), up3 = uid('up'), up4 = uid('up'), up5 = uid('up');
     const uploads = [
-      { id: up1, userId: u1, title: 'Organizational Behavior — Chapter 4 slides', description: 'Motivation theories lecture deck.',
+      { id: up1, userId: u1, college: 'College of Business', courseName: 'MGMT 233', chapterNumber: '4', chapterTitle: 'Motivation Theories',
+        title: 'MGMT 233 — Ch.4: Motivation Theories', description: 'Motivation theories lecture deck.',
         fileName: 'MGMT233_Ch4_Motivation.pptx', fileType: 'pptx', sizeKB: 4820,
         status: 'reviewed', uploadedAt: '2026-05-12T13:24:00Z', noteId: 'nt_1' },
-      { id: up2, userId: u2, title: 'Data Structures lecture notes',              description: 'Trees and graphs unit, handwritten + scanned.',
-        fileName: 'CS220_Trees_Graphs.pdf',     fileType: 'pdf',  sizeKB: 6210,
+      { id: up2, userId: u2, college: 'College of IT', courseName: 'CS 220', chapterNumber: '6', chapterTitle: 'Trees and Graphs',
+        title: 'CS 220 — Ch.6: Trees and Graphs', description: 'Trees and graphs unit, handwritten + scanned.',
+        fileName: 'CS220_Trees_Graphs.pdf', fileType: 'pdf', sizeKB: 6210,
         status: 'reviewed', uploadedAt: '2026-05-15T10:02:00Z', noteId: 'nt_2' },
-      { id: up3, userId: u1, title: 'Marketing Principles — case study',          description: 'Case write-up on Patagonia.',
+      { id: up3, userId: u1, college: 'College of Business', courseName: 'MKT 201', chapterNumber: '3', chapterTitle: 'Patagonia Case Study',
+        title: 'MKT 201 — Ch.3: Patagonia Case Study', description: 'Case write-up on Patagonia.',
         fileName: 'MKT201_Patagonia_Case.docx', fileType: 'docx', sizeKB: 312,
-        status: 'pending',  uploadedAt: '2026-05-18T16:40:00Z', noteId: null },
-      { id: up4, userId: u3, title: 'Discrete Math — week 9 textbook chapter',    description: 'Scanned pages 220–248.',
-        fileName: 'MATH101_Wk9_Discrete.pdf',   fileType: 'pdf',  sizeKB: 8930,
-        status: 'pending',  uploadedAt: '2026-05-20T09:15:00Z', noteId: null },
-      { id: up5, userId: u2, title: 'Intro to IS — lecture deck',                  description: 'Information systems intro deck.',
-        fileName: 'IS101_Lecture1.pptx',         fileType: 'pptx', sizeKB: 5120,
-        status: 'pending',  uploadedAt: '2026-05-21T08:08:00Z', noteId: null }
+        status: 'pending', uploadedAt: '2026-05-18T16:40:00Z', noteId: null },
+      { id: up4, userId: u3, college: 'College of Science', courseName: 'MATH 101', chapterNumber: '9', chapterTitle: 'Discrete Mathematics',
+        title: 'MATH 101 — Ch.9: Discrete Mathematics', description: 'Scanned pages 220–248.',
+        fileName: 'MATH101_Wk9_Discrete.pdf', fileType: 'pdf', sizeKB: 8930,
+        status: 'pending', uploadedAt: '2026-05-20T09:15:00Z', noteId: null },
+      { id: up5, userId: u2, college: 'College of IT', courseName: 'IS 101', chapterNumber: '1', chapterTitle: 'Introduction to Information Systems',
+        title: 'IS 101 — Ch.1: Introduction to Information Systems', description: 'Information systems intro deck.',
+        fileName: 'IS101_Lecture1.pptx', fileType: 'pptx', sizeKB: 5120,
+        status: 'pending', uploadedAt: '2026-05-21T08:08:00Z', noteId: null }
     ];
 
     const notes = [
-      { id: 'nt_1', uploadId: up1, title: 'Motivation, in plain English',
-        subject: 'MGMT 233', tags: ['Management', 'Chapter 4', 'Motivation'],
+      { id: 'nt_1', uploadId: up1,
+        college: 'College of Business', courseName: 'MGMT 233', chapterNumber: '4', chapterTitle: 'Motivation Theories',
+        title: 'Motivation, in plain English', tags: ['Management', 'Chapter 4', 'Motivation'],
         description: 'Internal vs. external motivation, broken down with everyday examples. Takes 8 minutes.',
         fileName: 'MGMT233_Ch4_Notes.pdf', sizeKB: 1240,
         publishedAt: '2026-05-13T11:00:00Z', publishedBy: adminId },
-      { id: 'nt_2', uploadId: up2, title: 'Trees and graphs without the headache',
-        subject: 'CS 220', tags: ['CS', 'Data Structures', 'Trees'],
+      { id: 'nt_2', uploadId: up2,
+        college: 'College of IT', courseName: 'CS 220', chapterNumber: '6', chapterTitle: 'Trees and Graphs',
+        title: 'Trees and graphs without the headache', tags: ['CS', 'Data Structures', 'Trees'],
         description: 'How to actually picture a binary tree and walk a graph without re-reading the textbook.',
         fileName: 'CS220_Trees_Notes.pdf', sizeKB: 1820,
         publishedAt: '2026-05-16T15:30:00Z', publishedBy: adminId },
-      { id: 'nt_3', uploadId: null, title: 'Probability — the four rules that matter',
-        subject: 'STAT 201', tags: ['Stats', 'Probability', 'Exam prep'],
+      { id: 'nt_3', uploadId: null,
+        college: 'College of Science', courseName: 'STAT 201', chapterNumber: '5', chapterTitle: 'Probability Rules',
+        title: 'Probability — the four rules that matter', tags: ['Stats', 'Probability', 'Exam prep'],
         description: 'Conditional, joint, marginal, and Bayes — written like a friend explaining it the night before an exam.',
         fileName: 'STAT201_Probability_Notes.pdf', sizeKB: 980,
         publishedAt: '2026-05-08T09:20:00Z', publishedBy: adminId }
@@ -149,18 +157,29 @@
   function getUploads() { return read(K.uploads, []); }
   function getUploadById(id) { return getUploads().find(u => u.id === id) || null; }
   function getUploadsByUser(userId) { return getUploads().filter(u => u.userId === userId); }
-  function addUpload({ userId, title, description, file }) {
+  function addUpload({ userId, college, courseName, chapterNumber, chapterTitle, description, file }) {
     // // TODO: Replace with POST /api/uploads (multipart). The file binary is NOT persisted in the prototype.
     if (!userId) throw new Error('Not signed in.');
-    if (!title || !title.trim()) throw new Error('Give it a title before uploading.');
+    if (!college || !college.trim()) throw new Error('Select or enter your college.');
+    if (!courseName || !courseName.trim()) throw new Error('Enter the course name or code.');
+    if (!chapterNumber || !String(chapterNumber).trim()) throw new Error('Enter the chapter number.');
+    if (!chapterTitle || !chapterTitle.trim()) throw new Error('Enter the chapter title.');
     if (!file) throw new Error('Pick a file first.');
     const ext = (file.name.split('.').pop() || '').toLowerCase();
     const allowed = ['pdf', 'pptx', 'docx'];
     if (!allowed.includes(ext)) throw new Error('We only accept .pdf, .pptx, or .docx for now.');
+    const col  = college.trim();
+    const cn   = courseName.trim();
+    const cnum = String(chapterNumber).trim();
+    const cttl = chapterTitle.trim();
     const up = {
       id: uid('up'),
       userId,
-      title: title.trim(),
+      college: col,
+      courseName: cn,
+      chapterNumber: cnum,
+      chapterTitle: cttl,
+      title: `${cn} — Ch.${cnum}: ${cttl}`,
       description: (description || '').trim(),
       fileName: file.name,
       fileType: ext,
@@ -184,16 +203,22 @@
   // ---------- Notes (admin-published study notes) ----------
   function getNotes() { return read(K.notes, []); }
   function getNoteById(id) { return getNotes().find(n => n.id === id) || null; }
-  function addNote({ uploadId, title, subject, tags, description, fileName, sizeKB, publishedBy }) {
+  function addNote({ uploadId, title, college, courseName, chapterNumber, chapterTitle, tags, description, fileName, sizeKB, publishedBy }) {
     // // TODO: Replace with POST /api/notes (multipart PDF + JSON meta)
     if (!title || !title.trim()) throw new Error('Notes need a title.');
-    if (!subject || !subject.trim()) throw new Error('Notes need a subject/topic.');
+    if (!college || !college.trim()) throw new Error('Notes need a college.');
+    if (!courseName || !courseName.trim()) throw new Error('Notes need a course name.');
+    if (!chapterNumber || !String(chapterNumber).trim()) throw new Error('Notes need a chapter number.');
+    if (!chapterTitle || !chapterTitle.trim()) throw new Error('Notes need a chapter title.');
     if (!fileName) throw new Error('Attach a PDF to publish.');
     const n = {
       id: uid('nt'),
       uploadId: uploadId || null,
       title: title.trim(),
-      subject: subject.trim(),
+      college: (college || '').trim(),
+      courseName: (courseName || '').trim(),
+      chapterNumber: String(chapterNumber || '').trim(),
+      chapterTitle: (chapterTitle || '').trim(),
       tags: Array.isArray(tags) ? tags.map(t => t.trim()).filter(Boolean) : [],
       description: (description || '').trim(),
       fileName,
