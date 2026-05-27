@@ -549,6 +549,17 @@ input, textarea, select { font-family: inherit; }
   color: var(--fg-3);
 }
 
+/* Locked note card — unpurchased */
+.notecard-locked {
+  cursor: default;
+  opacity: 0.82;
+}
+.notecard-locked::before { background: var(--notati-sand); }
+.notecard-locked::after  { background: var(--border-1); }
+.notecard-locked .title  { color: var(--fg-2); }
+.notecard-locked:hover   { transform: none; box-shadow: none; }
+.notecard-buy-btn        { font-size: 12px; padding: 4px 10px; gap: 5px; }
+
 /* ---------- File row (mobile-friendly list item alt to table) ---------- */
 .filerow {
   display: flex; align-items: center; gap: 16px;

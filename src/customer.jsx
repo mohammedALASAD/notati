@@ -13,14 +13,23 @@ const { useState: useStateC, useMemo: useMemoC, useEffect: useEffectC, useRef: u
    Customer Dashboard
    ============================================================ */
 function CustomerDashboard({ user, onNav, onOpenNote }) {
+  const { toast } = useToast();
   const uploads = NotatiStore.getUploadsByUser(user.id);
   const notes = NotatiStore.getNotes();
+  const [purchased, setPurchased] = useStateC(NotatiStore.getPurchasedNoteIds(user.id));
 
   const ready    = uploads.filter(u => u.status === 'reviewed').length;
   const pending  = uploads.filter(u => u.status === 'pending').length;
 
   const recentUploads = uploads.slice(0, 4);
   const featured = notes.slice(0, 3);
+
+  function handleBuyFeatured(n) {
+    NotatiStore.purchaseNote(user.id, n.id);
+    setPurchased(NotatiStore.getPurchasedNoteIds(user.id));
+    toast.success('Note unlocked!', `You now have access to "${n.title}".`);
+    onOpenNote(n);
+  }
 
   return (
     <div>
@@ -43,9 +52,9 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
       </div>
 
       <div className="stats">
-        <Stat hero label="Available notes"
-              num={notes.length}
-              delta={{ dir: 'up', text: 'Updated this week — keep reading' }}
+        <Stat hero label="My purchased notes"
+              num={purchased.size}
+              delta={{ dir: 'up', text: `${notes.length} notes in the library — browse and buy` }}
               icon="Library"/>
         <Stat tone="walnut" label="My uploads" num={uploads.length}
               delta={{ text: `${ready} ready · ${pending} pending` }}
@@ -106,22 +115,33 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
             {featured.length === 0 ? (
               <EmptyState title="No notes published yet"
                           message="The library is empty for now — check back soon."/>
-            ) : featured.map(n => (
-              <div key={n.id} className="notecard" onClick={() => onOpenNote(n)}>
-                <span className="course">{n.subject}</span>
-                <div className="title">{n.title}</div>
-                <div className="desc">{n.description}</div>
-                <div className="tags">
-                  {n.tags.slice(0, 2).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
+            ) : featured.map(n => {
+              const owned = purchased.has(n.id);
+              return (
+                <div key={n.id} className={`notecard ${owned ? '' : 'notecard-locked'}`}
+                     onClick={owned ? () => onOpenNote(n) : undefined}>
+                  <span className="course">{n.subject}</span>
+                  <div className="title">{n.title}</div>
+                  <div className="desc">{n.description}</div>
+                  <div className="tags">
+                    {n.tags.slice(0, 2).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
+                  </div>
+                  <div className="foot">
+                    <span>{fmtDate(n.publishedAt)}</span>
+                    {owned ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
+                        Read <Icons.ArrowRight size={13}/>
+                      </span>
+                    ) : (
+                      <button className="btn btn-primary btn-sm notecard-buy-btn"
+                              onClick={(e) => { e.stopPropagation(); handleBuyFeatured(n); }}>
+                        <Icons.Lock size={12}/> BD 0.500
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="foot">
-                  <span>{fmtDate(n.publishedAt)}</span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
-                    Read <Icons.ArrowRight size={13}/>
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       </div>
@@ -390,7 +410,9 @@ function MyUploads({ user, onNav, onOpenNote }) {
    Notes Library
    ============================================================ */
 function NotesLibrary({ user, onOpenNote }) {
+  const { toast } = useToast();
   const [notes] = useStateC(NotatiStore.getNotes());
+  const [purchased, setPurchased] = useStateC(NotatiStore.getPurchasedNoteIds(user.id));
   const [q, setQ] = useStateC('');
   const [subject, setSubject] = useStateC('all');
 
@@ -408,13 +430,20 @@ function NotesLibrary({ user, onOpenNote }) {
     });
   }, [notes, q, subject]);
 
+  function handleBuy(n) {
+    NotatiStore.purchaseNote(user.id, n.id);
+    setPurchased(NotatiStore.getPurchasedNoteIds(user.id));
+    toast.success('Note unlocked!', `You now have access to "${n.title}".`);
+    onOpenNote(n);
+  }
+
   return (
     <div>
       <div className="page-head">
         <div className="ttl">
           <span className="tag tag-soft">04 · Library</span>
           <h1>Notes library</h1>
-          <p className="sub">Browse every published Note. Filter by subject, search by tag, open one to read.</p>
+          <p className="sub">Browse every published Note. Purchase a note to unlock and read it.</p>
         </div>
       </div>
 
@@ -442,22 +471,33 @@ function NotesLibrary({ user, onOpenNote }) {
                           : "No notes match these filters. Try a broader search."}/>
           ) : (
             <div className="grid-3">
-              {filtered.map(n => (
-                <div key={n.id} className="notecard" onClick={() => onOpenNote(n)}>
-                  <span className="course">{n.subject}</span>
-                  <div className="title">{n.title}</div>
-                  <div className="desc">{n.description}</div>
-                  <div className="tags">
-                    {n.tags.slice(0, 3).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
+              {filtered.map(n => {
+                const owned = purchased.has(n.id);
+                return (
+                  <div key={n.id} className={`notecard ${owned ? '' : 'notecard-locked'}`}
+                       onClick={owned ? () => onOpenNote(n) : undefined}>
+                    <span className="course">{n.subject}</span>
+                    <div className="title">{n.title}</div>
+                    <div className="desc">{n.description}</div>
+                    <div className="tags">
+                      {n.tags.slice(0, 3).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
+                    </div>
+                    <div className="foot">
+                      <span>{fmtDate(n.publishedAt)} · {fmtSize(n.sizeKB)}</span>
+                      {owned ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
+                          Read <Icons.ArrowRight size={13}/>
+                        </span>
+                      ) : (
+                        <button className="btn btn-primary btn-sm notecard-buy-btn"
+                                onClick={(e) => { e.stopPropagation(); handleBuy(n); }}>
+                          <Icons.Lock size={12}/> BD 0.500
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="foot">
-                    <span>{fmtDate(n.publishedAt)} · {fmtSize(n.sizeKB)}</span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
-                      Read <Icons.ArrowRight size={13}/>
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

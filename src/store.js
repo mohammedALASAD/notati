@@ -8,11 +8,12 @@
 (function () {
   const NS = 'notati:v1';
   const K = {
-    users:    NS + ':users',     // [{id, name, email, password, role, joinedAt}]
-    sessions: NS + ':session',   // {userId, role}
-    uploads:  NS + ':uploads',   // [{id, userId, title, description, fileName, fileType, sizeKB, status, uploadedAt, noteId|null}]
-    notes:    NS + ':notes',     // [{id, uploadId, title, subject, tags[], description, fileName, sizeKB, publishedAt, publishedBy}]
-    seeded:   NS + ':seeded'
+    users:     NS + ':users',     // [{id, name, email, password, role, joinedAt}]
+    sessions:  NS + ':session',   // {userId, role}
+    uploads:   NS + ':uploads',   // [{id, userId, title, description, fileName, fileType, sizeKB, status, uploadedAt, noteId|null}]
+    notes:     NS + ':notes',     // [{id, uploadId, title, subject, tags[], description, fileName, sizeKB, publishedAt, publishedBy}]
+    purchases: NS + ':purchases', // [{userId, noteId, purchasedAt}]
+    seeded:    NS + ':seeded'
   };
 
   // ---------- Low-level helpers ----------
@@ -89,9 +90,18 @@
         publishedAt: '2026-05-08T09:20:00Z', publishedBy: adminId }
     ];
 
+    // Seed some demo purchases (u1 owns nt_1 via upload; u2 owns nt_2 via upload — those are free automatically)
+    const purchases = [
+      { userId: u1, noteId: 'nt_2', purchasedAt: '2026-05-17T10:00:00Z' },
+      { userId: u2, noteId: 'nt_3', purchasedAt: '2026-05-18T11:00:00Z' },
+      { userId: u3, noteId: 'nt_1', purchasedAt: '2026-05-20T09:30:00Z' },
+      { userId: u3, noteId: 'nt_3', purchasedAt: '2026-05-21T08:00:00Z' },
+    ];
+
     write(K.users, users);
     write(K.uploads, uploads);
     write(K.notes, notes);
+    write(K.purchases, purchases);
     write(K.seeded, true);
   }
 
@@ -211,6 +221,30 @@
     return true;
   }
 
+  // ---------- Purchases ----------
+  function getPurchases() { return read(K.purchases, []); }
+
+  function getPurchasedNoteIds(userId) {
+    const owned = new Set(
+      getPurchases().filter(p => p.userId === userId).map(p => p.noteId)
+    );
+    // Notes created from the user's own uploads are always free
+    getUploads().filter(u => u.userId === userId && u.noteId).forEach(u => owned.add(u.noteId));
+    return owned;
+  }
+
+  function hasPurchased(userId, noteId) {
+    return getPurchasedNoteIds(userId).has(noteId);
+  }
+
+  function purchaseNote(userId, noteId) {
+    if (hasPurchased(userId, noteId)) return true;
+    const purchases = getPurchases();
+    purchases.push({ userId, noteId, purchasedAt: now() });
+    write(K.purchases, purchases);
+    return true;
+  }
+
   // ---------- Simulated download ----------
   function fakeDownload(filename, body) {
     // // TODO: Replace with real signed-URL or blob streaming from API
@@ -235,6 +269,8 @@
     getUploads, getUploadById, getUploadsByUser, addUpload, setUploadStatus,
     // notes
     getNotes, getNoteById, addNote, updateNote, deleteNote,
+    // purchases
+    getPurchases, getPurchasedNoteIds, hasPurchased, purchaseNote,
     // utility
     fakeDownload,
     // for dev: clear everything
