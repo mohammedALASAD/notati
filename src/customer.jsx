@@ -444,6 +444,63 @@ function MyUploads({ user, onNav, onOpenNote }) {
 }
 
 /* ============================================================
+   College Dropdown — custom styled dropdown for college filter
+   ============================================================ */
+function CollegeDropdown({ value, onChange }) {
+  const [open, setOpen] = useStateC(false);
+  const ref = useRefC();
+
+  useEffectC(() => {
+    function onOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, []);
+
+  const label = value === 'all' ? 'All colleges' : value;
+  const active = value !== 'all';
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button"
+              className={`btn btn-sm ${active ? 'btn-primary' : 'btn-soft'}`}
+              style={{ borderRadius: 'var(--r-pill)', gap: 6 }}
+              onClick={() => setOpen(o => !o)}>
+        <Icons.Filter size={13}/>
+        {label}
+        <span style={{ fontSize: 9, opacity: .7, marginLeft: 2 }}>▾</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 200,
+          background: 'var(--notati-paper)', border: '1px solid var(--border-1)',
+          borderRadius: 'var(--r-5)', boxShadow: '0 8px 24px rgba(0,0,0,.13)',
+          minWidth: 270, overflow: 'hidden'
+        }}>
+          {[{ val: 'all', lbl: 'All colleges' }, ...COLLEGES.map(c => ({ val: c, lbl: c }))].map(({ val, lbl }) => (
+            <button key={val} type="button"
+                    onClick={() => { onChange(val); setOpen(false); }}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: '9px 16px', border: 'none', cursor: 'pointer',
+                      font: 'var(--type-body)', fontSize: 14,
+                      background: value === val ? 'var(--notati-cream)' : 'transparent',
+                      color: value === val ? 'var(--notati-walnut)' : 'var(--fg-1)',
+                      fontWeight: value === val ? 700 : 400,
+                      borderLeft: value === val ? '3px solid var(--notati-walnut)' : '3px solid transparent'
+                    }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
    Notes Library
    ============================================================ */
 function NotesLibrary({ user, onOpenNote }) {
@@ -496,16 +553,7 @@ function NotesLibrary({ user, onOpenNote }) {
 
       <section className="panel">
         <div className="panel-head" style={{ flexWrap: 'wrap', gap: 12 }}>
-          {/* College filter */}
-          <select value={college} onChange={(e) => pickCollege(e.target.value)}
-                  style={{ font: 'var(--type-body)', padding: '7px 14px',
-                           borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
-                           background: college !== 'all' ? 'var(--notati-walnut)' : 'var(--notati-paper)',
-                           color: college !== 'all' ? 'var(--notati-paper)' : 'var(--fg-1)',
-                           cursor: 'pointer' }}>
-            <option value="all">All colleges</option>
-            {COLLEGES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <CollegeDropdown value={college} onChange={pickCollege}/>
 
           {/* Course filter — updates based on selected college */}
           <div className="filters" style={{ margin: 0 }}>
