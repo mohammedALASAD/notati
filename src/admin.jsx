@@ -370,6 +370,13 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
   }
 
   function publish() {
+    if (!title.trim())           { setErr('Note title is required.'); return; }
+    if (!college)                { setErr('Please select a college.'); return; }
+    if (!courseName.trim())      { setErr('Course name is required.'); return; }
+    if (!String(chapterNumber).trim()) { setErr('Chapter number is required.'); return; }
+    if (!chapterTitle.trim())    { setErr('Chapter title is required.'); return; }
+    if (!existingNote && !pdfName) { setErr('Please attach a PDF.'); return; }
+
     try {
       const tagArr = tags.split(',').map(t => t.trim()).filter(Boolean);
       if (existingNote) {
@@ -554,7 +561,7 @@ function NotesManager({ user, onEdit, onAddNew }) {
               <thead>
                 <tr>
                   <th>Note</th>
-                  <th>Subject</th>
+                  <th>College · Course</th>
                   <th>Tags</th>
                   <th>Published</th>
                   <th className="r">Actions</th>
@@ -569,7 +576,12 @@ function NotesManager({ user, onEdit, onAddNew }) {
                         <span className="em">{n.fileName} · {fmtSize(n.sizeKB)}</span>
                       </div>
                     </td>
-                    <td data-l="Subject"><span className="tag tag-walnut">{n.courseName}</span></td>
+                    <td data-l="College · Course">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>{n.college}</span>
+                        <span className="tag tag-walnut">{n.courseName}</span>
+                      </div>
+                    </td>
                     <td data-l="Tags">
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         {n.tags.slice(0, 3).map(t => <span key={t} className="tag tag-soft">{t}</span>)}

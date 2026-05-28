@@ -131,6 +131,7 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
               return (
                 <div key={n.id} className={`notecard ${owned ? '' : 'notecard-locked'}`}
                      onClick={owned ? () => onOpenNote(n) : undefined}>
+                  <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{n.college}</div>
                   <span className="course">{n.courseName}</span>
                   <div className="title">{n.title}</div>
                   <div className="desc">{n.description}</div>
@@ -588,6 +589,7 @@ function NotesLibrary({ user, onOpenNote }) {
                 return (
                   <div key={n.id} className={`notecard ${owned ? '' : 'notecard-locked'}`}
                        onClick={owned ? () => onOpenNote(n) : undefined}>
+                    <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{n.college}</div>
                     <span className="course">{n.courseName}</span>
                     <div className="title">{n.title}</div>
                     <div className="desc">{n.description}</div>
