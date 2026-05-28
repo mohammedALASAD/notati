@@ -20,6 +20,113 @@ const COLLEGES = [
   'College of Science'
 ];
 
+// TODO: update these with your real contact details before going live
+const CONTACT = {
+  benefitpay: '+973 XXXX XXXX',
+  whatsapp:   '973XXXXXXXX',   // no + sign — used in wa.me link
+  instagram:  'notati.bh'
+};
+
+/* ============================================================
+   Get Access Modal — shown when a student taps a locked note
+   ============================================================ */
+function GetAccessModal({ open, note, onClose }) {
+  const [copied, setCopied] = useStateC(false);
+
+  useEffectC(() => { if (!open) setCopied(false); }, [open]);
+  if (!open || !note) return null;
+
+  function copyNumber() {
+    navigator.clipboard.writeText(CONTACT.benefitpay).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const waMsg = encodeURIComponent(
+    `Hi, I'd like to purchase "${note.title}" (${note.courseName} Ch.${note.chapterNumber}). My Notati email: `
+  );
+
+  return (
+    <Modal open={open} onClose={onClose} size="md"
+           title="Get access to this note"
+           subtitle={`${note.courseName} · Ch.${note.chapterNumber}: ${note.chapterTitle} · BD ${Number(note.price).toFixed(3)}`}
+           footer={<button className="btn btn-ghost" onClick={onClose}>Close</button>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Note preview */}
+        <div style={{ background: 'var(--notati-cream)', borderRadius: 'var(--r-5)',
+                      padding: '12px 14px', border: '1px solid var(--border-2)' }}>
+          <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 2 }}>{note.college}</div>
+          <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 4 }}>{note.title}</div>
+          {note.description && (
+            <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 13,
+                          color: 'var(--fg-2)', lineHeight: 1.5 }}>
+              {note.description}
+            </div>
+          )}
+        </div>
+
+        {/* Steps */}
+        <div>
+          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 10, letterSpacing: '.08em' }}>
+            HOW TO GET ACCESS
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              ['1', `Send BD ${Number(note.price).toFixed(3)} via BenefitPay to the number below.`],
+              ['2', 'Message us on WhatsApp or Instagram with your email and a payment screenshot.'],
+              ['3', "We'll unlock the note for you — usually within a few hours."]
+            ].map(([num, text]) => (
+              <div key={num} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--notati-walnut)',
+                               color: 'var(--notati-paper)', display: 'flex', alignItems: 'center',
+                               justifyContent: 'center', font: 'var(--type-label)', fontSize: 11, flexShrink: 0 }}>
+                  {num}
+                </span>
+                <span style={{ font: 'var(--type-body)', color: 'var(--fg-1)', paddingTop: 3 }}>{text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* BenefitPay */}
+        <div style={{ background: 'var(--notati-paper)', border: '1px solid var(--border-1)',
+                      borderRadius: 'var(--r-5)', padding: '14px 16px' }}>
+          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 8, letterSpacing: '.08em' }}>
+            BENEFITPAY NUMBER
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', fontSize: 20, letterSpacing: '.02em' }}>
+              {CONTACT.benefitpay}
+            </span>
+            <button className="btn btn-soft btn-sm" onClick={copyNumber}>
+              {copied ? <><Icons.Check size={13}/> Copied!</> : 'Copy number'}
+            </button>
+          </div>
+        </div>
+
+        {/* Contact buttons */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <a href={`https://wa.me/${CONTACT.whatsapp}?text=${waMsg}`}
+             target="_blank" rel="noopener noreferrer"
+             className="btn btn-primary"
+             style={{ flex: 1, textDecoration: 'none', justifyContent: 'center',
+                      display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Icons.Mail size={15}/> WhatsApp us
+          </a>
+          <a href={`https://instagram.com/${CONTACT.instagram}`}
+             target="_blank" rel="noopener noreferrer"
+             className="btn btn-outline"
+             style={{ flex: 1, textDecoration: 'none', justifyContent: 'center',
+                      display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Icons.User size={15}/> Instagram
+          </a>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /* ============================================================
    Customer Dashboard
    ============================================================ */
@@ -27,20 +134,14 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
   const { toast } = useToast();
   const uploads = NotatiStore.getUploadsByUser(user.id);
   const notes = NotatiStore.getNotes();
-  const [purchased, setPurchased] = useStateC(NotatiStore.getPurchasedNoteIds(user.id));
+  const [accessNote, setAccessNote] = useStateC(null);
 
   const ready    = uploads.filter(u => u.status === 'reviewed').length;
   const pending  = uploads.filter(u => u.status === 'pending').length;
+  const accessibleCount = notes.filter(n => NotatiStore.canReadNote(user.id, n)).length;
 
   const recentUploads = uploads.slice(0, 4);
   const featured = notes.slice(0, 3);
-
-  function handleBuyFeatured(n) {
-    NotatiStore.purchaseNote(user.id, n.id);
-    setPurchased(NotatiStore.getPurchasedNoteIds(user.id));
-    toast.success('Note unlocked!', `You now have access to "${n.title}".`);
-    onOpenNote(n);
-  }
 
   return (
     <div>
@@ -63,9 +164,9 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
       </div>
 
       <div className="stats">
-        <Stat hero label="My purchased notes"
-              num={purchased.size}
-              delta={{ dir: 'up', text: `${notes.length} notes in the library — browse and buy` }}
+        <Stat hero label="Notes I can read"
+              num={accessibleCount}
+              delta={{ dir: 'up', text: `${notes.length} notes in the library` }}
               icon="Library"/>
         <Stat tone="walnut" label="My uploads" num={uploads.length}
               delta={{ text: `${ready} ready · ${pending} pending` }}
@@ -127,10 +228,28 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
               <EmptyState title="No notes published yet"
                           message="The library is empty for now — check back soon."/>
             ) : featured.map(n => {
-              const owned = purchased.has(n.id);
+              const canRead = NotatiStore.canReadNote(user.id, n);
+              const isFree  = !n.price || Number(n.price) === 0;
               return (
-                <div key={n.id} className={`notecard ${owned ? '' : 'notecard-locked'}`}
-                     onClick={owned ? () => onOpenNote(n) : undefined}>
+                <div key={n.id} className={`notecard ${canRead ? '' : 'notecard-locked'}`}
+                     onClick={canRead ? () => onOpenNote(n) : !isFree ? () => setAccessNote(n) : undefined}
+                     style={{ position: 'relative', cursor: 'pointer' }}>
+                  {isFree && (
+                    <span style={{ position: 'absolute', top: 10, right: 10,
+                                   background: 'var(--notati-sage)', color: 'var(--notati-paper)',
+                                   font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
+                                   borderRadius: 'var(--r-pill)' }}>
+                      FREE
+                    </span>
+                  )}
+                  {canRead && !isFree && (
+                    <span style={{ position: 'absolute', top: 10, right: 10,
+                                   background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
+                                   font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
+                                   borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <Icons.Check size={9}/> For you
+                    </span>
+                  )}
                   <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{n.college}</div>
                   <span className="course">{n.courseName}</span>
                   <div className="title">{n.title}</div>
@@ -140,14 +259,14 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
                   </div>
                   <div className="foot">
                     <span>{fmtDate(n.publishedAt)}</span>
-                    {owned ? (
+                    {canRead ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
                         Read <Icons.ArrowRight size={13}/>
                       </span>
                     ) : (
                       <button className="btn btn-primary btn-sm notecard-buy-btn"
-                              onClick={(e) => { e.stopPropagation(); handleBuyFeatured(n); }}>
-                        <Icons.Lock size={12}/> BD 0.500
+                              onClick={(e) => { e.stopPropagation(); setAccessNote(n); }}>
+                        <Icons.Lock size={12}/> BD {Number(n.price).toFixed(3)}
                       </button>
                     )}
                   </div>
@@ -157,6 +276,8 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
           </div>
         </section>
       </div>
+
+      <GetAccessModal open={!!accessNote} note={accessNote} onClose={() => setAccessNote(null)}/>
     </div>
   );
 }
@@ -507,12 +628,11 @@ function FilterDropdown({ value, onChange, options, placeholder, icon }) {
    Notes Library
    ============================================================ */
 function NotesLibrary({ user, onOpenNote }) {
-  const { toast } = useToast();
   const [notes] = useStateC(NotatiStore.getNotes());
-  const [purchased, setPurchased] = useStateC(NotatiStore.getPurchasedNoteIds(user.id));
   const [q, setQ] = useStateC('');
   const [college, setCollege] = useStateC('all');
   const [subject, setSubject] = useStateC('all');
+  const [accessNote, setAccessNote] = useStateC(null);
 
   // courses available within the selected college
   const subjects = useMemoC(() => {
@@ -537,20 +657,13 @@ function NotesLibrary({ user, onOpenNote }) {
     });
   }, [notes, q, college, subject]);
 
-  function handleBuy(n) {
-    NotatiStore.purchaseNote(user.id, n.id);
-    setPurchased(NotatiStore.getPurchasedNoteIds(user.id));
-    toast.success('Note unlocked!', `You now have access to "${n.title}".`);
-    onOpenNote(n);
-  }
-
   return (
     <div>
       <div className="page-head">
         <div className="ttl">
           <span className="tag tag-soft">04 · Library</span>
           <h1>Notes library</h1>
-          <p className="sub">Browse every published Note. Purchase a note to unlock and read it.</p>
+          <p className="sub">Free notes are readable instantly. Paid notes — send payment via BenefitPay and we'll unlock them for you.</p>
         </div>
       </div>
 
@@ -585,10 +698,28 @@ function NotesLibrary({ user, onOpenNote }) {
           ) : (
             <div className="grid-3">
               {filtered.map(n => {
-                const owned = purchased.has(n.id);
+                const canRead = NotatiStore.canReadNote(user.id, n);
+                const isFree  = !n.price || Number(n.price) === 0;
                 return (
-                  <div key={n.id} className={`notecard ${owned ? '' : 'notecard-locked'}`}
-                       onClick={owned ? () => onOpenNote(n) : undefined}>
+                  <div key={n.id} className={`notecard ${canRead ? '' : 'notecard-locked'}`}
+                       onClick={canRead ? () => onOpenNote(n) : !isFree ? () => setAccessNote(n) : undefined}
+                       style={{ position: 'relative', cursor: 'pointer' }}>
+                    {isFree && (
+                      <span style={{ position: 'absolute', top: 10, right: 10,
+                                     background: 'var(--notati-sage)', color: 'var(--notati-paper)',
+                                     font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
+                                     borderRadius: 'var(--r-pill)' }}>
+                        FREE
+                      </span>
+                    )}
+                    {canRead && !isFree && (
+                      <span style={{ position: 'absolute', top: 10, right: 10,
+                                     background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
+                                     font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
+                                     borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <Icons.Check size={9}/> For you
+                      </span>
+                    )}
                     <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{n.college}</div>
                     <span className="course">{n.courseName}</span>
                     <div className="title">{n.title}</div>
@@ -598,14 +729,14 @@ function NotesLibrary({ user, onOpenNote }) {
                     </div>
                     <div className="foot">
                       <span>{fmtDate(n.publishedAt)} · {fmtSize(n.sizeKB)}</span>
-                      {owned ? (
+                      {canRead ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
                           Read <Icons.ArrowRight size={13}/>
                         </span>
                       ) : (
                         <button className="btn btn-primary btn-sm notecard-buy-btn"
-                                onClick={(e) => { e.stopPropagation(); handleBuy(n); }}>
-                          <Icons.Lock size={12}/> BD 0.500
+                                onClick={(e) => { e.stopPropagation(); setAccessNote(n); }}>
+                          <Icons.Lock size={12}/> BD {Number(n.price).toFixed(3)}
                         </button>
                       )}
                     </div>
@@ -616,6 +747,8 @@ function NotesLibrary({ user, onOpenNote }) {
           )}
         </div>
       </section>
+
+      <GetAccessModal open={!!accessNote} note={accessNote} onClose={() => setAccessNote(null)}/>
     </div>
   );
 }

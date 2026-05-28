@@ -13,7 +13,8 @@ const ADMIN_NAV = [
   { id: 'overview', label: 'Overview',       icon: 'Dashboard' },
   { id: 'inbox',    label: 'Content inbox',  icon: 'Inbox' },
   { id: 'notes',    label: 'Notes manager',  icon: 'Notes' },
-  { id: 'users',    label: 'Users',          icon: 'Users' }
+  { id: 'users',    label: 'Users',          icon: 'Users' },
+  { id: 'access',   label: 'Unlock access',  icon: 'Lock' }
 ];
 
 const CUSTOMER_NAV = [
@@ -111,6 +112,7 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
                           onAddNew={() => { setEditingNote(null); setPublishUpload({ id: null }); /* trigger modal w/o upload */ }}/>
           )}
           {isAdmin && current === 'users' && <UsersList/>}
+          {isAdmin && current === 'access' && <AccessManager/>}
 
           {/* ----- CUSTOMER PAGES ----- */}
           {!isAdmin && current === 'overview' && (

@@ -6,7 +6,7 @@
    ============================================================ */
 
 (function () {
-  const NS = 'notati:v3';
+  const NS = 'notati:v5';
   const K = {
     users:     NS + ':users',     // [{id, name, email, password, role, joinedAt}]
     sessions:  NS + ':session',   // {userId, role}
@@ -82,20 +82,32 @@
         college: 'College of Business Administration', courseName: 'MGMT 233', chapterNumber: '4', chapterTitle: 'Motivation Theories',
         title: 'Motivation, in plain English', tags: ['Management', 'Chapter 4', 'Motivation'],
         description: 'Internal vs. external motivation, broken down with everyday examples. Takes 8 minutes.',
-        fileName: 'MGMT233_Ch4_Notes.pdf', sizeKB: 1240,
+        fileName: 'MGMT233_Ch4_Notes.pdf', sizeKB: 1240, price: 1,
         publishedAt: '2026-05-13T11:00:00Z', publishedBy: adminId },
       { id: 'nt_2', uploadId: up2,
         college: 'College of Information Technology', courseName: 'CS 220', chapterNumber: '6', chapterTitle: 'Trees and Graphs',
         title: 'Trees and graphs without the headache', tags: ['CS', 'Data Structures', 'Trees'],
         description: 'How to actually picture a binary tree and walk a graph without re-reading the textbook.',
-        fileName: 'CS220_Trees_Notes.pdf', sizeKB: 1820,
+        fileName: 'CS220_Trees_Notes.pdf', sizeKB: 1820, price: 0.5,
         publishedAt: '2026-05-16T15:30:00Z', publishedBy: adminId },
       { id: 'nt_3', uploadId: null,
         college: 'College of Science', courseName: 'STAT 201', chapterNumber: '5', chapterTitle: 'Probability Rules',
         title: 'Probability — the four rules that matter', tags: ['Stats', 'Probability', 'Exam prep'],
         description: 'Conditional, joint, marginal, and Bayes — written like a friend explaining it the night before an exam.',
-        fileName: 'STAT201_Probability_Notes.pdf', sizeKB: 980,
-        publishedAt: '2026-05-08T09:20:00Z', publishedBy: adminId }
+        fileName: 'STAT201_Probability_Notes.pdf', sizeKB: 980, price: 1,
+        publishedAt: '2026-05-08T09:20:00Z', publishedBy: adminId },
+      { id: 'nt_4', uploadId: null,
+        college: 'College of Information Technology', courseName: 'CS 220', chapterNumber: '1', chapterTitle: 'Introduction to Data Structures',
+        title: 'Data structures, from zero', tags: ['CS', 'Data Structures', 'Chapter 1'],
+        description: 'What data structures actually are and why they matter — before the textbook overwhelms you.',
+        fileName: 'CS220_Ch1_Notes.pdf', sizeKB: 720, price: 0,
+        publishedAt: '2026-05-06T08:00:00Z', publishedBy: adminId },
+      { id: 'nt_5', uploadId: null,
+        college: 'College of Business Administration', courseName: 'MGMT 233', chapterNumber: '1', chapterTitle: 'What is Management',
+        title: 'Management 101 — the short version', tags: ['Management', 'Chapter 1', 'Intro'],
+        description: 'The four functions every manager does, in plain language. A solid starting point for the whole course.',
+        fileName: 'MGMT233_Ch1_Notes.pdf', sizeKB: 650, price: 0,
+        publishedAt: '2026-05-05T09:00:00Z', publishedBy: adminId }
     ];
 
     // Seed some demo purchases (u1 owns nt_1 via upload; u2 owns nt_2 via upload — those are free automatically)
@@ -203,7 +215,7 @@
   // ---------- Notes (admin-published study notes) ----------
   function getNotes() { return read(K.notes, []); }
   function getNoteById(id) { return getNotes().find(n => n.id === id) || null; }
-  function addNote({ uploadId, title, college, courseName, chapterNumber, chapterTitle, tags, description, fileName, sizeKB, publishedBy }) {
+  function addNote({ uploadId, title, college, courseName, chapterNumber, chapterTitle, tags, description, fileName, sizeKB, publishedBy, price }) {
     // // TODO: Replace with POST /api/notes (multipart PDF + JSON meta)
     if (!title || !title.trim()) throw new Error('Notes need a title.');
     if (!college || !college.trim()) throw new Error('Notes need a college.');
@@ -223,6 +235,7 @@
       description: (description || '').trim(),
       fileName,
       sizeKB: sizeKB || 1000,
+      price: price != null ? Number(price) : 0,
       publishedAt: now(),
       publishedBy: publishedBy
     };
@@ -262,11 +275,23 @@
     return getPurchasedNoteIds(userId).has(noteId);
   }
 
+  function canReadNote(userId, note) {
+    if (!note) return false;
+    const price = note.price != null ? Number(note.price) : 0;
+    if (price === 0) return true;
+    return hasPurchased(userId, note.id);
+  }
+
   function purchaseNote(userId, noteId) {
     if (hasPurchased(userId, noteId)) return true;
     const purchases = getPurchases();
     purchases.push({ userId, noteId, purchasedAt: now() });
     write(K.purchases, purchases);
+    return true;
+  }
+
+  function revokePurchase(userId, noteId) {
+    write(K.purchases, getPurchases().filter(p => !(p.userId === userId && p.noteId === noteId)));
     return true;
   }
 
@@ -295,7 +320,7 @@
     // notes
     getNotes, getNoteById, addNote, updateNote, deleteNote,
     // purchases
-    getPurchases, getPurchasedNoteIds, hasPurchased, purchaseNote,
+    getPurchases, getPurchasedNoteIds, hasPurchased, purchaseNote, revokePurchase, canReadNote,
     // utility
     fakeDownload,
     // for dev: clear everything

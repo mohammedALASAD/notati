@@ -21,6 +21,19 @@ const COLLEGES_AD = [
   'College of Science'
 ];
 
+const PRICES = [
+  { val: 0, lbl: 'Free' },
+  ...Array.from({ length: 20 }, (_, i) => {
+    const v = (i + 1) * 0.5;
+    return { val: v, lbl: `${v % 1 === 0 ? v : v} BD` };
+  })
+];
+
+function fmtPrice(price) {
+  const p = price != null ? Number(price) : 0;
+  return p === 0 ? 'Free' : `BD ${p.toFixed(3)}`;
+}
+
 /* ---------- shared lookup ---------- */
 function uploaderOf(upload, users) {
   return users.find(u => u.id === upload.userId) || { name: 'Unknown', email: '—' };
@@ -326,6 +339,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
   const [courseName, setCourseName]     = useStateAd('');
   const [chapterNumber, setChapterNumber] = useStateAd('');
   const [chapterTitle, setChapterTitle] = useStateAd('');
+  const [price, setPrice]               = useStateAd(0);
   const [tags, setTags]                 = useStateAd('');
   const [description, setDescription]   = useStateAd('');
   const [pdfName, setPdfName]           = useStateAd('');
@@ -340,6 +354,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
         setCourseName(existingNote.courseName || '');
         setChapterNumber(existingNote.chapterNumber || '');
         setChapterTitle(existingNote.chapterTitle || '');
+        setPrice(existingNote.price != null ? Number(existingNote.price) : 0);
         setTags(existingNote.tags.join(', '));
         setDescription(existingNote.description);
         setPdfName(existingNote.fileName);
@@ -350,6 +365,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
         setCourseName(upload ? upload.courseName || '' : '');
         setChapterNumber(upload ? upload.chapterNumber || '' : '');
         setChapterTitle(upload ? upload.chapterTitle || '' : '');
+        setPrice(0);
         setTags('');
         setDescription(upload ? upload.description || '' : '');
         setPdfName(''); setPdfSize(0);
@@ -382,7 +398,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
       if (existingNote) {
         // // TODO: Replace with PATCH /api/notes/:id
         NotatiStore.updateNote(existingNote.id, {
-          title, college, courseName, chapterNumber, chapterTitle,
+          title, college, courseName, chapterNumber, chapterTitle, price,
           tags: tagArr, description,
           fileName: pdfName || existingNote.fileName, sizeKB: pdfSize || existingNote.sizeKB
         });
@@ -391,7 +407,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
         // // TODO: Replace with POST /api/notes (multipart)
         NotatiStore.addNote({
           uploadId: upload ? upload.id : null,
-          title, college, courseName, chapterNumber, chapterTitle,
+          title, college, courseName, chapterNumber, chapterTitle, price,
           tags: tagArr, description,
           fileName: pdfName, sizeKB: pdfSize, publishedBy: user.id
         });
@@ -450,6 +466,16 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
                  placeholder="e.g. Motivation Theories"/>
         </div>
       </div>
+      <div className="field">
+        <label>Access &amp; price</label>
+        <select value={price} onChange={(e) => setPrice(Number(e.target.value))}>
+          {PRICES.map(p => <option key={p.val} value={p.val}>{p.lbl}</option>)}
+        </select>
+        <div className="hint">
+          Free — all students can read without paying. Paid — student must contact you via BenefitPay first.
+        </div>
+      </div>
+
       <div className="field">
         <label>Tags <span style={{ opacity: .5, textTransform: 'none', letterSpacing: 0 }}>(comma-separated)</span></label>
         <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Management, Chapter 4, Motivation"/>
@@ -562,6 +588,7 @@ function NotesManager({ user, onEdit, onAddNew }) {
                 <tr>
                   <th>Note</th>
                   <th>College · Course</th>
+                  <th>Price</th>
                   <th>Tags</th>
                   <th>Published</th>
                   <th className="r">Actions</th>
@@ -581,6 +608,12 @@ function NotesManager({ user, onEdit, onAddNew }) {
                         <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>{n.college}</span>
                         <span className="tag tag-walnut">{n.courseName}</span>
                       </div>
+                    </td>
+                    <td data-l="Price">
+                      <span className={`tag ${!n.price || n.price === 0 ? 'tag-soft' : 'tag-bark'}`}
+                            style={{ fontWeight: 700 }}>
+                        {fmtPrice(n.price)}
+                      </span>
                     </td>
                     <td data-l="Tags">
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -735,4 +768,155 @@ function UsersList() {
   );
 }
 
-Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList });
+/* ============================================================
+   Access Manager — admin grants access after manual BenefitPay payment
+   ============================================================ */
+function AccessManager() {
+  const { toast } = useToast();
+  const [email, setEmail]         = useStateAd('');
+  const [foundUser, setFoundUser] = useStateAd(null);
+  const [notFound, setNotFound]   = useStateAd(false);
+  const [ownedIds, setOwnedIds]   = useStateAd(new Set());
+  const notes = NotatiStore.getNotes();
+
+  function search(e) {
+    e && e.preventDefault();
+    const u = NotatiStore.getUserByEmail(email.trim());
+    if (u && u.role === 'customer') {
+      setFoundUser(u);
+      setNotFound(false);
+      setOwnedIds(NotatiStore.getPurchasedNoteIds(u.id));
+    } else {
+      setFoundUser(null);
+      setNotFound(true);
+      setOwnedIds(new Set());
+    }
+  }
+
+  function grant(note) {
+    if (!foundUser) return;
+    NotatiStore.purchaseNote(foundUser.id, note.id);
+    setOwnedIds(NotatiStore.getPurchasedNoteIds(foundUser.id));
+    toast.success('Access granted', `${foundUser.name} can now read "${note.title}".`);
+  }
+
+  function revoke(note) {
+    if (!foundUser) return;
+    NotatiStore.revokePurchase(foundUser.id, note.id);
+    setOwnedIds(NotatiStore.getPurchasedNoteIds(foundUser.id));
+    toast.info('Access removed', `${foundUser.name} no longer has access to "${note.title}".`);
+  }
+
+  return (
+    <div>
+      <div className="page-head">
+        <div className="ttl">
+          <span className="tag tag-soft">06 · Access</span>
+          <h1>Unlock access</h1>
+          <p className="sub">
+            After receiving a BenefitPay payment, find the student by email and grant them access to the note they paid for.
+          </p>
+        </div>
+      </div>
+
+      <section className="panel">
+        <div className="panel-head"><h3>Find student</h3></div>
+        <div className="panel-body">
+          <form onSubmit={search} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', maxWidth: 520 }}>
+            <div className="field" style={{ flex: 1, margin: 0 }}>
+              <label>Student email</label>
+              <input value={email} onChange={(e) => setEmail(e.target.value)}
+                     placeholder="e.g. mariam@uob.edu.bh" type="email" required/>
+            </div>
+            <button type="submit" className="btn btn-primary" style={{ flexShrink: 0 }}>
+              Search <Icons.Search size={15}/>
+            </button>
+          </form>
+
+          {notFound && (
+            <div className="err" style={{ marginTop: 14 }}>No student found with that email address.</div>
+          )}
+
+          {foundUser && (
+            <div style={{ marginTop: 24 }}>
+              {/* Student card */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14,
+                            padding: '12px 16px', background: 'var(--notati-cream)',
+                            border: '1px solid var(--border-2)', borderRadius: 'var(--r-5)',
+                            marginBottom: 20 }}>
+                <span className="avatar-sm">{foundUser.name.charAt(0)}</span>
+                <div>
+                  <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>{foundUser.name}</div>
+                  <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                    {foundUser.email} · Joined {fmtDate(foundUser.joinedAt)}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 12, letterSpacing: '.08em' }}>
+                GRANT ACCESS TO A NOTE
+              </div>
+
+              {notes.length === 0 ? (
+                <EmptyState title="No published notes" message="Publish some notes first."/>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {notes.map(n => {
+                    const owned = ownedIds.has(n.id);
+                    const isFree = String(n.chapterNumber).trim() === '1';
+                    return (
+                      <div key={n.id} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: 12, padding: '10px 14px', border: '1px solid var(--border-1)',
+                        borderRadius: 'var(--r-5)',
+                        background: owned || isFree ? 'var(--notati-cream)' : 'var(--notati-paper)'
+                      }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                            <span style={{ font: 'var(--type-body)', fontWeight: 600, color: 'var(--fg-1)' }}>
+                              {n.title}
+                            </span>
+                            {isFree && (
+                              <span className="tag tag-soft" style={{ fontSize: 10 }}>Free ch.1</span>
+                            )}
+                          </div>
+                          <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                            {n.college} · {n.courseName} · Ch.{n.chapterNumber}
+                          </div>
+                        </div>
+                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {isFree ? (
+                            <span style={{ font: 'var(--type-label)', fontSize: 11, color: 'var(--fg-3)' }}>
+                              Free for everyone
+                            </span>
+                          ) : owned ? (
+                            <>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+                                             color: 'var(--notati-sage)', font: 'var(--type-label)', fontSize: 12 }}>
+                                <Icons.Check size={14}/> Has access
+                              </span>
+                              <button className="btn btn-danger btn-sm" onClick={() => revoke(n)}
+                                      title="Withdraw access">
+                                <Icons.Close size={13}/> Revoke
+                              </button>
+                            </>
+                          ) : (
+                            <button className="btn btn-primary btn-sm" onClick={() => grant(n)}>
+                              <Icons.Lock size={13}/> Grant access
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, AccessManager });
