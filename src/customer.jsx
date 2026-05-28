@@ -9,6 +9,17 @@
 
 const { useState: useStateC, useMemo: useMemoC, useEffect: useEffectC, useRef: useRefC } = React;
 
+const COLLEGES = [
+  'College of Arts',
+  'College of Applied Studies',
+  'College of Business Administration',
+  'College of Engineering',
+  'College of Health and Sport Sciences',
+  'College of Information Technology',
+  'College of Law',
+  'College of Science'
+];
+
 /* ============================================================
    Customer Dashboard
    ============================================================ */
@@ -269,8 +280,10 @@ function UploadContent({ user, onDone }) {
           <div className="panel-body">
             <div className="field">
               <label>College</label>
-              <input value={college} onChange={(e) => setCollege(e.target.value)}
-                     placeholder="e.g. College of Business, College of IT" required/>
+              <select value={college} onChange={(e) => setCollege(e.target.value)} required>
+                <option value="">Select your college…</option>
+                {COLLEGES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
             <div className="field">
               <label>Course name</label>
@@ -438,21 +451,31 @@ function NotesLibrary({ user, onOpenNote }) {
   const [notes] = useStateC(NotatiStore.getNotes());
   const [purchased, setPurchased] = useStateC(NotatiStore.getPurchasedNoteIds(user.id));
   const [q, setQ] = useStateC('');
+  const [college, setCollege] = useStateC('all');
   const [subject, setSubject] = useStateC('all');
 
+  // courses available within the selected college
   const subjects = useMemoC(() => {
-    const s = new Set(notes.map(n => n.courseName));
+    const pool = college === 'all' ? notes : notes.filter(n => n.college === college);
+    const s = new Set(pool.map(n => n.courseName));
     return ['all', ...Array.from(s)];
-  }, [notes]);
+  }, [notes, college]);
+
+  // reset course filter when college changes
+  function pickCollege(c) {
+    setCollege(c);
+    setSubject('all');
+  }
 
   const filtered = useMemoC(() => {
     const ql = q.trim().toLowerCase();
     return notes.filter(n => {
+      if (college !== 'all' && n.college !== college) return false;
       if (subject !== 'all' && n.courseName !== subject) return false;
       if (!ql) return true;
       return [n.title, n.college, n.courseName, n.chapterTitle, n.description, ...n.tags].some(s => (s || '').toLowerCase().includes(ql));
     });
-  }, [notes, q, subject]);
+  }, [notes, q, college, subject]);
 
   function handleBuy(n) {
     NotatiStore.purchaseNote(user.id, n.id);
@@ -473,17 +496,30 @@ function NotesLibrary({ user, onOpenNote }) {
 
       <section className="panel">
         <div className="panel-head" style={{ flexWrap: 'wrap', gap: 12 }}>
+          {/* College filter */}
+          <select value={college} onChange={(e) => pickCollege(e.target.value)}
+                  style={{ font: 'var(--type-body)', padding: '7px 14px',
+                           borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
+                           background: college !== 'all' ? 'var(--notati-walnut)' : 'var(--notati-paper)',
+                           color: college !== 'all' ? 'var(--notati-paper)' : 'var(--fg-1)',
+                           cursor: 'pointer' }}>
+            <option value="all">All colleges</option>
+            {COLLEGES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          {/* Course filter — updates based on selected college */}
           <div className="filters" style={{ margin: 0 }}>
             {subjects.map(s => (
               <button key={s} className={`btn btn-sm ${subject === s ? 'btn-primary' : 'btn-soft'}`}
                       onClick={() => setSubject(s)}>
-                {s === 'all' ? 'All subjects' : s}
+                {s === 'all' ? 'All courses' : s}
               </button>
             ))}
           </div>
+
           <div className="search-mini" style={{ minWidth: 280, marginLeft: 'auto' }}>
             <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title, tag, subject…"/>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title, course, chapter…"/>
           </div>
         </div>
 

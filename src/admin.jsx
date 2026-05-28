@@ -10,6 +10,17 @@
 
 const { useState: useStateAd, useMemo: useMemoAd, useEffect: useEffectAd } = React;
 
+const COLLEGES_AD = [
+  'College of Arts',
+  'College of Applied Studies',
+  'College of Business Administration',
+  'College of Engineering',
+  'College of Health and Sport Sciences',
+  'College of Information Technology',
+  'College of Law',
+  'College of Science'
+];
+
 /* ---------- shared lookup ---------- */
 function uploaderOf(upload, users) {
   return users.find(u => u.id === upload.userId) || { name: 'Unknown', email: '—' };
@@ -409,8 +420,10 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
       <div className="field-row">
         <div className="field">
           <label>College</label>
-          <input value={college} onChange={(e) => setCollege(e.target.value)}
-                 placeholder="e.g. College of Business"/>
+          <select value={college} onChange={(e) => setCollege(e.target.value)}>
+            <option value="">Select college…</option>
+            {COLLEGES_AD.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
         <div className="field">
           <label>Course name</label>
