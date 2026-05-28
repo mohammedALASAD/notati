@@ -444,9 +444,10 @@ function MyUploads({ user, onNav, onOpenNote }) {
 }
 
 /* ============================================================
-   College Dropdown — custom styled dropdown for college filter
+   FilterDropdown — reusable styled dropdown (college & course)
+   props: value, onChange, options [{val,lbl}], placeholder, icon
    ============================================================ */
-function CollegeDropdown({ value, onChange }) {
+function FilterDropdown({ value, onChange, options, placeholder, icon }) {
   const [open, setOpen] = useStateC(false);
   const ref = useRefC();
 
@@ -458,8 +459,9 @@ function CollegeDropdown({ value, onChange }) {
     return () => document.removeEventListener('mousedown', onOutside);
   }, []);
 
-  const label = value === 'all' ? 'All colleges' : value;
   const active = value !== 'all';
+  const label  = active ? (options.find(o => o.val === value) || {}).lbl || value : placeholder;
+  const allOptions = [{ val: 'all', lbl: placeholder }, ...options];
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -467,7 +469,7 @@ function CollegeDropdown({ value, onChange }) {
               className={`btn btn-sm ${active ? 'btn-primary' : 'btn-soft'}`}
               style={{ borderRadius: 'var(--r-pill)', gap: 6 }}
               onClick={() => setOpen(o => !o)}>
-        <Icons.Filter size={13}/>
+        {icon}
         {label}
         <span style={{ fontSize: 9, opacity: .7, marginLeft: 2 }}>▾</span>
       </button>
@@ -477,9 +479,9 @@ function CollegeDropdown({ value, onChange }) {
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 200,
           background: 'var(--notati-paper)', border: '1px solid var(--border-1)',
           borderRadius: 'var(--r-5)', boxShadow: '0 8px 24px rgba(0,0,0,.13)',
-          minWidth: 270, overflow: 'hidden'
+          minWidth: 270, maxHeight: 300, overflowY: 'auto'
         }}>
-          {[{ val: 'all', lbl: 'All colleges' }, ...COLLEGES.map(c => ({ val: c, lbl: c }))].map(({ val, lbl }) => (
+          {allOptions.map(({ val, lbl }) => (
             <button key={val} type="button"
                     onClick={() => { onChange(val); setOpen(false); }}
                     style={{
@@ -552,20 +554,22 @@ function NotesLibrary({ user, onOpenNote }) {
       </div>
 
       <section className="panel">
-        <div className="panel-head" style={{ flexWrap: 'wrap', gap: 12 }}>
-          <CollegeDropdown value={college} onChange={pickCollege}/>
+        <div className="panel-head" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <FilterDropdown
+            value={college}
+            onChange={pickCollege}
+            options={COLLEGES.map(c => ({ val: c, lbl: c }))}
+            placeholder="All colleges"
+            icon={<Icons.Filter size={13}/>}/>
 
-          {/* Course filter — updates based on selected college */}
-          <div className="filters" style={{ margin: 0 }}>
-            {subjects.map(s => (
-              <button key={s} className={`btn btn-sm ${subject === s ? 'btn-primary' : 'btn-soft'}`}
-                      onClick={() => setSubject(s)}>
-                {s === 'all' ? 'All courses' : s}
-              </button>
-            ))}
-          </div>
+          <FilterDropdown
+            value={subject}
+            onChange={setSubject}
+            options={subjects.filter(s => s !== 'all').map(s => ({ val: s, lbl: s }))}
+            placeholder="All courses"
+            icon={<Icons.Notes size={13}/>}/>
 
-          <div className="search-mini" style={{ minWidth: 280, marginLeft: 'auto' }}>
+          <div className="search-mini" style={{ minWidth: 260, marginLeft: 'auto' }}>
             <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title, course, chapter…"/>
           </div>
