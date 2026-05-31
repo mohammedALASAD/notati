@@ -6,7 +6,7 @@
    ============================================================ */
 
 (function () {
-  const NS = 'notati:v5';
+  const NS = 'notati:v6';
   const K = {
     users:     NS + ':users',     // [{id, name, email, password, role, joinedAt}]
     sessions:  NS + ':session',   // {userId, role}
@@ -78,44 +78,121 @@
     ];
 
     const notes = [
+      // ── MGMT 233 (4 chapters: 1 free, 3 paid) ──────────────────────
+      { id: 'nt_5', uploadId: null,
+        college: 'College of Business Administration', courseName: 'MGMT 233', chapterNumber: '1', chapterTitle: 'What is Management',
+        title: 'Management 101 — the short version', tags: ['Management', 'Intro'],
+        description: 'The four functions every manager does, in plain language. A solid starting point for the whole course.',
+        fileName: 'MGMT233_Ch1_Notes.pdf', sizeKB: 650, price: 0,
+        publishedAt: '2026-05-05T09:00:00Z', publishedBy: adminId },
+      { id: 'nt_6', uploadId: null,
+        college: 'College of Business Administration', courseName: 'MGMT 233', chapterNumber: '2', chapterTitle: 'Organisational Structure',
+        title: 'Structure: why your company is shaped the way it is', tags: ['Management', 'Structure', 'Org design'],
+        description: 'Flat vs. tall, centralised vs. decentralised — what these mean in practice and how exams test them.',
+        fileName: 'MGMT233_Ch2_Notes.pdf', sizeKB: 810, price: 0.5,
+        publishedAt: '2026-05-07T10:00:00Z', publishedBy: adminId },
+      { id: 'nt_7', uploadId: null,
+        college: 'College of Business Administration', courseName: 'MGMT 233', chapterNumber: '3', chapterTitle: 'Leadership Styles',
+        title: 'Leadership styles, one page each', tags: ['Management', 'Leadership'],
+        description: 'Autocratic, democratic, laissez-faire — and when each one actually works. Includes exam-style comparison table.',
+        fileName: 'MGMT233_Ch3_Notes.pdf', sizeKB: 920, price: 1,
+        publishedAt: '2026-05-09T11:00:00Z', publishedBy: adminId },
       { id: 'nt_1', uploadId: up1,
         college: 'College of Business Administration', courseName: 'MGMT 233', chapterNumber: '4', chapterTitle: 'Motivation Theories',
-        title: 'Motivation, in plain English', tags: ['Management', 'Chapter 4', 'Motivation'],
+        title: 'Motivation, in plain English', tags: ['Management', 'Motivation'],
         description: 'Internal vs. external motivation, broken down with everyday examples. Takes 8 minutes.',
         fileName: 'MGMT233_Ch4_Notes.pdf', sizeKB: 1240, price: 1,
         publishedAt: '2026-05-13T11:00:00Z', publishedBy: adminId },
+
+      // ── CS 220 (5 chapters: 1 free, 4 paid) ────────────────────────
+      { id: 'nt_4', uploadId: null,
+        college: 'College of Information Technology', courseName: 'CS 220', chapterNumber: '1', chapterTitle: 'Introduction to Data Structures',
+        title: 'Data structures, from zero', tags: ['CS', 'Data Structures', 'Intro'],
+        description: 'What data structures actually are and why they matter — before the textbook overwhelms you.',
+        fileName: 'CS220_Ch1_Notes.pdf', sizeKB: 720, price: 0,
+        publishedAt: '2026-05-06T08:00:00Z', publishedBy: adminId },
+      { id: 'nt_8', uploadId: null,
+        college: 'College of Information Technology', courseName: 'CS 220', chapterNumber: '2', chapterTitle: 'Arrays and Linked Lists',
+        title: 'Arrays vs. linked lists — when to pick which', tags: ['CS', 'Arrays', 'Linked Lists'],
+        description: 'Side-by-side comparison of time complexity and memory, with diagrams. Great for quick revision.',
+        fileName: 'CS220_Ch2_Notes.pdf', sizeKB: 880, price: 0.5,
+        publishedAt: '2026-05-08T09:00:00Z', publishedBy: adminId },
+      { id: 'nt_9', uploadId: null,
+        college: 'College of Information Technology', courseName: 'CS 220', chapterNumber: '3', chapterTitle: 'Stacks and Queues',
+        title: 'Stacks and queues — LIFO and FIFO made obvious', tags: ['CS', 'Stacks', 'Queues'],
+        description: 'Push, pop, enqueue, dequeue. Real-world analogies, implementation sketch, and common exam traps.',
+        fileName: 'CS220_Ch3_Notes.pdf', sizeKB: 760, price: 0.5,
+        publishedAt: '2026-05-10T10:00:00Z', publishedBy: adminId },
+      { id: 'nt_10', uploadId: null,
+        college: 'College of Information Technology', courseName: 'CS 220', chapterNumber: '4', chapterTitle: 'Sorting Algorithms',
+        title: 'Sorting: bubble to quicksort in one sheet', tags: ['CS', 'Sorting', 'Algorithms'],
+        description: 'Big-O for each algorithm, best/worst/average cases, and the one you should reach for by default.',
+        fileName: 'CS220_Ch4_Notes.pdf', sizeKB: 1050, price: 1,
+        publishedAt: '2026-05-12T11:00:00Z', publishedBy: adminId },
       { id: 'nt_2', uploadId: up2,
         college: 'College of Information Technology', courseName: 'CS 220', chapterNumber: '6', chapterTitle: 'Trees and Graphs',
-        title: 'Trees and graphs without the headache', tags: ['CS', 'Data Structures', 'Trees'],
+        title: 'Trees and graphs without the headache', tags: ['CS', 'Trees', 'Graphs'],
         description: 'How to actually picture a binary tree and walk a graph without re-reading the textbook.',
         fileName: 'CS220_Trees_Notes.pdf', sizeKB: 1820, price: 0.5,
         publishedAt: '2026-05-16T15:30:00Z', publishedBy: adminId },
+
+      // ── STAT 201 (4 chapters: 1 free, 3 paid) ──────────────────────
+      { id: 'nt_11', uploadId: null,
+        college: 'College of Science', courseName: 'STAT 201', chapterNumber: '1', chapterTitle: 'Introduction to Statistics',
+        title: 'Statistics — what are we even doing here?', tags: ['Stats', 'Intro'],
+        description: 'Population vs. sample, types of data, and why statistics is the most useful thing you will learn this semester.',
+        fileName: 'STAT201_Ch1_Notes.pdf', sizeKB: 590, price: 0,
+        publishedAt: '2026-05-04T08:00:00Z', publishedBy: adminId },
+      { id: 'nt_12', uploadId: null,
+        college: 'College of Science', courseName: 'STAT 201', chapterNumber: '2', chapterTitle: 'Descriptive Statistics',
+        title: 'Mean, median, mode — and when each one lies', tags: ['Stats', 'Descriptive'],
+        description: 'Why averages mislead, when to use the median, and how spread (variance, SD) tells the real story.',
+        fileName: 'STAT201_Ch2_Notes.pdf', sizeKB: 720, price: 0.5,
+        publishedAt: '2026-05-06T09:00:00Z', publishedBy: adminId },
+      { id: 'nt_13', uploadId: null,
+        college: 'College of Science', courseName: 'STAT 201', chapterNumber: '3', chapterTitle: 'Probability Distributions',
+        title: 'Distributions: normal, binomial, Poisson', tags: ['Stats', 'Distributions'],
+        description: 'Visual explanations of the three distributions you see most in exams, with worked examples.',
+        fileName: 'STAT201_Ch3_Notes.pdf', sizeKB: 890, price: 1,
+        publishedAt: '2026-05-10T10:00:00Z', publishedBy: adminId },
       { id: 'nt_3', uploadId: null,
         college: 'College of Science', courseName: 'STAT 201', chapterNumber: '5', chapterTitle: 'Probability Rules',
         title: 'Probability — the four rules that matter', tags: ['Stats', 'Probability', 'Exam prep'],
         description: 'Conditional, joint, marginal, and Bayes — written like a friend explaining it the night before an exam.',
         fileName: 'STAT201_Probability_Notes.pdf', sizeKB: 980, price: 1,
         publishedAt: '2026-05-08T09:20:00Z', publishedBy: adminId },
-      { id: 'nt_4', uploadId: null,
-        college: 'College of Information Technology', courseName: 'CS 220', chapterNumber: '1', chapterTitle: 'Introduction to Data Structures',
-        title: 'Data structures, from zero', tags: ['CS', 'Data Structures', 'Chapter 1'],
-        description: 'What data structures actually are and why they matter — before the textbook overwhelms you.',
-        fileName: 'CS220_Ch1_Notes.pdf', sizeKB: 720, price: 0,
-        publishedAt: '2026-05-06T08:00:00Z', publishedBy: adminId },
-      { id: 'nt_5', uploadId: null,
-        college: 'College of Business Administration', courseName: 'MGMT 233', chapterNumber: '1', chapterTitle: 'What is Management',
-        title: 'Management 101 — the short version', tags: ['Management', 'Chapter 1', 'Intro'],
-        description: 'The four functions every manager does, in plain language. A solid starting point for the whole course.',
-        fileName: 'MGMT233_Ch1_Notes.pdf', sizeKB: 650, price: 0,
-        publishedAt: '2026-05-05T09:00:00Z', publishedBy: adminId }
+
+      // ── ACC 112 (3 chapters: 1 free, 2 paid) ───────────────────────
+      { id: 'nt_14', uploadId: null,
+        college: 'College of Business Administration', courseName: 'ACC 112', chapterNumber: '1', chapterTitle: 'Introduction to Accounting',
+        title: 'Accounting from scratch — no background needed', tags: ['Accounting', 'Intro'],
+        description: 'The accounting equation, why debits and credits exist, and how every transaction tells a story.',
+        fileName: 'ACC112_Ch1_Notes.pdf', sizeKB: 670, price: 0,
+        publishedAt: '2026-05-03T08:00:00Z', publishedBy: adminId },
+      { id: 'nt_15', uploadId: null,
+        college: 'College of Business Administration', courseName: 'ACC 112', chapterNumber: '2', chapterTitle: 'The Accounting Cycle',
+        title: 'The accounting cycle, step by step', tags: ['Accounting', 'Journal', 'Ledger'],
+        description: 'Journals → ledger → trial balance → financial statements. One clear flow with a worked example.',
+        fileName: 'ACC112_Ch2_Notes.pdf', sizeKB: 820, price: 0.5,
+        publishedAt: '2026-05-05T09:00:00Z', publishedBy: adminId },
+      { id: 'nt_16', uploadId: null,
+        college: 'College of Business Administration', courseName: 'ACC 112', chapterNumber: '3', chapterTitle: 'Financial Statements',
+        title: 'Reading financial statements like a pro', tags: ['Accounting', 'Finance', 'Statements'],
+        description: 'Income statement, balance sheet, cash flow — what each one tells you and how they connect.',
+        fileName: 'ACC112_Ch3_Notes.pdf', sizeKB: 950, price: 1,
+        publishedAt: '2026-05-07T10:00:00Z', publishedBy: adminId }
     ];
 
-    // Seed some demo purchases (u1 owns nt_1 via upload; u2 owns nt_2 via upload — those are free automatically)
+    // Demo purchases — mix of "For you" and locked notes across students
     const purchases = [
-      { userId: u1, noteId: 'nt_2', purchasedAt: '2026-05-17T10:00:00Z' },
-      { userId: u2, noteId: 'nt_3', purchasedAt: '2026-05-18T11:00:00Z' },
-      { userId: u3, noteId: 'nt_1', purchasedAt: '2026-05-20T09:30:00Z' },
-      { userId: u3, noteId: 'nt_3', purchasedAt: '2026-05-21T08:00:00Z' },
+      { userId: u1, noteId: 'nt_2',  purchasedAt: '2026-05-17T10:00:00Z' }, // Mariam bought CS 220 Ch.6
+      { userId: u1, noteId: 'nt_7',  purchasedAt: '2026-05-18T09:00:00Z' }, // Mariam bought MGMT 233 Ch.3
+      { userId: u2, noteId: 'nt_3',  purchasedAt: '2026-05-18T11:00:00Z' }, // Omar bought STAT 201 Ch.5
+      { userId: u2, noteId: 'nt_10', purchasedAt: '2026-05-19T14:00:00Z' }, // Omar bought CS 220 Ch.4
+      { userId: u2, noteId: 'nt_15', purchasedAt: '2026-05-20T08:00:00Z' }, // Omar bought ACC 112 Ch.2
+      { userId: u3, noteId: 'nt_1',  purchasedAt: '2026-05-20T09:30:00Z' }, // Layla bought MGMT 233 Ch.4
+      { userId: u3, noteId: 'nt_3',  purchasedAt: '2026-05-21T08:00:00Z' }, // Layla bought STAT 201 Ch.5
+      { userId: u3, noteId: 'nt_16', purchasedAt: '2026-05-22T11:00:00Z' }, // Layla bought ACC 112 Ch.3
     ];
 
     write(K.users, users);
