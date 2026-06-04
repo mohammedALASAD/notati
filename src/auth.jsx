@@ -59,9 +59,14 @@ function LoginView({ onAuth, switchTo }) {
       toast.success(`Welcome back, ${user.name.split(' ')[0]}.`, 'Loading your dashboard...');
       setTimeout(() => onAuth(user), 250);
     } catch (e2) {
-      setErr(e2.message);
-      toast.error('Could not sign in', e2.message);
-      setBusy(false);
+      if (e2.message.includes('Cannot reach server')) {
+        setErr('Server is starting up — retrying in 15 seconds...');
+        setTimeout(() => submit(e), 15000);
+      } else {
+        setErr(e2.message);
+        toast.error('Could not sign in', e2.message);
+        setBusy(false);
+      }
     }
   }
 
@@ -114,9 +119,14 @@ function SignupView({ onAuth, switchTo }) {
       toast.success('Welcome to Notati.', "You're in. Upload your first file whenever you're ready.");
       setTimeout(() => onAuth(user), 300);
     } catch (e2) {
-      setErr(e2.message);
-      toast.error("Couldn't create your account", e2.message);
-      setBusy(false);
+      if (e2.message.includes('Cannot reach server')) {
+        setErr('Server is starting up — retrying in 15 seconds...');
+        setTimeout(() => submit(e), 15000);
+      } else {
+        setErr(e2.message);
+        toast.error("Couldn't create your account", e2.message);
+        setBusy(false);
+      }
     }
   }
 

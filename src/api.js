@@ -152,7 +152,7 @@
     getStoredUser,
     getToken,
     isLoggedIn() { return !!getToken(); },
-    warmup()     { req('GET', '/notes/').catch(() => {}); },
+    warmup()     { fetch(BASE + '/notes/', { method: 'GET', mode: 'no-cors' }).catch(() => {}); },
 
     /* Courses */
     async getCourses() {
