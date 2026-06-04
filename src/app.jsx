@@ -176,6 +176,9 @@ function App() {
   const [mode, setMode]      = useStateApp('login'); // when logged out: login | signup
   const [route, setRoute]    = useStateApp(parseHash());
 
+  // Wake backend on first load (Render free tier sleeps after inactivity)
+  useEffectApp(() => { NotatiAPI.warmup(); }, []);
+
   // Sync hash → state and state → hash
   useEffectApp(() => {
     const onHash = () => setRoute(parseHash());
