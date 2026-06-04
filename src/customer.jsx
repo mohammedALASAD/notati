@@ -20,11 +20,10 @@ const COLLEGES = [
   'College of Science'
 ];
 
-// TODO: update these with your real contact details before going live
 const CONTACT = {
-  benefitpay: '+973 XXXX XXXX',
-  whatsapp:   '973XXXXXXXX',   // no + sign — used in wa.me link
-  instagram:  'notati.bh'
+  benefitpay: '+973 3930 9797',
+  whatsapp:   '97339309797',
+  instagram:  'notes.uob'
 };
 
 /* ============================================================
@@ -128,13 +127,258 @@ function GetAccessModal({ open, note, onClose }) {
 }
 
 /* ============================================================
+   Bag Checkout Modal — shows all bag items + BenefitPay + WhatsApp
+   ============================================================ */
+function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
+  const [copied, setCopied] = useStateC(false);
+  useEffectC(() => { if (!open) setCopied(false); }, [open]);
+  if (!open || !items || items.length === 0) return null;
+
+  const total = items.reduce((s, i) => s + Number(i.price), 0);
+
+  function copyNumber() {
+    navigator.clipboard.writeText(CONTACT.benefitpay).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const itemLines = items.map(i =>
+    `- ${i.courseName} Ch.${i.chapterNumber}: ${i.chapterTitle} (BD ${Number(i.price).toFixed(3)})`
+  ).join('\n');
+  const waMsg = encodeURIComponent(
+    `Hi, I would like to purchase the following notes:\n${itemLines}\nTotal: BD ${total.toFixed(3)}\nMy Notati email: ${user.email}`
+  );
+
+  return (
+    <Modal open={open} onClose={onClose} size="lg"
+           title="Checkout"
+           subtitle={`${items.length} item${items.length !== 1 ? 's' : ''} · Total BD ${total.toFixed(3)}`}
+           footer={<>
+             <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+             <button className="btn btn-primary" onClick={onConfirm}>
+               <Icons.Check size={16}/> Done, I have paid
+             </button>
+           </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Order summary */}
+        <div>
+          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 10, letterSpacing: '.08em' }}>
+            YOUR ORDER
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {items.map(i => (
+              <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                       padding: '10px 14px', background: 'var(--notati-cream)',
+                                       borderRadius: 'var(--r-5)', border: '1px solid var(--border-2)' }}>
+                <div>
+                  <div style={{ font: 'var(--type-body)', fontWeight: 600, color: 'var(--fg-1)', fontSize: 14 }}>
+                    {i.courseName} · Ch.{i.chapterNumber}: {i.chapterTitle}
+                  </div>
+                  <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                    {i.title}
+                  </div>
+                </div>
+                <span style={{ fontWeight: 700, color: 'var(--notati-walnut)', whiteSpace: 'nowrap', marginLeft: 12 }}>
+                  BD {Number(i.price).toFixed(3)}
+                </span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '10px 14px', borderTop: '2px solid var(--border-1)', marginTop: 2 }}>
+              <span style={{ font: 'var(--type-label)', letterSpacing: '.08em', color: 'var(--fg-2)' }}>TOTAL</span>
+              <span style={{ font: 'var(--type-h3)', color: 'var(--notati-walnut)', fontSize: 22, fontWeight: 800 }}>
+                BD {total.toFixed(3)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Steps */}
+        <div>
+          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 10, letterSpacing: '.08em' }}>
+            HOW TO COMPLETE PAYMENT
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              ['1', `Send BD ${total.toFixed(3)} via BenefitPay to the number below.`],
+              ['2', 'Tap WhatsApp — your order list is pre-filled. Just hit send.'],
+              ['3', 'We will unlock all your chapters — usually within a few hours.']
+            ].map(([num, text]) => (
+              <div key={num} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--notati-walnut)',
+                               color: 'var(--notati-paper)', display: 'flex', alignItems: 'center',
+                               justifyContent: 'center', font: 'var(--type-label)', fontSize: 11, flexShrink: 0 }}>
+                  {num}
+                </span>
+                <span style={{ font: 'var(--type-body)', color: 'var(--fg-1)', paddingTop: 3 }}>{text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* BenefitPay */}
+        <div style={{ background: 'var(--notati-paper)', border: '1px solid var(--border-1)',
+                      borderRadius: 'var(--r-5)', padding: '14px 16px' }}>
+          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 8, letterSpacing: '.08em' }}>
+            BENEFITPAY NUMBER
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', fontSize: 20, letterSpacing: '.02em' }}>
+              {CONTACT.benefitpay}
+            </span>
+            <button className="btn btn-soft btn-sm" onClick={copyNumber}>
+              {copied ? <><Icons.Check size={13}/> Copied!</> : 'Copy number'}
+            </button>
+          </div>
+        </div>
+
+        {/* Contact buttons */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <a href={`https://wa.me/${CONTACT.whatsapp}?text=${waMsg}`}
+             target="_blank" rel="noopener noreferrer"
+             className="btn btn-primary"
+             style={{ flex: 1, textDecoration: 'none', justifyContent: 'center',
+                      display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Icons.Mail size={15}/> WhatsApp us
+          </a>
+          <a href={`https://instagram.com/${CONTACT.instagram}`}
+             target="_blank" rel="noopener noreferrer"
+             className="btn btn-outline"
+             style={{ flex: 1, textDecoration: 'none', justifyContent: 'center',
+                      display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Icons.User size={15}/> Instagram
+          </a>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ============================================================
+   Bag Drawer — slide-in panel with items, total, and checkout
+   ============================================================ */
+function BagDrawer({ open, items, user, onClose, onRemove, onClear }) {
+  const { toast } = useToast();
+  const [checkoutOpen, setCheckoutOpen] = useStateC(false);
+
+  useEffectC(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  const total = items.reduce((s, i) => s + Number(i.price), 0);
+
+  function handleConfirm() {
+    onClear();
+    setCheckoutOpen(false);
+    onClose();
+    toast.success('Payment sent', 'Your bag has been cleared. Your notes will be unlocked soon.');
+  }
+
+  return (
+    <>
+      {open && <div className="bag-backdrop" onClick={onClose}/>}
+      <div className={`bag-drawer ${open ? 'open' : ''}`} role="dialog" aria-label="Shopping bag">
+
+        <div className="bag-head">
+          <div>
+            <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', fontWeight: 700 }}>My bag</div>
+            <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)', marginTop: 2 }}>
+              {items.length === 0 ? 'Empty' : `${items.length} item${items.length !== 1 ? 's' : ''} · BD ${total.toFixed(3)}`}
+            </div>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close bag">
+            <Icons.Close size={18}/>
+          </button>
+        </div>
+
+        <div className="bag-body">
+          {items.length === 0 ? (
+            <div style={{ padding: '40px 24px' }}>
+              <EmptyState title="Your bag is empty"
+                          message="Browse the library and add the chapters you want to buy."/>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 20px' }}>
+              {items.map(i => (
+                <div key={i.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12,
+                                         padding: '12px 14px', background: 'var(--notati-paper)',
+                                         border: '1px solid var(--border-2)', borderRadius: 'var(--r-5)' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 'var(--r-3)', flexShrink: 0,
+                                background: 'var(--notati-walnut)', display: 'flex', alignItems: 'center',
+                                justifyContent: 'center', color: 'var(--notati-paper)',
+                                fontSize: 14, fontWeight: 700 }}>
+                    {i.chapterNumber}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ font: 'var(--type-body)', fontWeight: 600, color: 'var(--fg-1)', fontSize: 14, marginBottom: 1 }}>
+                      {i.courseName} · Ch.{i.chapterNumber}
+                    </div>
+                    <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)',
+                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {i.chapterTitle}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--notati-walnut)', marginTop: 4 }}>
+                      BD {Number(i.price).toFixed(3)}
+                    </div>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => onRemove(i.id)}
+                          aria-label="Remove from bag"
+                          style={{ flexShrink: 0, color: 'var(--notati-crimson)', padding: '6px 8px' }}>
+                    <Icons.Trash size={14}/>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {items.length > 0 && (
+          <div className="bag-foot">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ font: 'var(--type-label)', letterSpacing: '.08em', color: 'var(--fg-3)' }}>TOTAL</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--notati-walnut)', fontFamily: 'var(--font-serif)' }}>
+                BD {total.toFixed(3)}
+              </span>
+            </div>
+            <button className="btn btn-primary btn-block" onClick={() => setCheckoutOpen(true)}>
+              Checkout <Icons.ArrowRight size={16}/>
+            </button>
+          </div>
+        )}
+      </div>
+
+      <BagCheckoutModal
+        open={checkoutOpen}
+        items={items}
+        user={user}
+        onClose={() => setCheckoutOpen(false)}
+        onConfirm={handleConfirm}/>
+    </>
+  );
+}
+
+/* ============================================================
    Customer Dashboard
    ============================================================ */
-function CustomerDashboard({ user, onNav, onOpenNote }) {
+function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
   const { toast } = useToast();
-  const uploads = NotatiStore.getUploadsByUser(user.id);
-  const notes = NotatiStore.getNotes();
-  const [accessNote, setAccessNote] = useStateC(null);
+  const [notes,   setNotes]   = useStateC([]);
+  const [uploads, setUploads] = useStateC([]);
+  const [loading, setLoading] = useStateC(true);
+
+  useEffectC(() => {
+    Promise.all([NotatiAPI.getNotes(), NotatiAPI.getUploads()])
+      .then(([n, u]) => {
+        setNotes(n);
+        setUploads(u.filter(up => up.userId === user.id));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [user.id]);
 
   const ready    = uploads.filter(u => u.status === 'reviewed').length;
   const pending  = uploads.filter(u => u.status === 'pending').length;
@@ -206,7 +450,7 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
                 <div className="acts">
                   {up.status === 'reviewed' ? (
                     <button className="btn btn-soft btn-sm"
-                            onClick={() => up.noteId && onOpenNote(NotatiStore.getNoteById(up.noteId))}>
+                            onClick={() => { const n = notes.find(x => x.id === up.noteId); if (n) onOpenNote(n); }}>
                       Read note <Icons.ArrowRight size={14}/>
                     </button>
                   ) : <StatusBadge status="pending"/>}
@@ -230,17 +474,16 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
             ) : featured.map(n => {
               const canRead = NotatiStore.canReadNote(user.id, n);
               const isFree  = !n.price || Number(n.price) === 0;
+              const inBag   = bag && bag.some(i => i.id === n.id);
               return (
                 <div key={n.id} className={`notecard ${canRead ? '' : 'notecard-locked'}`}
-                     onClick={canRead ? () => onOpenNote(n) : !isFree ? () => setAccessNote(n) : undefined}
-                     style={{ position: 'relative', cursor: 'pointer' }}>
+                     onClick={canRead ? () => onOpenNote(n) : undefined}
+                     style={{ position: 'relative', cursor: canRead ? 'pointer' : 'default' }}>
                   {isFree && (
                     <span style={{ position: 'absolute', top: 10, right: 10,
                                    background: 'var(--notati-sage)', color: 'var(--notati-paper)',
                                    font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
-                                   borderRadius: 'var(--r-pill)' }}>
-                      FREE
-                    </span>
+                                   borderRadius: 'var(--r-pill)' }}>FREE</span>
                   )}
                   {canRead && !isFree && (
                     <span style={{ position: 'absolute', top: 10, right: 10,
@@ -250,12 +493,20 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
                       <Icons.Check size={9}/> For you
                     </span>
                   )}
+                  {inBag && !canRead && (
+                    <span style={{ position: 'absolute', top: 10, right: 10,
+                                   background: 'var(--notati-sage)', color: 'var(--notati-paper)',
+                                   font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
+                                   borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <Icons.Bag size={9}/> In bag
+                    </span>
+                  )}
                   <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{n.college}</div>
                   <span className="course">{n.courseName}</span>
                   <div className="title">{n.title}</div>
                   <div className="desc">{n.description}</div>
                   <div className="tags">
-                    {n.tags.slice(0, 2).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
+                    {(n.tags || []).slice(0, 2).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
                   </div>
                   <div className="foot">
                     <span>{fmtDate(n.publishedAt)}</span>
@@ -263,12 +514,19 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
                         Read <Icons.ArrowRight size={13}/>
                       </span>
-                    ) : (
-                      <button className="btn btn-primary btn-sm notecard-buy-btn"
-                              onClick={(e) => { e.stopPropagation(); setAccessNote(n); }}>
-                        <Icons.Lock size={12}/> BD {Number(n.price).toFixed(3)}
-                      </button>
-                    )}
+                    ) : !isFree ? (
+                      inBag ? (
+                        <button className="btn btn-sm btn-in-bag"
+                                onClick={(e) => { e.stopPropagation(); onRemoveFromBag && onRemoveFromBag(n.id); }}>
+                          <Icons.Check size={12}/> In bag
+                        </button>
+                      ) : (
+                        <button className="btn btn-primary btn-sm"
+                                onClick={(e) => { e.stopPropagation(); onAddToBag && onAddToBag(n); toast.success('Added to bag', n.title); }}>
+                          <Icons.Bag size={12}/> Add to bag
+                        </button>
+                      )
+                    ) : null}
                   </div>
                 </div>
               );
@@ -277,7 +535,6 @@ function CustomerDashboard({ user, onNav, onOpenNote }) {
         </section>
       </div>
 
-      <GetAccessModal open={!!accessNote} note={accessNote} onClose={() => setAccessNote(null)}/>
     </div>
   );
 }
@@ -321,15 +578,30 @@ function UploadContent({ user, onDone }) {
     setDescription(''); setFile(null); setErr('');
   }
 
-  function submit(e) {
+  async function submit(e) {
     e.preventDefault();
     setBusy(true);
     setErr('');
+    if (!college)              { setErr('Select your college.');       setBusy(false); return; }
+    if (!courseName.trim())    { setErr('Enter the course name.');     setBusy(false); return; }
+    if (!chapterNumber.trim()) { setErr('Enter the chapter number.');  setBusy(false); return; }
+    if (!chapterTitle.trim())  { setErr('Enter the chapter title.');   setBusy(false); return; }
+    if (!file)                 { setErr('Pick a file first.');         setBusy(false); return; }
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (!['pdf','pptx','docx'].includes(ext)) {
+      setErr('We only accept .pdf, .pptx, or .docx for now.'); setBusy(false); return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('title', `${courseName} — Ch.${chapterNumber}: ${chapterTitle}`);
+    fd.append('description', description || '');
+    fd.append('college', college);
+    fd.append('course_name', courseName);
+    fd.append('chapter_number', chapterNumber);
+    fd.append('chapter_title', chapterTitle);
     try {
-      // // TODO: Replace with POST /api/uploads multipart
-      NotatiStore.addUpload({ userId: user.id, college, courseName, chapterNumber, chapterTitle, description, file });
-      toast.success('Submitted for review',
-        "We'll be in touch when your Note is ready — usually within 48 hours.");
+      await NotatiAPI.submitUpload(fd);
+      toast.success('Submitted for review', "We will be in touch when your Note is ready.");
       clearForm();
       setTimeout(() => { setBusy(false); onDone && onDone(); }, 300);
     } catch (e2) {
@@ -460,14 +732,27 @@ function UploadContent({ user, onDone }) {
    ============================================================ */
 function MyUploads({ user, onNav, onOpenNote }) {
   const { toast } = useToast();
-  const [uploads, setUploads] = useStateC(NotatiStore.getUploadsByUser(user.id));
+  const [uploads, setUploads] = useStateC([]);
+  const [notes,   setNotes]   = useStateC([]);
+  const [loading, setLoading] = useStateC(true);
   const [q, setQ] = useStateC('');
   const [filter, setFilter] = useStateC('all');
 
+  function reload() {
+    return Promise.all([NotatiAPI.getUploads(), NotatiAPI.getNotes()])
+      .then(([u, n]) => {
+        setUploads(u.filter(up => up.userId === user.id));
+        setNotes(n);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }
+
+  useEffectC(() => { reload(); }, [user.id]);
+
   useEffectC(() => {
-    const f = () => setUploads(NotatiStore.getUploadsByUser(user.id));
-    window.addEventListener('focus', f);
-    return () => window.removeEventListener('focus', f);
+    window.addEventListener('focus', reload);
+    return () => window.removeEventListener('focus', reload);
   }, [user.id]);
 
   const filtered = useMemoC(() => {
@@ -481,7 +766,7 @@ function MyUploads({ user, onNav, onOpenNote }) {
   }, [uploads, q, filter]);
 
   function openNote(up) {
-    const n = NotatiStore.getNoteById(up.noteId);
+    const n = notes.find(x => x.id === up.noteId);
     if (n) onOpenNote(n);
     else toast.info('No note attached yet', 'An admin will publish one soon.');
   }
@@ -627,12 +912,19 @@ function FilterDropdown({ value, onChange, options, placeholder, icon }) {
 /* ============================================================
    Notes Library — two-level browse: course grid → chapter list
    ============================================================ */
-function NotesLibrary({ user, onOpenNote }) {
-  const [notes] = useStateC(NotatiStore.getNotes());
+function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
+  const { toast } = useToast();
+  const [notes,   setNotes]   = useStateC([]);
+  const [loading, setLoading] = useStateC(true);
   const [q, setQ] = useStateC('');
+
+  useEffectC(() => {
+    NotatiAPI.getNotes()
+      .then(n => { setNotes(n); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
   const [college, setCollege] = useStateC('all');
-  const [selectedCourse, setSelectedCourse] = useStateC(null); // null = grid, string = course name
-  const [accessNote, setAccessNote] = useStateC(null);
+  const [selectedCourse, setSelectedCourse] = useStateC(null);
 
   // College filter resets course selection
   function pickCollege(c) {
@@ -694,19 +986,19 @@ function NotesLibrary({ user, onOpenNote }) {
             {courseChapters.map(n => {
               const canRead = NotatiStore.canReadNote(user.id, n);
               const isFree  = !n.price || Number(n.price) === 0;
+              const inBag   = bag && bag.some(i => i.id === n.id);
               return (
                 <div key={n.id}
-                     className={`filerow ${!canRead && !isFree ? 'notecard-locked' : ''}`}
-                     onClick={canRead ? () => onOpenNote(n) : !isFree ? () => setAccessNote(n) : undefined}
-                     style={{ cursor: 'pointer', padding: '14px 16px', borderRadius: 'var(--r-5)',
-                              border: '1px solid var(--border-2)', background: 'var(--notati-paper)',
-                              display: 'flex', alignItems: 'center', gap: 14 }}>
+                     style={{ cursor: canRead ? 'pointer' : 'default', padding: '14px 16px',
+                              borderRadius: 'var(--r-5)', border: '1px solid var(--border-2)',
+                              background: 'var(--notati-paper)', display: 'flex', alignItems: 'center', gap: 14 }}
+                     onClick={canRead ? () => onOpenNote(n) : undefined}>
 
                   {/* Chapter number bubble */}
                   <div style={{ width: 42, height: 42, borderRadius: 'var(--r-3)', flexShrink: 0,
-                                background: isFree ? 'var(--notati-sage)' : canRead ? 'var(--notati-walnut)' : 'var(--notati-cream)',
+                                background: isFree ? 'var(--notati-sage)' : canRead ? 'var(--notati-walnut)' : inBag ? 'var(--notati-forest)' : 'var(--notati-cream)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: (isFree || canRead) ? 'var(--notati-paper)' : 'var(--fg-3)',
+                                color: (isFree || canRead || inBag) ? 'var(--notati-paper)' : 'var(--fg-3)',
                                 fontSize: 16, fontWeight: 700 }}>
                     {n.chapterNumber}
                   </div>
@@ -731,10 +1023,15 @@ function NotesLibrary({ user, onOpenNote }) {
                                      borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                         <Icons.Check size={9}/> For you
                       </span>
+                    ) : inBag ? (
+                      <button className="btn btn-sm btn-in-bag"
+                              onClick={(e) => { e.stopPropagation(); onRemoveFromBag && onRemoveFromBag(n.id); }}>
+                        <Icons.Check size={12}/> In bag
+                      </button>
                     ) : (
                       <button className="btn btn-primary btn-sm"
-                              onClick={(e) => { e.stopPropagation(); setAccessNote(n); }}>
-                        <Icons.Lock size={12}/> BD {Number(n.price).toFixed(3)}
+                              onClick={(e) => { e.stopPropagation(); onAddToBag && onAddToBag(n); toast.success('Added to bag', `${n.courseName} Ch.${n.chapterNumber}`); }}>
+                        <Icons.Bag size={12}/> BD {Number(n.price).toFixed(3)}
                       </button>
                     )}
                     {canRead && (
@@ -750,7 +1047,6 @@ function NotesLibrary({ user, onOpenNote }) {
           </div>
         </section>
 
-        <GetAccessModal open={!!accessNote} note={accessNote} onClose={() => setAccessNote(null)}/>
       </div>
     );
   }
@@ -832,7 +1128,6 @@ function NotesLibrary({ user, onOpenNote }) {
         </div>
       </section>
 
-      <GetAccessModal open={!!accessNote} note={accessNote} onClose={() => setAccessNote(null)}/>
     </div>
   );
 }
@@ -849,9 +1144,12 @@ function NoteReader({ note, open, onClose }) {
   if (!open || !note) return null;
 
   function download() {
-    // // TODO: Replace with GET /api/notes/:id/file
-    NotatiStore.fakeDownload(note.fileName);
-    toast.success('Download started', note.fileName);
+    if (note.pdfFile) {
+      window.open(note.pdfFile, '_blank');
+    } else {
+      NotatiStore.fakeDownload(note.fileName || note.title + '.pdf');
+      toast.success('Download started', note.fileName || note.title);
+    }
   }
 
   return (
@@ -864,9 +1162,11 @@ function NoteReader({ note, open, onClose }) {
                <Icons.Download size={15}/> Download PDF
              </button>
            </>}>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-        {note.tags.map(t => <span key={t} className="tag tag-soft">{t}</span>)}
-      </div>
+      {(note.tags || []).length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+          {note.tags.map(t => <span key={t} className="tag tag-soft">{t}</span>)}
+        </div>
+      )}
       <p style={{ font: 'var(--type-body)', color: 'var(--fg-2)', margin: '0 0 14px', lineHeight: 1.55 }}>
         {note.description}
       </p>
@@ -917,4 +1217,4 @@ function NoteReader({ note, open, onClose }) {
   );
 }
 
-Object.assign(window, { CustomerDashboard, UploadContent, MyUploads, NotesLibrary, NoteReader });
+Object.assign(window, { CustomerDashboard, UploadContent, MyUploads, NotesLibrary, NoteReader, BagDrawer, BagCheckoutModal });

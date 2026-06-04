@@ -40,32 +40,41 @@ function setHash(role, page) {
    Dashboard Shell (sidebar + topbar + page)
    ============================================================ */
 function DashboardShell({ user, role, page, onNav, onLogout }) {
-  const [sideOpen, setSideOpen]   = useStateApp(false);   // mobile drawer
-  const [collapsed, setCollapsed] = useStateApp(false);   // desktop collapse
+  const [sideOpen, setSideOpen]   = useStateApp(false);
+  const [collapsed, setCollapsed] = useStateApp(false);
   const [search, setSearch]       = useStateApp('');
-  const [publishUpload, setPublishUpload] = useStateApp(null); // {upload} | null
-  const [editingNote, setEditingNote]     = useStateApp(null); // existing note | null
-  const [readingNote, setReadingNote]     = useStateApp(null); // note for student viewer
+  const [publishUpload, setPublishUpload] = useStateApp(null);
+  const [editingNote, setEditingNote]     = useStateApp(null);
+  const [readingNote, setReadingNote]     = useStateApp(null);
   const [refreshKey, setRefreshKey]       = useStateApp(0);
+  const [bagItems, setBagItems]           = useStateApp(() => NotatiStore.getBag());
+  const [bagOpen, setBagOpen]             = useStateApp(false);
 
   const isAdmin = role === 'admin';
   const nav     = isAdmin ? ADMIN_NAV : CUSTOMER_NAV;
   const current = page || 'overview';
 
-  // close drawer when nav changes
   useEffectApp(() => { setSideOpen(false); }, [page]);
 
-  // page title for crumb
   const navMap = nav.filter(n => !n.section);
   const currentLabel = (navMap.find(n => n.id === current) || navMap[0]).label;
 
-  // Bump-refresh: when an admin publishes/edits a note, child views may need fresh data.
   function bump() { setRefreshKey(k => k + 1); }
 
   function handlePublishFromInbox(upload) {
     const linkedNote = upload && upload.noteId ? NotatiStore.getNoteById(upload.noteId) : null;
     setPublishUpload(upload);
     setEditingNote(linkedNote);
+  }
+
+  function handleAddToBag(note) {
+    setBagItems([...NotatiStore.addToBag(note)]);
+  }
+  function handleRemoveFromBag(noteId) {
+    setBagItems([...NotatiStore.removeFromBag(noteId)]);
+  }
+  function handleClearBag() {
+    setBagItems(NotatiStore.clearBag());
   }
 
   function shellCls() {
@@ -91,12 +100,13 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
           current={currentLabel}
           role={isAdmin ? 'Admin' : 'Student'}
           onMenu={() => {
-            // On mobile, this opens the drawer; on desktop, toggle collapse.
             if (window.matchMedia('(max-width: 720px)').matches) setSideOpen(o => !o);
             else setCollapsed(c => !c);
           }}
           search={search}
-          onSearch={setSearch}/>
+          onSearch={setSearch}
+          bagCount={!isAdmin ? bagItems.length : 0}
+          onOpenBag={!isAdmin ? () => setBagOpen(true) : undefined}/>
 
         <div className="page">
           {/* ----- ADMIN PAGES ----- */}
@@ -109,14 +119,15 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
           {isAdmin && current === 'notes' && (
             <NotesManager user={user}
                           onEdit={(n) => { setEditingNote(n); setPublishUpload(null); }}
-                          onAddNew={() => { setEditingNote(null); setPublishUpload({ id: null }); /* trigger modal w/o upload */ }}/>
+                          onAddNew={() => { setEditingNote(null); setPublishUpload({ id: null }); }}/>
           )}
           {isAdmin && current === 'users' && <UsersList/>}
           {isAdmin && current === 'access' && <AccessManager/>}
 
           {/* ----- CUSTOMER PAGES ----- */}
           {!isAdmin && current === 'overview' && (
-            <CustomerDashboard user={user} onNav={onNav} onOpenNote={setReadingNote}/>
+            <CustomerDashboard user={user} onNav={onNav} onOpenNote={setReadingNote}
+                               bag={bagItems} onAddToBag={handleAddToBag} onRemoveFromBag={handleRemoveFromBag}/>
           )}
           {!isAdmin && current === 'upload' && (
             <UploadContent user={user} onDone={() => onNav('uploads')}/>
@@ -125,12 +136,13 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
             <MyUploads user={user} onNav={onNav} onOpenNote={setReadingNote}/>
           )}
           {!isAdmin && current === 'library' && (
-            <NotesLibrary user={user} onOpenNote={setReadingNote}/>
+            <NotesLibrary user={user} onOpenNote={setReadingNote}
+                          bag={bagItems} onAddToBag={handleAddToBag} onRemoveFromBag={handleRemoveFromBag}/>
           )}
         </div>
       </div>
 
-      {/* ----- ADMIN: publish/edit note modal (shared) ----- */}
+      {/* ----- ADMIN: publish/edit note modal ----- */}
       <UploadNoteModal
         open={!!publishUpload || (!!editingNote && !publishUpload)}
         upload={publishUpload && publishUpload.id ? publishUpload : null}
@@ -141,6 +153,17 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
 
       {/* ----- CUSTOMER: read note ----- */}
       <NoteReader open={!!readingNote} note={readingNote} onClose={() => setReadingNote(null)}/>
+
+      {/* ----- CUSTOMER: bag drawer ----- */}
+      {!isAdmin && (
+        <BagDrawer
+          open={bagOpen}
+          items={bagItems}
+          user={user}
+          onClose={() => setBagOpen(false)}
+          onRemove={handleRemoveFromBag}
+          onClear={handleClearBag}/>
+      )}
     </div>
   );
 }

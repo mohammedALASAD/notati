@@ -22,6 +22,12 @@
 <body>
   <div id="root"></div>
 
+  <!-- API base URL — change this to your Render backend URL in production -->
+  <script>window.NOTATI_API_URL = 'http://localhost:8000/api';</script>
+
+  <!-- API client (plain JS, must be before store.js) -->
+  <script src="src/api.js"></script>
+
   <!-- Storage layer (plain JS) -->
   <script src="src/store.js"></script>
 

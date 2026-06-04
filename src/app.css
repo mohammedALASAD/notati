@@ -738,6 +738,79 @@ input, textarea, select { font-family: inherit; }
 }
 
 /* ============================================================
+   BAG DRAWER
+   ============================================================ */
+.bag-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(61, 43, 31, .4);
+  z-index: 800;
+  animation: fadeIn 180ms var(--ease-out);
+}
+.bag-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(420px, 100vw);
+  background: var(--notati-cream);
+  box-shadow: -4px 0 40px rgba(0, 0, 0, .16);
+  z-index: 801;
+  display: flex; flex-direction: column;
+  transform: translateX(100%);
+  transition: transform .26s cubic-bezier(.4, 0, .2, 1);
+}
+.bag-drawer.open { transform: translateX(0); }
+.bag-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border-2);
+  background: var(--notati-paper);
+  flex-shrink: 0;
+}
+.bag-body { flex: 1; overflow-y: auto; }
+.bag-foot {
+  padding: 16px 20px 24px;
+  border-top: 1px solid var(--border-2);
+  background: var(--notati-paper);
+  flex-shrink: 0;
+}
+
+/* Bag icon button in topbar */
+.bag-btn {
+  position: relative;
+  background: none; border: none; cursor: pointer;
+  padding: 7px; border-radius: var(--r-4);
+  color: var(--fg-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background var(--dur-base) var(--ease-out);
+  margin-right: 2px;
+}
+.bag-btn:hover { background: var(--notati-cream); color: var(--fg-1); }
+.bag-badge {
+  position: absolute; top: 1px; right: 1px;
+  background: var(--notati-walnut); color: var(--notati-paper);
+  font-size: 9px; font-weight: 700; line-height: 1;
+  min-width: 16px; height: 16px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 3px;
+  transform: translate(4px, -4px);
+  pointer-events: none;
+}
+
+/* "In bag" button variant */
+.btn-in-bag {
+  background: rgba(122, 155, 107, .15);
+  color: var(--notati-forest);
+  border-color: transparent;
+}
+.btn-in-bag:hover:not(:disabled) {
+  background: rgba(160, 48, 48, .1);
+  color: var(--notati-crimson);
+}
+
+@media (max-width: 480px) {
+  .bag-drawer { width: 100vw; }
+}
+
+/* ============================================================
    PDF VIEWER (simulated)
    ============================================================ */
 .pdfview {

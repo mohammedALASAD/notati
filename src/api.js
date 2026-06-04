@@ -1,0 +1,236 @@
+/* ============================================================
+   Notati — API client
+   Talks to the Django REST backend.
+   Base URL: window.NOTATI_API_URL (set in index.html for prod)
+             or http://localhost:8000/api (default for dev)
+   ============================================================ */
+(function () {
+  const BASE = (window.NOTATI_API_URL || 'http://localhost:8000/api').replace(/\/$/, '');
+  const NS   = 'notati:v6';
+  const KEYS = {
+    token:   NS + ':token',
+    refresh: NS + ':refresh',
+    user:    NS + ':user_data',
+  };
+
+  /* ── token helpers ────────────────────────────────────────── */
+  function getToken()    { try { return localStorage.getItem(KEYS.token); } catch(e) { return null; } }
+  function setToken(t)   { try { localStorage.setItem(KEYS.token, t); } catch(e) {} }
+  function clearTokens() {
+    try {
+      [KEYS.token, KEYS.refresh, KEYS.user].forEach(k => localStorage.removeItem(k));
+    } catch(e) {}
+  }
+
+  /* ── stored user (fast boot, no extra round-trip) ────────── */
+  function getStoredUser() {
+    try { const s = localStorage.getItem(KEYS.user); return s ? JSON.parse(s) : null; }
+    catch(e) { return null; }
+  }
+  function setStoredUser(u) {
+    try { localStorage.setItem(KEYS.user, JSON.stringify(u)); } catch(e) {}
+  }
+
+  /* ── core fetch wrapper ───────────────────────────────────── */
+  async function req(method, path, body, isFormData) {
+    const token = getToken();
+    const headers = {};
+    if (!isFormData) headers['Content-Type'] = 'application/json';
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+    const opts = { method, headers };
+    if (body) opts.body = isFormData ? body : JSON.stringify(body);
+
+    let res;
+    try {
+      res = await fetch(BASE + path, opts);
+    } catch (e) {
+      throw new Error('Cannot reach server. Is the backend running?');
+    }
+
+    if (res.status === 204) return null;
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      // DRF error shape: { detail: "..." } or { field: ["msg"] }
+      const msg = data.detail
+        || Object.entries(data).map(([k, v]) => `${k}: ${[].concat(v).join(', ')}`).join('; ')
+        || res.statusText;
+      throw new Error(msg);
+    }
+
+    return data;
+  }
+
+  /* ── shape adapters ───────────────────────────────────────── */
+  function toUser(u) {
+    return {
+      id:       String(u.id),
+      name:     u.name,
+      email:    u.email,
+      role:     u.role === 'admin' ? 'admin' : 'customer',
+      college:  u.college || '',
+      joinedAt: u.created_at || '',
+    };
+  }
+
+  function toNote(n) {
+    const fileName = n.pdf_file ? n.pdf_file.split('/').pop() : '';
+    return {
+      id:            String(n.id),
+      _numId:        n.id,
+      courseId:      n.course,
+      courseName:    n.course_name,
+      college:       n.college || '',
+      chapterNumber: String(n.chapter_number),
+      chapterTitle:  n.chapter_title,
+      title:         n.chapter_title,
+      description:   n.description || '',
+      price:         parseFloat(n.price || 0),
+      isFree:        n.is_free,
+      hasAccess:     n.has_access,
+      pdfFile:       n.pdf_file || null,
+      fileName:      fileName,
+      tags:          [],
+      publishedAt:   n.created_at,
+    };
+  }
+
+  function toUpload(u) {
+    const fileName = u.file ? u.file.split('/').pop() : '';
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    return {
+      id:            String(u.id),
+      userId:        String(u.user),
+      userEmail:     u.user_email,
+      userName:      u.user_name,
+      title:         u.title,
+      description:   u.description || '',
+      college:       u.college || '',
+      courseName:    u.course_name || '',
+      chapterNumber: u.chapter_number || '',
+      chapterTitle:  u.chapter_title || u.title,
+      status:        u.status,
+      fileUrl:       u.file_url,
+      fileName:      fileName,
+      fileType:      ext,
+      sizeKB:        0,
+      noteId:        u.note ? String(u.note) : null,
+      uploadedAt:    u.created_at,
+    };
+  }
+
+  /* ── list helper (handles paginated or plain arrays) ─────── */
+  function list(data) { return Array.isArray(data) ? data : (data.results || []); }
+
+  /* ── API ──────────────────────────────────────────────────── */
+  const NotatiAPI = {
+
+    /* Auth */
+    async login(email, password) {
+      const tokens = await req('POST', '/auth/login/', { email, password });
+      setToken(tokens.access);
+      try { localStorage.setItem(KEYS.refresh, tokens.refresh); } catch(e) {}
+      const me = await req('GET', '/auth/me/');
+      const user = toUser(me);
+      setStoredUser(user);
+      return user;
+    },
+
+    async register(name, email, password) {
+      await req('POST', '/auth/register/', { name, email, password });
+      return NotatiAPI.login(email, password);
+    },
+
+    async me() {
+      const data = await req('GET', '/auth/me/');
+      return toUser(data);
+    },
+
+    logout() { clearTokens(); },
+
+    getStoredUser,
+    getToken,
+    isLoggedIn() { return !!getToken(); },
+
+    /* Courses */
+    async getCourses() {
+      const data = await req('GET', '/courses/');
+      return list(data);
+    },
+
+    /* Notes */
+    async getNotes(courseId) {
+      const q = courseId ? `?course=${courseId}` : '';
+      const data = await req('GET', '/notes/' + q);
+      return list(data).map(toNote);
+    },
+
+    async getNote(id) {
+      return toNote(await req('GET', `/notes/${id}/`));
+    },
+
+    async createNote(payload) {
+      const isForm = payload instanceof FormData;
+      return toNote(await req('POST', '/notes/', payload, isForm));
+    },
+
+    async updateNote(id, payload) {
+      return toNote(await req('PATCH', `/notes/${id}/`, payload));
+    },
+
+    async deleteNote(id) {
+      await req('DELETE', `/notes/${id}/`);
+    },
+
+    /* Access */
+    async getAccessList(userId) {
+      const q = userId ? `?user=${userId}` : '';
+      const data = await req('GET', '/access/' + q);
+      return list(data);
+    },
+
+    async grantAccess(userId, noteId) {
+      return req('POST', '/access/', { user: Number(userId), note: Number(noteId) });
+    },
+
+    async revokeAccess(accessId) {
+      await req('DELETE', `/access/${accessId}/`);
+    },
+
+    /* Uploads */
+    async getUploads() {
+      const data = await req('GET', '/uploads/');
+      return list(data).map(toUpload);
+    },
+
+    async submitUpload(formData) {
+      return req('POST', '/uploads/', formData, true);
+    },
+
+    async updateUpload(id, payload) {
+      return req('PATCH', `/uploads/${id}/`, payload);
+    },
+
+    /* Courses: find by name or create */
+    async findOrCreateCourse(name, college) {
+      const data = await req('GET', '/courses/?search=' + encodeURIComponent(name));
+      const all  = list(data);
+      const hit  = all.find(c => c.name.toLowerCase() === name.trim().toLowerCase());
+      if (hit) return hit;
+      return req('POST', '/courses/', { name: name.trim(), college: college || '' });
+    },
+
+    /* Admin */
+    async getUsers() {
+      const data = await req('GET', '/admin/users/');
+      return list(data).map(toUser);
+    },
+
+    async getStats() {
+      return req('GET', '/admin/stats/');
+    },
+  };
+
+  window.NotatiAPI = NotatiAPI;
+})();

@@ -1,6 +1,6 @@
 /* ============================================================
-   Notati Prototype — Authentication views (Login + Signup)
-   Uses NotatiStore for sign in / sign up.
+   Notati — Authentication views (Login + Signup)
+   Calls NotatiAPI for real JWT-based auth.
    Calls props.onAuth(user) on success.
    ============================================================ */
 
@@ -20,7 +20,7 @@ function AuthShell({ children, switchTo, mode }) {
           <h1>From the student, to the student.</h1>
           <p>
             Dense chapters turned into clear, scannable notes — written by students
-            who actually sat the exam. Submit your slides, get back something you'll
+            who actually sat the exam. Submit your slides, get back something you will
             actually read at 2am.
           </p>
         </div>
@@ -46,29 +46,23 @@ function AuthShell({ children, switchTo, mode }) {
 /* ---------- Login ---------- */
 function LoginView({ onAuth, switchTo }) {
   const { toast } = useToast();
-  const [email, setEmail] = useStateA('');
+  const [email,    setEmail]    = useStateA('');
   const [password, setPassword] = useStateA('');
-  const [err, setErr] = useStateA('');
-  const [busy, setBusy] = useStateA(false);
+  const [err,      setErr]      = useStateA('');
+  const [busy,     setBusy]     = useStateA(false);
 
-  function submit(e) {
+  async function submit(e) {
     e.preventDefault();
     setErr(''); setBusy(true);
     try {
-      // // TODO: Replace with POST /api/auth/login
-      const user = NotatiStore.logIn({ email, password });
-      toast.success(`Welcome back, ${user.name.split(' ')[0]}.`, 'Loading your dashboard…');
+      const user = await NotatiAPI.login(email, password);
+      toast.success(`Welcome back, ${user.name.split(' ')[0]}.`, 'Loading your dashboard...');
       setTimeout(() => onAuth(user), 250);
     } catch (e2) {
       setErr(e2.message);
       toast.error('Could not sign in', e2.message);
       setBusy(false);
     }
-  }
-
-  function fillDemo(role) {
-    if (role === 'admin') { setEmail('admin@notati.com'); setPassword('admin123'); }
-    else                  { setEmail('mariam@uob.edu.bh'); setPassword('demo1234'); }
   }
 
   return (
@@ -93,21 +87,9 @@ function LoginView({ onAuth, switchTo }) {
         </div>
 
         <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
-          {busy ? 'Signing in…' : 'Sign in'}
+          {busy ? 'Signing in...' : 'Sign in'}
           {!busy && <Icons.ArrowRight size={16}/>}
         </button>
-
-        <div className="demo-hint">
-          <strong>Prototype shortcut</strong> — try the demo accounts:
-          <div className="row">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => fillDemo('admin')}>
-              <code>admin@notati.com</code>
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => fillDemo('customer')}>
-              <code>mariam@uob.edu.bh</code>
-            </button>
-          </div>
-        </div>
       </form>
     </AuthShell>
   );
@@ -116,21 +98,19 @@ function LoginView({ onAuth, switchTo }) {
 /* ---------- Sign up ---------- */
 function SignupView({ onAuth, switchTo }) {
   const { toast } = useToast();
-  const [name, setName] = useStateA('');
-  const [email, setEmail] = useStateA('');
+  const [name,     setName]     = useStateA('');
+  const [email,    setEmail]    = useStateA('');
   const [password, setPassword] = useStateA('');
-  const [confirm, setConfirm] = useStateA('');
-  const [err, setErr] = useStateA('');
-  const [busy, setBusy] = useStateA(false);
+  const [confirm,  setConfirm]  = useStateA('');
+  const [err,      setErr]      = useStateA('');
+  const [busy,     setBusy]     = useStateA(false);
 
-  function submit(e) {
+  async function submit(e) {
     e.preventDefault();
     setErr(''); setBusy(true);
     if (password !== confirm) { setErr("Passwords don't match."); setBusy(false); return; }
     try {
-      // // TODO: Replace with POST /api/auth/signup
-      const user = NotatiStore.signUp({ name, email, password });
-      NotatiStore.setSession(user);
+      const user = await NotatiAPI.register(name, email, password);
       toast.success('Welcome to Notati.', "You're in. Upload your first file whenever you're ready.");
       setTimeout(() => onAuth(user), 300);
     } catch (e2) {
@@ -176,7 +156,7 @@ function SignupView({ onAuth, switchTo }) {
         {err ? <div className="err" style={{ marginTop: 8, marginBottom: 12 }}>{err}</div> : null}
 
         <button className="btn btn-primary btn-block" type="submit" disabled={busy} style={{ marginTop: 8 }}>
-          {busy ? 'Creating your account…' : 'Create account'}
+          {busy ? 'Creating your account...' : 'Create account'}
           {!busy && <Icons.ArrowRight size={16}/>}
         </button>
 

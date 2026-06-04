@@ -43,23 +43,26 @@ function uploaderOf(upload, users) {
    Admin Dashboard
    ============================================================ */
 function AdminDashboard({ user, onNav }) {
-  const [users] = useStateAd(NotatiStore.getUsers());
-  const [uploads, setUploads] = useStateAd(NotatiStore.getUploads());
-  const [notes] = useStateAd(NotatiStore.getNotes());
+  const [users,   setUsers]   = useStateAd([]);
+  const [uploads, setUploads] = useStateAd([]);
+  const [notes,   setNotes]   = useStateAd([]);
 
-  const pending  = uploads.filter(u => u.status === 'pending');
-  const reviewed = uploads.filter(u => u.status === 'reviewed');
-  const customers = users.filter(u => u.role === 'customer');
+  function loadAll() {
+    return Promise.all([NotatiAPI.getUsers(), NotatiAPI.getUploads(), NotatiAPI.getNotes()])
+      .then(([u, up, n]) => { setUsers(u); setUploads(up); setNotes(n); });
+  }
 
-  // Refresh on focus so changes from other tabs show up
+  useEffectAd(() => { loadAll(); }, []);
   useEffectAd(() => {
-    const f = () => setUploads(NotatiStore.getUploads());
-    window.addEventListener('focus', f);
-    return () => window.removeEventListener('focus', f);
+    window.addEventListener('focus', loadAll);
+    return () => window.removeEventListener('focus', loadAll);
   }, []);
 
-  const recentInbox  = [...uploads].slice(0, 5);
-  const recentNotes  = [...notes].slice(0, 3);
+  const pending   = uploads.filter(u => u.status === 'pending');
+  const reviewed  = uploads.filter(u => u.status === 'reviewed');
+  const customers = users.filter(u => u.role === 'customer');
+  const recentInbox = uploads.slice(0, 5);
+  const recentNotes = notes.slice(0, 3);
 
   return (
     <div>
@@ -196,13 +199,18 @@ function AdminDashboard({ user, onNav }) {
    ============================================================ */
 function ContentInbox({ user, onPublish }) {
   const { toast } = useToast();
-  const [users] = useStateAd(NotatiStore.getUsers());
-  const [uploads, setUploads] = useStateAd(NotatiStore.getUploads());
+  const [users,   setUsers]   = useStateAd([]);
+  const [uploads, setUploads] = useStateAd([]);
   const [q, setQ] = useStateAd('');
-  const [filter, setFilter] = useStateAd('all'); // all | pending | reviewed
+  const [filter, setFilter] = useStateAd('all');
   const [typeFilter, setTypeFilter] = useStateAd('all');
 
-  function refresh() { setUploads(NotatiStore.getUploads()); }
+  function refresh() {
+    Promise.all([NotatiAPI.getUploads(), NotatiAPI.getUsers()])
+      .then(([up, u]) => { setUploads(up); setUsers(u); });
+  }
+
+  useEffectAd(() => { refresh(); }, []);
 
   const filtered = useMemoAd(() => {
     const ql = q.trim().toLowerCase();
@@ -216,9 +224,9 @@ function ContentInbox({ user, onPublish }) {
   }, [uploads, q, filter, typeFilter, users]);
 
   function handleDownload(up) {
-    // // TODO: Replace with GET /api/uploads/:id/download
-    NotatiStore.fakeDownload(up.fileName);
-    toast.success('Download started', up.fileName);
+    if (up.fileUrl) { window.open(up.fileUrl, '_blank'); return; }
+    NotatiStore.fakeDownload(up.fileName || up.title);
+    toast.success('Download started', up.fileName || up.title);
   }
 
   return (
@@ -344,6 +352,8 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
   const [description, setDescription]   = useStateAd('');
   const [pdfName, setPdfName]           = useStateAd('');
   const [pdfSize, setPdfSize]           = useStateAd(0);
+  const [pdfFile, setPdfFile]           = useStateAd(null);
+  const [busy, setBusy]                 = useStateAd(false);
   const [err, setErr]                   = useStateAd('');
 
   useEffectAd(() => {
@@ -382,41 +392,45 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
     }
     setPdfName(f.name);
     setPdfSize(Math.max(1, Math.round(f.size / 1024)));
+    setPdfFile(f);
     setErr('');
   }
 
-  function publish() {
-    if (!title.trim())           { setErr('Note title is required.'); return; }
+  async function publish() {
     if (!college)                { setErr('Please select a college.'); return; }
     if (!courseName.trim())      { setErr('Course name is required.'); return; }
     if (!String(chapterNumber).trim()) { setErr('Chapter number is required.'); return; }
     if (!chapterTitle.trim())    { setErr('Chapter title is required.'); return; }
-    if (!existingNote && !pdfName) { setErr('Please attach a PDF.'); return; }
-
+    setBusy(true); setErr('');
     try {
-      const tagArr = tags.split(',').map(t => t.trim()).filter(Boolean);
+      const course = await NotatiAPI.findOrCreateCourse(courseName.trim(), college);
       if (existingNote) {
-        // // TODO: Replace with PATCH /api/notes/:id
-        NotatiStore.updateNote(existingNote.id, {
-          title, college, courseName, chapterNumber, chapterTitle, price,
-          tags: tagArr, description,
-          fileName: pdfName || existingNote.fileName, sizeKB: pdfSize || existingNote.sizeKB
-        });
-        toast.success('Note updated', `${title} is live.`);
+        const payload = {
+          course: course.id,
+          chapter_number: Number(chapterNumber),
+          chapter_title:  chapterTitle.trim(),
+          description:    description.trim(),
+          price:          Number(price),
+        };
+        await NotatiAPI.updateNote(existingNote._numId, payload);
+        toast.success('Note updated', `Ch.${chapterNumber} is live.`);
       } else {
-        // // TODO: Replace with POST /api/notes (multipart)
-        NotatiStore.addNote({
-          uploadId: upload ? upload.id : null,
-          title, college, courseName, chapterNumber, chapterTitle, price,
-          tags: tagArr, description,
-          fileName: pdfName, sizeKB: pdfSize, publishedBy: user.id
-        });
-        toast.success('Note published', `${title} is live in the library.`);
+        const fd = new FormData();
+        fd.append('course',          course.id);
+        fd.append('chapter_number',  chapterNumber);
+        fd.append('chapter_title',   chapterTitle.trim());
+        fd.append('description',     description.trim());
+        fd.append('price',           price);
+        if (pdfFile) fd.append('pdf_file', pdfFile);
+        await NotatiAPI.createNote(fd);
+        toast.success('Note published', `Ch.${chapterNumber} is live in the library.`);
       }
       onPublished && onPublished();
       onClose();
     } catch (e2) {
       setErr(e2.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -429,9 +443,9 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
              : 'Standalone note — not linked to a specific submission.'}
            footer={<>
              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-             <button className="btn btn-primary" onClick={publish}>
-               {existingNote ? 'Save changes' : 'Publish note'}
-               <Icons.Check size={16}/>
+             <button className="btn btn-primary" onClick={publish} disabled={busy}>
+               {busy ? 'Saving...' : (existingNote ? 'Save changes' : 'Publish note')}
+               {!busy && <Icons.Check size={16}/>}
              </button>
            </>}>
       <div className="field">
@@ -522,32 +536,37 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
    ============================================================ */
 function NotesManager({ user, onEdit, onAddNew }) {
   const { toast } = useToast();
-  const [notes, setNotes] = useStateAd(NotatiStore.getNotes());
+  const [notes, setNotes] = useStateAd([]);
   const [q, setQ] = useStateAd('');
   const [confirmDel, setConfirmDel] = useStateAd(null);
 
-  function refresh() { setNotes(NotatiStore.getNotes()); }
+  function refresh() { NotatiAPI.getNotes().then(n => setNotes(n)).catch(() => {}); }
+  useEffectAd(() => { refresh(); }, []);
 
   const filtered = useMemoAd(() => {
     const ql = q.trim().toLowerCase();
     if (!ql) return notes;
     return notes.filter(n =>
-      [n.title, n.college, n.courseName, n.chapterTitle, n.description, ...n.tags].some(s => (s || '').toLowerCase().includes(ql))
+      [n.title, n.college, n.courseName, n.chapterTitle, n.description].some(s => (s || '').toLowerCase().includes(ql))
     );
   }, [q, notes]);
 
-  function doDelete() {
+  async function doDelete() {
     if (!confirmDel) return;
-    NotatiStore.deleteNote(confirmDel.id);
-    toast.success('Note removed', `${confirmDel.title} is no longer published.`);
-    setConfirmDel(null);
-    refresh();
+    try {
+      await NotatiAPI.deleteNote(confirmDel._numId);
+      toast.success('Note removed', `Ch.${confirmDel.chapterNumber} is no longer published.`);
+      setConfirmDel(null);
+      refresh();
+    } catch(e2) {
+      toast.error('Could not delete', e2.message);
+    }
   }
 
   function preview(n) {
-    // // TODO: Replace with GET /api/notes/:id/file
-    NotatiStore.fakeDownload(n.fileName);
-    toast.info('Opened preview', n.fileName);
+    if (n.pdfFile) { window.open(n.pdfFile, '_blank'); return; }
+    NotatiStore.fakeDownload(n.fileName || n.title + '.pdf');
+    toast.info('Opened preview', n.fileName || n.title);
   }
 
   return (
@@ -673,11 +692,15 @@ function NotesManager({ user, onEdit, onAddNew }) {
    Users List
    ============================================================ */
 function UsersList() {
-  const [users, setUsers] = useStateAd(NotatiStore.getUsers());
+  const [users,   setUsers]   = useStateAd([]);
+  const [uploads, setUploads] = useStateAd([]);
   const [q, setQ] = useStateAd('');
   const [role, setRole] = useStateAd('all');
 
-  const uploads = NotatiStore.getUploads();
+  useEffectAd(() => {
+    Promise.all([NotatiAPI.getUsers(), NotatiAPI.getUploads()])
+      .then(([u, up]) => { setUsers(u); setUploads(up); });
+  }, []);
   const filtered = useMemoAd(() => {
     const ql = q.trim().toLowerCase();
     return users.filter(u => {
@@ -752,7 +775,7 @@ function UsersList() {
                           {u.role === 'admin' ? 'Admin' : 'Student'}
                         </span>
                       </td>
-                      <td data-l="Joined">{fmtDate(u.joinedAt)}</td>
+                      <td data-l="Joined">{fmtDate(u.joinedAt || u.created_at)}</td>
                       <td className="r" data-l="Uploads">
                         <span style={{ font: 'var(--type-body-bold)' }}>{ups}</span>
                       </td>
@@ -769,43 +792,95 @@ function UsersList() {
 }
 
 /* ============================================================
-   Access Manager — admin grants access after manual BenefitPay payment
+   Access Manager — admin grants / revokes access after BenefitPay payment
    ============================================================ */
 function AccessManager() {
   const { toast } = useToast();
-  const [email, setEmail]         = useStateAd('');
-  const [foundUser, setFoundUser] = useStateAd(null);
-  const [notFound, setNotFound]   = useStateAd(false);
-  const [ownedIds, setOwnedIds]   = useStateAd(new Set());
-  const notes = NotatiStore.getNotes();
+  const [email, setEmail]               = useStateAd('');
+  const [foundUser, setFoundUser]       = useStateAd(null);
+  const [notFound, setNotFound]         = useStateAd(false);
+  const [accessMap, setAccessMap]       = useStateAd({}); // { noteNumId: accessId }
+  const [noteQ, setNoteQ]               = useStateAd('');
+  const [accessFilter, setAccessFilter] = useStateAd('all');
+  const [notes, setNotes]               = useStateAd([]);
+  const [users, setUsers]               = useStateAd([]);
 
-  function search(e) {
+  useEffectAd(() => {
+    Promise.all([NotatiAPI.getNotes(), NotatiAPI.getUsers()])
+      .then(([n, u]) => { setNotes(n); setUsers(u); });
+  }, []);
+
+  async function searchUser(e) {
     e && e.preventDefault();
-    const u = NotatiStore.getUserByEmail(email.trim());
-    if (u && u.role === 'customer') {
+    const emailLower = email.trim().toLowerCase();
+    const u = users.find(x => x.email.toLowerCase() === emailLower && x.role !== 'admin');
+    if (u) {
       setFoundUser(u);
       setNotFound(false);
-      setOwnedIds(NotatiStore.getPurchasedNoteIds(u.id));
+      setNoteQ('');
+      setAccessFilter('all');
+      try {
+        const access = await NotatiAPI.getAccessList(u.id);
+        const map = {};
+        access.forEach(a => { map[String(a.note)] = a.id; });
+        setAccessMap(map);
+      } catch(e2) {
+        toast.error('Could not load access', e2.message);
+      }
     } else {
       setFoundUser(null);
       setNotFound(true);
-      setOwnedIds(new Set());
+      setAccessMap({});
     }
   }
 
-  function grant(note) {
+  async function grant(note) {
     if (!foundUser) return;
-    NotatiStore.purchaseNote(foundUser.id, note.id);
-    setOwnedIds(NotatiStore.getPurchasedNoteIds(foundUser.id));
-    toast.success('Access granted', `${foundUser.name} can now read "${note.title}".`);
+    try {
+      const a = await NotatiAPI.grantAccess(foundUser.id, note._numId);
+      setAccessMap(prev => ({ ...prev, [String(note._numId)]: a.id }));
+      toast.success('Access granted', `${foundUser.name} can now read Ch.${note.chapterNumber}.`);
+    } catch(e2) {
+      toast.error('Could not grant', e2.message);
+    }
   }
 
-  function revoke(note) {
+  async function revoke(note) {
     if (!foundUser) return;
-    NotatiStore.revokePurchase(foundUser.id, note.id);
-    setOwnedIds(NotatiStore.getPurchasedNoteIds(foundUser.id));
-    toast.info('Access removed', `${foundUser.name} no longer has access to "${note.title}".`);
+    const accessId = accessMap[String(note._numId)];
+    if (!accessId) return;
+    try {
+      await NotatiAPI.revokeAccess(accessId);
+      setAccessMap(prev => { const m = { ...prev }; delete m[String(note._numId)]; return m; });
+      toast.info('Access removed', `${foundUser.name} no longer has access to Ch.${note.chapterNumber}.`);
+    } catch(e2) {
+      toast.error('Could not revoke', e2.message);
+    }
   }
+
+  const groupedNotes = useMemoAd(() => {
+    const ql = noteQ.trim().toLowerCase();
+    const filtered = notes.filter(n => {
+      const isFree = !n.price || Number(n.price) === 0;
+      const owned  = !!accessMap[String(n._numId)];
+      if (accessFilter === 'granted' && !(owned || isFree)) return false;
+      if (accessFilter === 'locked'  && (owned || isFree))  return false;
+      if (!ql) return true;
+      return [n.title, n.courseName, n.chapterTitle, n.college, String(n.chapterNumber)].some(
+        s => (s || '').toLowerCase().includes(ql)
+      );
+    });
+    const map = {};
+    filtered.forEach(n => {
+      if (!map[n.courseName]) map[n.courseName] = { courseName: n.courseName, college: n.college, notes: [] };
+      map[n.courseName].notes.push(n);
+    });
+    Object.values(map).forEach(g => g.notes.sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber)));
+    return Object.values(map).sort((a, b) => a.courseName.localeCompare(b.courseName));
+  }, [notes, noteQ, accessFilter, accessMap]);
+
+  const paidNotes   = notes.filter(n => n.price && Number(n.price) > 0);
+  const grantedPaid = paidNotes.filter(n => !!accessMap[String(n._numId)]).length;
 
   return (
     <div>
@@ -814,107 +889,179 @@ function AccessManager() {
           <span className="tag tag-soft">06 · Access</span>
           <h1>Unlock access</h1>
           <p className="sub">
-            After receiving a BenefitPay payment, find the student by email and grant them access to the note they paid for.
+            After receiving a BenefitPay payment, find the student by email then grant them access to the chapter they paid for.
           </p>
         </div>
       </div>
 
+      {/* Step 1 — find student */}
       <section className="panel">
-        <div className="panel-head"><h3>Find student</h3></div>
+        <div className="panel-head"><h3>1 · Find student</h3></div>
         <div className="panel-body">
-          <form onSubmit={search} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', maxWidth: 520 }}>
+          <form onSubmit={searchUser} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', maxWidth: 540 }}>
             <div className="field" style={{ flex: 1, margin: 0 }}>
               <label>Student email</label>
               <input value={email} onChange={(e) => setEmail(e.target.value)}
                      placeholder="e.g. mariam@uob.edu.bh" type="email" required/>
             </div>
             <button type="submit" className="btn btn-primary" style={{ flexShrink: 0 }}>
-              Search <Icons.Search size={15}/>
+              <Icons.Search size={15}/> Find
             </button>
           </form>
-
           {notFound && (
             <div className="err" style={{ marginTop: 14 }}>No student found with that email address.</div>
           )}
-
-          {foundUser && (
-            <div style={{ marginTop: 24 }}>
-              {/* Student card */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14,
-                            padding: '12px 16px', background: 'var(--notati-cream)',
-                            border: '1px solid var(--border-2)', borderRadius: 'var(--r-5)',
-                            marginBottom: 20 }}>
-                <span className="avatar-sm">{foundUser.name.charAt(0)}</span>
-                <div>
-                  <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>{foundUser.name}</div>
-                  <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-                    {foundUser.email} · Joined {fmtDate(foundUser.joinedAt)}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 12, letterSpacing: '.08em' }}>
-                GRANT ACCESS TO A NOTE
-              </div>
-
-              {notes.length === 0 ? (
-                <EmptyState title="No published notes" message="Publish some notes first."/>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {notes.map(n => {
-                    const owned = ownedIds.has(n.id);
-                    const isFree = String(n.chapterNumber).trim() === '1';
-                    return (
-                      <div key={n.id} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        gap: 12, padding: '10px 14px', border: '1px solid var(--border-1)',
-                        borderRadius: 'var(--r-5)',
-                        background: owned || isFree ? 'var(--notati-cream)' : 'var(--notati-paper)'
-                      }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                            <span style={{ font: 'var(--type-body)', fontWeight: 600, color: 'var(--fg-1)' }}>
-                              {n.title}
-                            </span>
-                            {isFree && (
-                              <span className="tag tag-soft" style={{ fontSize: 10 }}>Free ch.1</span>
-                            )}
-                          </div>
-                          <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-                            {n.college} · {n.courseName} · Ch.{n.chapterNumber}
-                          </div>
-                        </div>
-                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {isFree ? (
-                            <span style={{ font: 'var(--type-label)', fontSize: 11, color: 'var(--fg-3)' }}>
-                              Free for everyone
-                            </span>
-                          ) : owned ? (
-                            <>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
-                                             color: 'var(--notati-sage)', font: 'var(--type-label)', fontSize: 12 }}>
-                                <Icons.Check size={14}/> Has access
-                              </span>
-                              <button className="btn btn-danger btn-sm" onClick={() => revoke(n)}
-                                      title="Withdraw access">
-                                <Icons.Close size={13}/> Revoke
-                              </button>
-                            </>
-                          ) : (
-                            <button className="btn btn-primary btn-sm" onClick={() => grant(n)}>
-                              <Icons.Lock size={13}/> Grant access
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </section>
+
+      {/* Step 2 — manage access */}
+      {foundUser && (
+        <section className="panel" style={{ marginTop: 16 }}>
+          <div className="panel-head">
+            <h3>2 · Manage access</h3>
+          </div>
+          <div className="panel-body">
+
+            {/* Student card */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14,
+                          padding: '14px 18px', background: 'var(--notati-cream)',
+                          border: '1px solid var(--border-2)', borderRadius: 'var(--r-5)',
+                          marginBottom: 20 }}>
+              <span className="avatar-sm" style={{ width: 40, height: 40, fontSize: 18 }}>
+                {foundUser.name.charAt(0)}
+              </span>
+              <div style={{ flex: 1 }}>
+                <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 2 }}>{foundUser.name}</div>
+                <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                  {foundUser.email} · Joined {fmtDate(foundUser.joinedAt)}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ font: 'var(--type-h3)', color: 'var(--notati-walnut)', fontSize: 22, fontWeight: 800 }}>
+                  {grantedPaid}
+                </div>
+                <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 11, color: 'var(--fg-3)' }}>
+                  paid chapters unlocked
+                </div>
+              </div>
+            </div>
+
+            {/* Search + filter bar */}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
+              <div className="search-mini" style={{ flex: 1, minWidth: 220 }}>
+                <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+                <input value={noteQ} onChange={(e) => setNoteQ(e.target.value)}
+                       placeholder="Search by course, chapter, or title…"/>
+              </div>
+              <div className="filters" style={{ margin: 0 }}>
+                {[
+                  { id: 'all',     label: 'All notes' },
+                  { id: 'granted', label: 'Has access' },
+                  { id: 'locked',  label: 'Locked' }
+                ].map(o => (
+                  <button key={o.id}
+                          className={`btn btn-sm ${accessFilter === o.id ? 'btn-primary' : 'btn-soft'}`}
+                          onClick={() => setAccessFilter(o.id)}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Notes grouped by course */}
+            {notes.length === 0 ? (
+              <EmptyState title="No published notes" message="Publish some notes first."/>
+            ) : groupedNotes.length === 0 ? (
+              <EmptyState title="No matches" message="Try a different search term or filter."/>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {groupedNotes.map(({ courseName, college, notes: cNotes }) => (
+                  <div key={courseName}>
+                    {/* Course header */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                      <span className="tag tag-walnut" style={{ fontSize: 12 }}>{courseName}</span>
+                      <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                        {college}
+                      </span>
+                      <div style={{ flex: 1, height: 1, background: 'var(--border-2)' }}/>
+                      <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                        {cNotes.length} chapter{cNotes.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+
+                    {/* Chapter rows */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {cNotes.map(n => {
+                        const owned   = !!accessMap[String(n._numId)];
+                        const isFree  = !n.price || Number(n.price) === 0;
+                        return (
+                          <div key={n.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            padding: '10px 14px', borderRadius: 'var(--r-5)',
+                            border: '1px solid var(--border-1)',
+                            background: isFree ? 'var(--notati-cream)' : owned ? '#f0faf4' : 'var(--notati-paper)'
+                          }}>
+                            {/* Chapter bubble */}
+                            <div style={{ width: 36, height: 36, borderRadius: 'var(--r-3)', flexShrink: 0,
+                                          background: isFree ? 'var(--notati-sage)' : owned ? 'var(--notati-walnut)' : 'var(--notati-cream)',
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          color: (isFree || owned) ? 'var(--notati-paper)' : 'var(--fg-3)',
+                                          fontSize: 14, fontWeight: 700 }}>
+                              {n.chapterNumber}
+                            </div>
+
+                            {/* Chapter info */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span style={{ font: 'var(--type-body)', fontWeight: 600, color: 'var(--fg-1)', fontSize: 14 }}>
+                                  Ch.{n.chapterNumber}: {n.chapterTitle}
+                                </span>
+                                {isFree ? (
+                                  <span className="tag tag-soft" style={{ fontSize: 10 }}>FREE</span>
+                                ) : (
+                                  <span className="tag tag-bark" style={{ fontSize: 10 }}>BD {Number(n.price).toFixed(3)}</span>
+                                )}
+                              </div>
+                              <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12,
+                                            color: 'var(--fg-3)', marginTop: 2, whiteSpace: 'nowrap',
+                                            overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {n.title}
+                              </div>
+                            </div>
+
+                            {/* Action */}
+                            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {isFree ? (
+                                <span style={{ font: 'var(--type-label)', fontSize: 11, color: 'var(--fg-3)' }}>
+                                  Free for everyone
+                                </span>
+                              ) : owned ? (
+                                <>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+                                                 color: 'var(--notati-sage)', font: 'var(--type-label)', fontSize: 12 }}>
+                                    <Icons.Check size={14}/> Has access
+                                  </span>
+                                  <button className="btn btn-danger btn-sm" onClick={() => revoke(n)}>
+                                    <Icons.Close size={12}/> Revoke
+                                  </button>
+                                </>
+                              ) : (
+                                <button className="btn btn-primary btn-sm" onClick={() => grant(n)}>
+                                  <Icons.Lock size={12}/> Grant access
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
