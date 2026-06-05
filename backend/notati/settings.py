@@ -16,6 +16,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'cloudinary_storage',
+    'cloudinary',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -78,6 +80,18 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# ── Cloud storage (Cloudinary) ─────────────────────────────────────────────────
+# When CLOUDINARY_CLOUD_NAME is set in the environment, all uploaded files go to
+# Cloudinary instead of the local ephemeral disk (required for Render free tier).
+_cloudinary_cloud = config('CLOUDINARY_CLOUD_NAME', default='')
+if _cloudinary_cloud:
+    CLOUDINARY_STORAGE = {
+        'CLOUD_NAME': _cloudinary_cloud,
+        'API_KEY':    config('CLOUDINARY_API_KEY', default=''),
+        'API_SECRET': config('CLOUDINARY_API_SECRET', default=''),
+    }
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.RawMediaCloudinaryStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
