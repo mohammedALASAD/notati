@@ -59,7 +59,7 @@ function AdminDashboard({ user, onNav }) {
   }, []);
 
   const pending   = uploads.filter(u => u.status === 'pending');
-  const reviewed  = uploads.filter(u => u.status === 'reviewed');
+  const reviewed  = uploads.filter(u => u.status === 'approved');
   const customers = users.filter(u => u.role === 'customer');
   const recentInbox = uploads.slice(0, 5);
   const recentNotes = notes.slice(0, 3);
@@ -242,10 +242,10 @@ function ContentInbox({ user, onPublish }) {
       <section className="panel">
         <div className="panel-head" style={{ flexWrap: 'wrap', gap: 12 }}>
           <div className="filters" style={{ margin: 0 }}>
-            {['all', 'pending', 'reviewed'].map(k => (
+            {['all', 'pending', 'approved'].map(k => (
               <button key={k} className={`btn btn-sm ${filter === k ? 'btn-primary' : 'btn-soft'}`}
                       onClick={() => setFilter(k)} style={{ borderRadius: 'var(--r-pill)' }}>
-                {{ all: 'All', pending: 'Pending', reviewed: 'Reviewed' }[k]}
+                {{ all: 'All', pending: 'Pending', approved: 'Approved' }[k]}
                 <span style={{ opacity: .6, marginLeft: 4 }}>
                   {k === 'all' ? uploads.length : uploads.filter(u => u.status === k).length}
                 </span>
@@ -424,7 +424,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
         if (pdfFile) fd.append('pdf_file', pdfFile);
         const note = await NotatiAPI.createNote(fd);
         if (upload && upload.id) {
-          await NotatiAPI.updateUpload(upload.id, { status: 'reviewed', note: note._numId });
+          await NotatiAPI.updateUpload(upload.id, { status: 'approved', note: note._numId });
         }
         if (upload && upload.userId) {
           await NotatiAPI.grantAccess(upload.userId, note._numId).catch(() => {});
@@ -434,7 +434,11 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
       onPublished && onPublished();
       onClose();
     } catch (e2) {
-      setErr(e2.message);
+      let msg = e2.message;
+      if (msg.includes('unique set') || msg.includes('chapter_number')) {
+        msg = 'A note for this course and chapter number already exists. Go to Notes Manager to edit or delete it first, then try again.';
+      }
+      setErr(msg);
     } finally {
       setBusy(false);
     }
