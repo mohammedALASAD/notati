@@ -422,7 +422,13 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
         fd.append('description',     description.trim());
         fd.append('price',           price);
         if (pdfFile) fd.append('pdf_file', pdfFile);
-        await NotatiAPI.createNote(fd);
+        const note = await NotatiAPI.createNote(fd);
+        if (upload && upload.id) {
+          await NotatiAPI.updateUpload(upload.id, { status: 'reviewed', note: note._numId });
+        }
+        if (upload && upload.userId) {
+          await NotatiAPI.grantAccess(upload.userId, note._numId).catch(() => {});
+        }
         toast.success('Note published', `Ch.${chapterNumber} is live in the library.`);
       }
       onPublished && onPublished();
