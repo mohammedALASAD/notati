@@ -380,7 +380,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
       .catch(() => setLoading(false));
   }, [user.id]);
 
-  const ready    = uploads.filter(u => u.status === 'reviewed').length;
+  const ready    = uploads.filter(u => u.status === 'approved').length;
   const pending  = uploads.filter(u => u.status === 'pending').length;
   const accessibleCount = notes.filter(n => NotatiStore.canReadNote(user.id, n)).length;
 
@@ -448,7 +448,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
                   <div className="meta">{up.fileName} · {fmtRelative(up.uploadedAt)} · {fmtSize(up.sizeKB)}</div>
                 </div>
                 <div className="acts">
-                  {up.status === 'reviewed' ? (
+                  {up.status === 'approved' ? (
                     <button className="btn btn-soft btn-sm"
                             onClick={() => { const n = notes.find(x => x.id === up.noteId); if (n) onOpenNote(n); }}>
                       Read note <Icons.ArrowRight size={14}/>
@@ -661,7 +661,7 @@ function UploadContent({ user, onDone }) {
                   </div>
                 </>
               )}
-              <input ref={inputRef} type="file"
+              <input ref={inputRef} type="file" style={{display:'none'}}
                      accept=".pdf,.pptx,.docx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                      onChange={(e) => handleFile(e.target.files[0])}/>
             </div>
@@ -758,7 +758,7 @@ function MyUploads({ user, onNav, onOpenNote }) {
   const filtered = useMemoC(() => {
     const ql = q.trim().toLowerCase();
     return uploads.filter(up => {
-      if (filter === 'ready'   && up.status !== 'reviewed') return false;
+      if (filter === 'ready'   && up.status !== 'approved') return false;
       if (filter === 'pending' && up.status !== 'pending')  return false;
       if (!ql) return true;
       return [up.title, up.fileName].some(s => (s || '').toLowerCase().includes(ql));
@@ -773,7 +773,7 @@ function MyUploads({ user, onNav, onOpenNote }) {
 
   const counts = {
     all:     uploads.length,
-    ready:   uploads.filter(u => u.status === 'reviewed').length,
+    ready:   uploads.filter(u => u.status === 'approved').length,
     pending: uploads.filter(u => u.status === 'pending').length
   };
 
@@ -835,8 +835,8 @@ function MyUploads({ user, onNav, onOpenNote }) {
                 </div>
               </div>
               <div className="acts">
-                <StatusBadge status={up.status === 'reviewed' ? 'ready' : 'pending'}/>
-                {up.status === 'reviewed'
+                <StatusBadge status={up.status === 'approved' ? 'ready' : 'pending'}/>
+                {up.status === 'approved'
                   ? <button className="btn btn-primary btn-sm" onClick={() => openNote(up)}>
                       Read note <Icons.ArrowRight size={14}/>
                     </button>
