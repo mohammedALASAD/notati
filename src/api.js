@@ -248,17 +248,25 @@
     async downloadNoteFile(noteId, filename) {
       await _proxyDownload(BASE + `/notes/${noteId}/download/`, filename);
     },
+
+    async previewNoteFile(noteId) {
+      await _proxyOpen(BASE + `/notes/${noteId}/download/`);
+    },
   };
 
-  async function _proxyDownload(url, filename) {
+  async function _proxyFetch(url) {
     const token = getToken();
     const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
     const res = await fetch(url, { headers });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || 'Download failed');
+      throw new Error(data.detail || 'Request failed');
     }
-    const blob = await res.blob();
+    return res.blob();
+  }
+
+  async function _proxyDownload(url, filename) {
+    const blob = await _proxyFetch(url);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = filename || 'download';
@@ -266,6 +274,13 @@
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+
+  async function _proxyOpen(url) {
+    const blob = await _proxyFetch(url);
+    const objectUrl = URL.createObjectURL(blob);
+    window.open(objectUrl, '_blank');
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
   }
 
   window.NotatiAPI = NotatiAPI;

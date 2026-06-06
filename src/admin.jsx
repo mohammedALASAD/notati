@@ -574,9 +574,9 @@ function NotesManager({ user, onEdit, onAddNew }) {
   }
 
   function preview(n) {
-    if (n.pdfFile) { window.open(n.pdfFile, '_blank'); return; }
-    NotatiStore.fakeDownload(n.fileName || n.title + '.pdf');
-    toast.info('Opened preview', n.fileName || n.title);
+    if (!n._numId || !n.pdfFile) { toast.info('No file', 'No PDF is attached to this note yet.'); return; }
+    NotatiAPI.previewNoteFile(n._numId)
+      .catch(e => toast.error('Preview failed', e.message));
   }
 
   return (

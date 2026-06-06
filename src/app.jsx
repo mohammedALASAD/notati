@@ -61,8 +61,11 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
 
   function bump() { setRefreshKey(k => k + 1); }
 
-  function handlePublishFromInbox(upload) {
-    const linkedNote = upload && upload.noteId ? NotatiStore.getNoteById(upload.noteId) : null;
+  async function handlePublishFromInbox(upload) {
+    let linkedNote = null;
+    if (upload && upload.noteId) {
+      try { linkedNote = await NotatiAPI.getNote(Number(upload.noteId)); } catch(e) {}
+    }
     setPublishUpload(upload);
     setEditingNote(linkedNote);
   }
