@@ -1,9 +1,12 @@
+import re
+import time
+import urllib.request
 from rest_framework import generics, status, filters
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.http import FileResponse
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 
 from .models import User, Course, Note, Access, Upload
@@ -13,6 +16,41 @@ from .serializers import (
     AccessSerializer, UploadSerializer, UploadAdminSerializer,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
+
+
+# ── Cloudinary proxy helper ───────────────────────────────────────────────────
+
+def _proxy_file_response(file_field):
+    """Fetch a file via Cloudinary Admin API (bypasses CDN delivery blocks) and return as HttpResponse."""
+    url = file_field.url
+    filename = file_field.name.split('/')[-1]
+
+    if 'res.cloudinary.com' in url:
+        import cloudinary.utils
+        match = re.search(r'/raw/upload/(?:v\d+/)?(.+)$', url)
+        if not match:
+            raise ValueError('Cannot parse Cloudinary URL')
+        path = match.group(1)          # e.g. media/uploads/file.pdf
+        parts = path.rsplit('.', 1)
+        public_id = parts[0]
+        fmt = parts[1] if len(parts) > 1 else ''
+        private_url = cloudinary.utils.private_download_url(
+            public_id, fmt,
+            resource_type='raw',
+            attachment=True,
+            expires_at=int(time.time()) + 300,
+        )
+        req = urllib.request.Request(private_url, headers={'User-Agent': 'Notati/1.0'})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            content = resp.read()
+            content_type = resp.headers.get('Content-Type', 'application/octet-stream')
+    else:
+        content = file_field.read()
+        content_type = 'application/octet-stream'
+
+    response = HttpResponse(content, content_type=content_type)
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -90,17 +128,31 @@ class NoteDownloadView(APIView):
 
     def get(self, request, pk):
         note = get_object_or_404(Note, pk=pk)
-
         if not note.is_free:
             has_access = note.access_grants.filter(user=request.user).exists()
             if not has_access:
                 return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
-
         if not note.pdf_file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            return _proxy_file_response(note.pdf_file)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return FileResponse(note.pdf_file.open('rb'), as_attachment=False,
-                            filename=f'{note}.pdf')
+
+class UploadDownloadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        upload = get_object_or_404(Upload, pk=pk)
+        if request.user.role != 'admin' and upload.user != request.user:
+            return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
+        if not upload.file:
+            return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            return _proxy_file_response(upload.file)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ── Access ────────────────────────────────────────────────────────────────────

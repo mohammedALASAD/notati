@@ -241,24 +241,32 @@
       return req('GET', '/admin/stats/');
     },
 
-    async downloadFile(url, filename) {
-      if (!url) return;
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('fetch failed');
-        const blob = await res.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename || 'download';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-      } catch (_) {
-        window.open(url, '_blank');
-      }
+    async downloadUploadFile(uploadId, filename) {
+      await _proxyDownload(BASE + `/uploads/${uploadId}/download/`, filename);
+    },
+
+    async downloadNoteFile(noteId, filename) {
+      await _proxyDownload(BASE + `/notes/${noteId}/download/`, filename);
     },
   };
+
+  async function _proxyDownload(url, filename) {
+    const token = getToken();
+    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Download failed');
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename || 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
 
   window.NotatiAPI = NotatiAPI;
 })();

@@ -23,8 +23,9 @@ urlpatterns = [
     path('access/<int:pk>/',    views.AccessDetailView.as_view(),     name='access-detail'),
 
     # Uploads
-    path('uploads/',            views.UploadListCreateView.as_view(), name='upload-list'),
-    path('uploads/<int:pk>/',   views.UploadDetailView.as_view(),     name='upload-detail'),
+    path('uploads/',                        views.UploadListCreateView.as_view(),  name='upload-list'),
+    path('uploads/<int:pk>/',               views.UploadDetailView.as_view(),      name='upload-detail'),
+    path('uploads/<int:pk>/download/',      views.UploadDownloadView.as_view(),    name='upload-download'),
 
     # Admin
     path('admin/users/',        views.AdminUserListView.as_view(),    name='admin-users'),

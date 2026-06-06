@@ -1144,8 +1144,9 @@ function NoteReader({ note, open, onClose }) {
   if (!open || !note) return null;
 
   function download() {
-    if (note.pdfFile) {
-      NotatiAPI.downloadFile(note.pdfFile, note.fileName || note.title + '.pdf');
+    if (note._numId) {
+      NotatiAPI.downloadNoteFile(note._numId, note.fileName || note.title + '.pdf')
+        .catch(e => toast.error('Download failed', e.message));
     } else {
       toast.error('No file', 'No PDF is attached to this note yet.');
     }
