@@ -1145,10 +1145,9 @@ function NoteReader({ note, open, onClose }) {
 
   function download() {
     if (note.pdfFile) {
-      window.open(note.pdfFile, '_blank');
+      NotatiAPI.downloadFile(note.pdfFile, note.fileName || note.title + '.pdf');
     } else {
-      NotatiStore.fakeDownload(note.fileName || note.title + '.pdf');
-      toast.success('Download started', note.fileName || note.title);
+      toast.error('No file', 'No PDF is attached to this note yet.');
     }
   }
 

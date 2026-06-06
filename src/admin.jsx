@@ -224,9 +224,8 @@ function ContentInbox({ user, onPublish }) {
   }, [uploads, q, filter, typeFilter, users]);
 
   function handleDownload(up) {
-    if (up.fileUrl) { window.open(up.fileUrl, '_blank'); return; }
-    NotatiStore.fakeDownload(up.fileName || up.title);
-    toast.success('Download started', up.fileName || up.title);
+    if (up.fileUrl) { NotatiAPI.downloadFile(up.fileUrl, up.fileName || up.title); return; }
+    toast.error('No file', 'This upload has no attached file.');
   }
 
   return (
