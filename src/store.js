@@ -1,11 +1,10 @@
 /* ============================================================
    Notati — Store
-   Auth, notes, uploads, and access now live in the Django API.
+   Auth, notes, uploads, and access live in the Django API.
    This file only handles:
      - Session (reads the user object stored by NotatiAPI.login)
      - Bag (localStorage only, cleared after checkout)
      - canReadNote (uses note.hasAccess from API)
-     - fakeDownload (placeholder until real PDF serving)
    ============================================================ */
 
 (function () {
@@ -61,21 +60,9 @@
     return updated;
   }
 
-  /* ── Simulated download ────────────────────────────────────── */
-  function fakeDownload(filename) {
-    const text = `[Notati] Placeholder for ${filename}.\nIn production the real PDF is served by the API.`;
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
   window.NotatiStore = {
     getSession, clearSession,
     canReadNote,
     getBag, addToBag, removeFromBag, clearBag, getBagTotal,
-    fakeDownload,
   };
 })();

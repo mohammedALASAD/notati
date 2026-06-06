@@ -62,15 +62,6 @@
     return data;
   }
 
-  /* ── Cloudinary: force download for raw files ────────────── */
-  function toDownloadUrl(url) {
-    if (!url) return url;
-    if (url.includes('res.cloudinary.com') && url.includes('/raw/upload/')) {
-      return url.replace('/raw/upload/', '/raw/upload/fl_attachment/');
-    }
-    return url;
-  }
-
   /* ── shape adapters ───────────────────────────────────────── */
   function toUser(u) {
     return {
@@ -98,7 +89,7 @@
       price:         parseFloat(n.price || 0),
       isFree:        n.is_free,
       hasAccess:     n.has_access,
-      pdfFile:       toDownloadUrl(n.pdf_file) || null,
+      pdfFile:       n.pdf_file || null,
       fileName:      fileName,
       tags:          [],
       publishedAt:   n.created_at,
@@ -120,7 +111,7 @@
       chapterNumber: u.chapter_number || '',
       chapterTitle:  u.chapter_title || u.title,
       status:        u.status,
-      fileUrl:       toDownloadUrl(u.file_url),
+      fileUrl:       u.file_url || null,
       fileName:      fileName,
       fileType:      ext,
       sizeKB:        0,
@@ -220,6 +211,10 @@
 
     async updateUpload(id, payload) {
       return req('PATCH', `/uploads/${id}/`, payload);
+    },
+
+    async deleteUpload(id) {
+      await req('DELETE', `/uploads/${id}/`);
     },
 
     /* Courses: find by name or create */

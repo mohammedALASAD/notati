@@ -92,7 +92,7 @@ function AdminDashboard({ user, onNav }) {
               delta={{ text: `${reviewed.length} reviewed · ${pending.length} pending` }}
               icon="Inbox"/>
         <Stat tone="sage" label="Published notes" num={notes.length}
-              delta={{ dir: 'up', text: '+1 this week' }}
+              delta={{ text: notes.length > 0 ? `${notes.length} in the library` : 'Nothing published yet' }}
               icon="Notes"/>
         <Stat tone="amber" label="Registered users" num={users.length}
               delta={{ text: `${customers.length} students` }}
@@ -204,6 +204,7 @@ function ContentInbox({ user, onPublish }) {
   const [q, setQ] = useStateAd('');
   const [filter, setFilter] = useStateAd('all');
   const [typeFilter, setTypeFilter] = useStateAd('all');
+  const [confirmDel, setConfirmDel] = useStateAd(null);
 
   function refresh() {
     Promise.all([NotatiAPI.getUploads(), NotatiAPI.getUsers()])
@@ -211,6 +212,17 @@ function ContentInbox({ user, onPublish }) {
   }
 
   useEffectAd(() => { refresh(); }, []);
+
+  async function handleDelete(up) {
+    try {
+      await NotatiAPI.deleteUpload(up.id);
+      toast.success('Deleted', `"${up.title}" removed.`);
+      setConfirmDel(null);
+      refresh();
+    } catch(e) {
+      toast.error('Could not delete', e.message);
+    }
+  }
 
   const filtered = useMemoAd(() => {
     const ql = q.trim().toLowerCase();
@@ -323,6 +335,9 @@ function ContentInbox({ user, onPublish }) {
                             : <button className="btn btn-soft btn-sm" onClick={() => onPublish(up)}>
                                 <Icons.Edit size={14}/> Update
                               </button>}
+                          <button className="btn btn-danger btn-sm" title="Delete" onClick={() => setConfirmDel(up)}>
+                            <Icons.Trash size={15}/>
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -333,6 +348,30 @@ function ContentInbox({ user, onPublish }) {
           )}
         </div>
       </section>
+
+      <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)}
+             title="Delete this submission?"
+             subtitle="The file record will be removed. This cannot be undone."
+             footer={<>
+               <button className="btn btn-ghost" onClick={() => setConfirmDel(null)}>Cancel</button>
+               <button className="btn btn-primary"
+                       style={{ background: 'var(--notati-crimson)', borderColor: 'var(--notati-crimson)' }}
+                       onClick={() => handleDelete(confirmDel)}>
+                 <Icons.Trash size={15}/> Delete
+               </button>
+             </>}>
+        {confirmDel && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <FileTypeChip type={confirmDel.fileType}/>
+            <div>
+              <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>{confirmDel.title}</div>
+              <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                {confirmDel.fileName} · {confirmDel.userEmail}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
