@@ -26,17 +26,26 @@ def _proxy_file_response(file_field):
     filename = file_field.name.split('/')[-1]
 
     if 'res.cloudinary.com' in url:
+        import cloudinary
         import cloudinary.utils
+        from django.conf import settings as _s
+        cs = getattr(_s, 'CLOUDINARY_STORAGE', {})
+        if cs:
+            cloudinary.config(
+                cloud_name=cs.get('CLOUD_NAME', ''),
+                api_key=cs.get('API_KEY', ''),
+                api_secret=cs.get('API_SECRET', ''),
+                secure=True,
+            )
         match = re.search(r'/raw/upload/(?:v\d+/)?(.+)$', url)
         if not match:
-            raise ValueError('Cannot parse Cloudinary URL')
-        path = match.group(1)          # e.g. media/uploads/file.pdf
-        parts = path.rsplit('.', 1)
-        public_id = parts[0]
-        fmt = parts[1] if len(parts) > 1 else ''
+            raise ValueError('Cannot parse Cloudinary URL: ' + url)
+        # For raw resources the full path including extension IS the public_id
+        public_id = match.group(1)   # e.g. media/uploads/file.pdf
         private_url = cloudinary.utils.private_download_url(
-            public_id, fmt,
+            public_id, '',
             resource_type='raw',
+            type='upload',
             attachment=True,
             expires_at=int(time.time()) + 300,
         )
