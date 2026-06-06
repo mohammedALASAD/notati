@@ -1,5 +1,28 @@
+import re
 from rest_framework import serializers
 from .models import User, Course, Note, Access, Upload
+
+
+def _signed_url(url):
+    """Return a Cloudinary signed URL so delivery works even on untrusted accounts."""
+    if not url or 'res.cloudinary.com' not in url:
+        return url
+    try:
+        import cloudinary.utils
+        match = re.search(r'/raw/upload/(?:v\d+/)?(.+)$', url)
+        if not match:
+            return url
+        public_id = match.group(1)
+        signed, _ = cloudinary.utils.cloudinary_url(
+            public_id,
+            resource_type='raw',
+            sign_url=True,
+            attachment=True,
+            secure=True,
+        )
+        return signed
+    except Exception:
+        return url
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -73,6 +96,12 @@ class NoteSerializer(serializers.ModelSerializer):
             return True
         return obj.access_grants.filter(user=request.user).exists()
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('pdf_file'):
+            data['pdf_file'] = _signed_url(data['pdf_file'])
+        return data
+
 
 class NoteAdminSerializer(NoteSerializer):
     class Meta(NoteSerializer.Meta):
@@ -127,9 +156,12 @@ class UploadSerializer(serializers.ModelSerializer):
 
     def get_file_url(self, obj):
         request = self.context.get('request')
-        if obj.file and request:
-            return request.build_absolute_uri(obj.file.url)
-        return None
+        if not obj.file:
+            return None
+        url = obj.file.url
+        if url.startswith('http'):
+            return _signed_url(url)
+        return request.build_absolute_uri(url) if request else url
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
