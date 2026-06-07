@@ -477,7 +477,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
               const inBag   = bag && bag.some(i => i.id === n.id);
               return (
                 <div key={n.id} className={`notecard ${canRead ? '' : 'notecard-locked'}`}
-                     onClick={canRead ? () => onOpenNote(n) : undefined}
+                     onClick={canRead ? () => NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message)) : undefined}
                      style={{ position: 'relative', cursor: canRead ? 'pointer' : 'default' }}>
                   {isFree && (
                     <span style={{ position: 'absolute', top: 10, right: 10,
@@ -512,7 +512,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
                     <span>{fmtDate(n.publishedAt)}</span>
                     {canRead ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
-                        <Icons.Eye size={13}/> Preview
+                        Read <Icons.ArrowRight size={13}/>
                       </span>
                     ) : !isFree ? (
                       inBag ? (
@@ -992,7 +992,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
                      style={{ cursor: canRead ? 'pointer' : 'default', padding: '14px 16px',
                               borderRadius: 'var(--r-5)', border: '1px solid var(--border-2)',
                               background: 'var(--notati-paper)', display: 'flex', alignItems: 'center', gap: 14 }}
-                     onClick={canRead ? () => onOpenNote(n) : undefined}>
+                     onClick={canRead ? () => NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message)) : undefined}>
 
                   {/* Chapter number bubble */}
                   <div style={{ width: 42, height: 42, borderRadius: 'var(--r-3)', flexShrink: 0,
@@ -1036,8 +1036,8 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
                     )}
                     {canRead && (
                       <button className="btn btn-soft btn-sm"
-                              onClick={(e) => { e.stopPropagation(); onOpenNote(n); }}>
-                        <Icons.Eye size={13}/> Preview
+                              onClick={(e) => { e.stopPropagation(); NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message)); }}>
+                        Read <Icons.ArrowRight size={14}/>
                       </button>
                     )}
                   </div>
