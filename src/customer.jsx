@@ -1137,10 +1137,34 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
    ============================================================ */
 function NoteReader({ note, open, onClose }) {
   const { toast } = useToast();
-  const [page, setPage] = useStateC(1);
-  const totalPages = 4;
+  const [pdfUrl, setPdfUrl] = useStateC(null);
+  const [loading, setLoading] = useStateC(false);
 
-  useEffectC(() => { if (open) setPage(1); }, [open, note]);
+  useEffectC(() => {
+    if (!open || !note || !note._numId || !note.pdfFile) {
+      setPdfUrl(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    let objectUrl = null;
+    setLoading(true);
+    setPdfUrl(null);
+    NotatiAPI.fetchNoteObjectUrl(note._numId)
+      .then(url => {
+        if (cancelled) { URL.revokeObjectURL(url); return; }
+        objectUrl = url;
+        setPdfUrl(url);
+      })
+      .catch(e => { if (!cancelled) toast.error('Preview failed', e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setPdfUrl(null);
+    };
+  }, [open, note]);
+
   if (!open || !note) return null;
 
   function download() {
@@ -1167,52 +1191,28 @@ function NoteReader({ note, open, onClose }) {
           {note.tags.map(t => <span key={t} className="tag tag-soft">{t}</span>)}
         </div>
       )}
-      <p style={{ font: 'var(--type-body)', color: 'var(--fg-2)', margin: '0 0 14px', lineHeight: 1.55 }}>
-        {note.description}
-      </p>
-
-      {/* Simulated PDF viewer */}
-      <div className="pdfview">
-        <div className="toolbar">
-          <span style={{ fontWeight: 700, color: 'var(--notati-paper)' }}>{note.fileName}</span>
-          <span className="sep"></span>
-          <div className="pgctrl">
-            <button onClick={() => setPage(Math.max(1, page - 1))} aria-label="Previous page">
-              <Icons.ArrowLeft size={14}/>
-            </button>
-            <span>Page {page} / {totalPages}</span>
-            <button onClick={() => setPage(Math.min(totalPages, page + 1))} aria-label="Next page">
-              <Icons.ArrowRight size={14}/>
-            </button>
-          </div>
+      {note.description && (
+        <p style={{ font: 'var(--type-body)', color: 'var(--fg-2)', margin: '0 0 14px', lineHeight: 1.55 }}>
+          {note.description}
+        </p>
+      )}
+      {loading && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      height: 480, color: 'var(--fg-3)', font: 'var(--type-body)' }}>
+          Loading preview…
         </div>
-        <div className="page">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-            <span style={{ font: 'var(--type-label)', letterSpacing: '.08em',
-                           color: 'var(--fg-3)', textTransform: 'uppercase' }}>{note.courseName} · Ch.{note.chapterNumber}</span>
-            <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 11, color: 'var(--fg-3)' }}>
-              Notati · From the student, to the student
-            </span>
-          </div>
-          <div style={{ height: 4, width: 60, background: 'var(--notati-amber)', borderRadius: 2, marginBottom: 14 }}></div>
-          <h2>{note.title}</h2>
-          <div className="ph-line"></div>
-          <div className="ph-line mid"></div>
-          <div className="ph-line short"></div>
-          <h3>What this chapter actually says</h3>
-          <div className="ph-line"></div>
-          <div className="ph-line mid"></div>
-          <div className="ph-line"></div>
-          <div className="ph-line short"></div>
-          <h3>The two flavors</h3>
-          <div className="ph-line"></div>
-          <div className="ph-line mid"></div>
-          <p style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12,
-                      color: 'var(--fg-3)', marginTop: 24, textAlign: 'right' }}>
-            Page {page}
-          </p>
+      )}
+      {!loading && pdfUrl && (
+        <iframe src={pdfUrl} title={note.fileName || 'PDF Preview'}
+                style={{ width: '100%', height: 520, border: 'none',
+                         borderRadius: 'var(--r-3)', display: 'block' }}/>
+      )}
+      {!loading && !pdfUrl && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      height: 200, color: 'var(--fg-3)', font: 'var(--type-body)' }}>
+          No PDF attached to this note.
         </div>
-      </div>
+      )}
     </Modal>
   );
 }

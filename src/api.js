@@ -251,6 +251,11 @@
     async previewUploadFile(uploadId) {
       await _proxyOpen(BASE + `/uploads/${uploadId}/download/`);
     },
+
+    async fetchNoteObjectUrl(noteId) {
+      const blob = await _proxyFetch(BASE + `/notes/${noteId}/download/`);
+      return URL.createObjectURL(blob);
+    },
   };
 
   async function _proxyFetch(url) {
