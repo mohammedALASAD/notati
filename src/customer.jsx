@@ -1045,6 +1045,15 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
                                 }}>
                           <Icons.Download size={14}/>
                         </button>
+                        <button className="btn btn-ghost btn-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!n.pdfFile) { toast.info('No file', 'No PDF attached yet.'); return; }
+                                  NotatiAPI.previewNoteFile(n._numId)
+                                    .catch(err => toast.error('Preview failed', err.message));
+                                }}>
+                          Quick look <Icons.ArrowRight size={13}/>
+                        </button>
                         <button className="btn btn-soft btn-sm"
                                 onClick={(e) => { e.stopPropagation(); onOpenNote(n); }}>
                           <Icons.Eye size={13}/> Preview
@@ -1144,38 +1153,14 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
 }
 
 /* ============================================================
-   NoteReader — simulated in-app PDF viewer
+   NoteReader — note info + styled preview
    ============================================================ */
 function NoteReader({ note, open, onClose }) {
   const { toast } = useToast();
-  const [pdfUrl, setPdfUrl] = useStateC(null);
-  const [loading, setLoading] = useStateC(false);
+  const [page, setPage] = useStateC(1);
+  const totalPages = 4;
 
-  useEffectC(() => {
-    if (!open || !note || !note._numId || !note.pdfFile) {
-      setPdfUrl(null);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    let objectUrl = null;
-    setLoading(true);
-    setPdfUrl(null);
-    NotatiAPI.fetchNoteObjectUrl(note._numId)
-      .then(url => {
-        if (cancelled) { URL.revokeObjectURL(url); return; }
-        objectUrl = url;
-        setPdfUrl(url);
-      })
-      .catch(e => { if (!cancelled) toast.error('Preview failed', e.message); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-      setPdfUrl(null);
-    };
-  }, [open, note]);
-
+  useEffectC(() => { if (open) setPage(1); }, [open, note]);
   if (!open || !note) return null;
 
   function download() {
@@ -1186,6 +1171,8 @@ function NoteReader({ note, open, onClose }) {
       toast.error('No file', 'No PDF is attached to this note yet.');
     }
   }
+
+  const isFreeNote = note.isFree || Number(note.price || 0) === 0;
 
   return (
     <Modal open={open} onClose={onClose} size="lg"
@@ -1198,15 +1185,15 @@ function NoteReader({ note, open, onClose }) {
              </button>
            </>}>
 
-      {/* Note info card */}
+      {/* Note info grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px',
                     background: 'var(--bg-2)', borderRadius: 'var(--r-5)',
                     padding: '14px 18px', marginBottom: 16 }}>
         {[
-          ['Course',   note.courseName],
-          ['College',  note.college],
-          ['Chapter',  `Ch.${note.chapterNumber}: ${note.chapterTitle}`],
-          ['Price',    note.isFree || Number(note.price||0) === 0 ? 'Free' : `BD ${Number(note.price).toFixed(3)}`],
+          ['Course',    note.courseName],
+          ['College',   note.college],
+          ['Chapter',   `Ch.${note.chapterNumber}: ${note.chapterTitle}`],
+          ['Price',     isFreeNote ? 'Free' : `BD ${Number(note.price).toFixed(3)}`],
           ['Published', fmtDate(note.publishedAt)],
         ].map(([label, val]) => (
           <div key={label}>
@@ -1222,23 +1209,49 @@ function NoteReader({ note, open, onClose }) {
           {note.description}
         </p>
       )}
-      {loading && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      height: 480, color: 'var(--fg-3)', font: 'var(--type-body)' }}>
-          Loading preview…
+
+      {/* Styled PDF preview */}
+      <div className="pdfview">
+        <div className="toolbar">
+          <span style={{ fontWeight: 700, color: 'var(--notati-paper)' }}>{note.fileName}</span>
+          <span className="sep"></span>
+          <div className="pgctrl">
+            <button onClick={() => setPage(Math.max(1, page - 1))} aria-label="Previous page">
+              <Icons.ArrowLeft size={14}/>
+            </button>
+            <span>Page {page} / {totalPages}</span>
+            <button onClick={() => setPage(Math.min(totalPages, page + 1))} aria-label="Next page">
+              <Icons.ArrowRight size={14}/>
+            </button>
+          </div>
         </div>
-      )}
-      {!loading && pdfUrl && (
-        <iframe src={pdfUrl} title={note.fileName || 'PDF Preview'}
-                style={{ width: '100%', height: 520, border: 'none',
-                         borderRadius: 'var(--r-3)', display: 'block' }}/>
-      )}
-      {!loading && !pdfUrl && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      height: 200, color: 'var(--fg-3)', font: 'var(--type-body)' }}>
-          No PDF attached to this note.
+        <div className="page">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+            <span style={{ font: 'var(--type-label)', letterSpacing: '.08em',
+                           color: 'var(--fg-3)', textTransform: 'uppercase' }}>{note.courseName} · Ch.{note.chapterNumber}</span>
+            <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 11, color: 'var(--fg-3)' }}>
+              Notati · From the student, to the student
+            </span>
+          </div>
+          <div style={{ height: 4, width: 60, background: 'var(--notati-amber)', borderRadius: 2, marginBottom: 14 }}></div>
+          <h2>{note.title}</h2>
+          <div className="ph-line"></div>
+          <div className="ph-line mid"></div>
+          <div className="ph-line short"></div>
+          <h3>What this chapter actually says</h3>
+          <div className="ph-line"></div>
+          <div className="ph-line mid"></div>
+          <div className="ph-line"></div>
+          <div className="ph-line short"></div>
+          <h3>The two flavors</h3>
+          <div className="ph-line"></div>
+          <div className="ph-line mid"></div>
+          <p style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12,
+                      color: 'var(--fg-3)', marginTop: 24, textAlign: 'right' }}>
+            Page {page}
+          </p>
         </div>
-      )}
+      </div>
     </Modal>
   );
 }
