@@ -453,14 +453,14 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
     try {
       const course = await NotatiAPI.findOrCreateCourse(courseName.trim(), college);
       if (existingNote) {
-        const payload = {
-          course: course.id,
-          chapter_number: Number(chapterNumber),
-          chapter_title:  chapterTitle.trim(),
-          description:    description.trim(),
-          price:          Number(price),
-        };
-        await NotatiAPI.updateNote(existingNote._numId, payload);
+        const fd = new FormData();
+        fd.append('course',         course.id);
+        fd.append('chapter_number', Number(chapterNumber));
+        fd.append('chapter_title',  chapterTitle.trim());
+        fd.append('description',    description.trim());
+        fd.append('price',          Number(price));
+        if (pdfFile) fd.append('pdf_file', pdfFile);
+        await NotatiAPI.updateNote(existingNote._numId, fd, true);
         toast.success('Note updated', `Ch.${chapterNumber} is live.`);
       } else {
         const fd = new FormData();

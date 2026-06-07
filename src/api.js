@@ -176,8 +176,8 @@
       return toNote(await req('POST', '/notes/', payload, isForm));
     },
 
-    async updateNote(id, payload) {
-      return toNote(await req('PATCH', `/notes/${id}/`, payload));
+    async updateNote(id, payload, isFormData) {
+      return toNote(await req('PATCH', `/notes/${id}/`, payload, isFormData || false));
     },
 
     async deleteNote(id) {

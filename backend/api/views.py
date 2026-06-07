@@ -137,7 +137,7 @@ class NoteDownloadView(APIView):
 
     def get(self, request, pk):
         note = get_object_or_404(Note, pk=pk)
-        if not note.is_free:
+        if not note.is_free and request.user.role != 'admin':
             has_access = note.access_grants.filter(user=request.user).exists()
             if not has_access:
                 return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
