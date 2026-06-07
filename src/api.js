@@ -247,6 +247,10 @@
     async previewNoteFile(noteId) {
       await _proxyOpen(BASE + `/notes/${noteId}/download/`);
     },
+
+    async previewUploadFile(uploadId) {
+      await _proxyOpen(BASE + `/uploads/${uploadId}/download/`);
+    },
   };
 
   async function _proxyFetch(url) {

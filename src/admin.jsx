@@ -235,6 +235,12 @@ function ContentInbox({ user, onPublish }) {
     });
   }, [uploads, q, filter, typeFilter, users]);
 
+  function handlePreview(up) {
+    if (!up.fileUrl) { toast.error('No file', 'This upload has no attached file.'); return; }
+    NotatiAPI.previewUploadFile(up.id)
+      .catch(e => toast.error('Preview failed', e.message));
+  }
+
   function handleDownload(up) {
     if (!up.fileUrl) { toast.error('No file', 'This upload has no attached file.'); return; }
     NotatiAPI.downloadUploadFile(up.id, up.fileName || up.title)
@@ -325,6 +331,9 @@ function ContentInbox({ user, onPublish }) {
                       <td data-l="Status"><StatusBadge status={up.status}/></td>
                       <td className="r" data-l="Actions">
                         <div className="row-actions">
+                          <button className="btn btn-ghost btn-sm" onClick={() => handlePreview(up)} title="Preview file">
+                            <Icons.Eye size={15}/>
+                          </button>
                           <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(up)} title="Download original">
                             <Icons.Download size={15}/>
                           </button>

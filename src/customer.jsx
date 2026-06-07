@@ -512,7 +512,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
                     <span>{fmtDate(n.publishedAt)}</span>
                     {canRead ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
-                        Read <Icons.ArrowRight size={13}/>
+                        <Icons.Eye size={13}/> Preview
                       </span>
                     ) : !isFree ? (
                       inBag ? (
@@ -1037,7 +1037,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
                     {canRead && (
                       <button className="btn btn-soft btn-sm"
                               onClick={(e) => { e.stopPropagation(); onOpenNote(n); }}>
-                        Read <Icons.ArrowRight size={14}/>
+                        <Icons.Eye size={13}/> Preview
                       </button>
                     )}
                   </div>
