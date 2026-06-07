@@ -204,6 +204,7 @@ function ContentInbox({ user, onPublish }) {
   const [q, setQ] = useStateAd('');
   const [filter, setFilter] = useStateAd('all');
   const [typeFilter, setTypeFilter] = useStateAd('all');
+  const [collegeFilter, setCollegeFilter] = useStateAd('all');
   const [confirmDel, setConfirmDel] = useStateAd(null);
 
   function refresh() {
@@ -229,11 +230,12 @@ function ContentInbox({ user, onPublish }) {
     return uploads.filter(up => {
       if (filter !== 'all' && up.status !== filter) return false;
       if (typeFilter !== 'all' && up.fileType !== typeFilter) return false;
+      if (collegeFilter !== 'all' && up.college !== collegeFilter) return false;
       if (!ql) return true;
       const who = uploaderOf(up, users);
       return [up.title, up.college, up.courseName, up.chapterTitle, up.fileName, who.name, who.email].some(s => (s || '').toLowerCase().includes(ql));
     });
-  }, [uploads, q, filter, typeFilter, users]);
+  }, [uploads, q, filter, typeFilter, collegeFilter, users]);
 
   function handlePreview(up) {
     if (!up.fileUrl) { toast.error('No file', 'This upload has no attached file.'); return; }
@@ -272,6 +274,13 @@ function ContentInbox({ user, onPublish }) {
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
+            <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)}
+                    style={{ font: 'var(--type-body)', padding: '7px 14px',
+                             borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
+                             background: 'var(--notati-paper)' }}>
+              <option value="all">All colleges</option>
+              {COLLEGES_AD.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
             <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
                     style={{ font: 'var(--type-body)', padding: '7px 14px',
                              borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
@@ -607,6 +616,8 @@ function NotesManager({ user, onEdit, onAddNew }) {
   const { toast } = useToast();
   const [notes, setNotes] = useStateAd([]);
   const [q, setQ] = useStateAd('');
+  const [collegeFilter, setCollegeFilter] = useStateAd('all');
+  const [priceFilter, setPriceFilter] = useStateAd('all');
   const [confirmDel, setConfirmDel] = useStateAd(null);
 
   function refresh() { NotatiAPI.getNotes().then(n => setNotes(n)).catch(() => {}); }
@@ -614,11 +625,14 @@ function NotesManager({ user, onEdit, onAddNew }) {
 
   const filtered = useMemoAd(() => {
     const ql = q.trim().toLowerCase();
-    if (!ql) return notes;
-    return notes.filter(n =>
-      [n.title, n.college, n.courseName, n.chapterTitle, n.description].some(s => (s || '').toLowerCase().includes(ql))
-    );
-  }, [q, notes]);
+    return notes.filter(n => {
+      if (collegeFilter !== 'all' && n.college !== collegeFilter) return false;
+      if (priceFilter === 'free' && (n.price && Number(n.price) > 0)) return false;
+      if (priceFilter === 'paid' && (!n.price || Number(n.price) === 0)) return false;
+      if (!ql) return true;
+      return [n.title, n.college, n.courseName, n.chapterTitle, n.description].some(s => (s || '').toLowerCase().includes(ql));
+    });
+  }, [q, notes, collegeFilter, priceFilter]);
 
   async function doDelete() {
     if (!confirmDel) return;
@@ -654,11 +668,28 @@ function NotesManager({ user, onEdit, onAddNew }) {
       </div>
 
       <section className="panel">
-        <div className="panel-head">
+        <div className="panel-head" style={{ flexWrap: 'wrap', gap: 12 }}>
           <h3>{filtered.length} notes</h3>
-          <div className="search-mini" style={{ minWidth: 280 }}>
-            <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search notes by title, subject, tag…"/>
+          <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
+            <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)}
+                    style={{ font: 'var(--type-body)', padding: '7px 14px',
+                             borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
+                             background: 'var(--notati-paper)' }}>
+              <option value="all">All colleges</option>
+              {COLLEGES_AD.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)}
+                    style={{ font: 'var(--type-body)', padding: '7px 14px',
+                             borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
+                             background: 'var(--notati-paper)' }}>
+              <option value="all">All prices</option>
+              <option value="free">Free</option>
+              <option value="paid">Paid</option>
+            </select>
+            <div className="search-mini" style={{ minWidth: 260 }}>
+              <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by title, course, chapter…"/>
+            </div>
           </div>
         </div>
         <div className="panel-body flush">
