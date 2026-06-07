@@ -415,6 +415,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
         setPrice(existingNote.price != null ? Number(existingNote.price) : 0);
         setTags(existingNote.tags.join(', '));
         setDescription(existingNote.description);
+        setPdfFile(null);
         setPdfName(existingNote.fileName);
         setPdfSize(existingNote.sizeKB);
       } else {
@@ -453,14 +454,24 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
     try {
       const course = await NotatiAPI.findOrCreateCourse(courseName.trim(), college);
       if (existingNote) {
-        const fd = new FormData();
-        fd.append('course',         course.id);
-        fd.append('chapter_number', Number(chapterNumber));
-        fd.append('chapter_title',  chapterTitle.trim());
-        fd.append('description',    description.trim());
-        fd.append('price',          Number(price));
-        if (pdfFile) fd.append('pdf_file', pdfFile);
-        await NotatiAPI.updateNote(existingNote._numId, fd, true);
+        if (pdfFile) {
+          const fd = new FormData();
+          fd.append('course',         course.id);
+          fd.append('chapter_number', Number(chapterNumber));
+          fd.append('chapter_title',  chapterTitle.trim());
+          fd.append('description',    description.trim());
+          fd.append('price',          Number(price));
+          fd.append('pdf_file',       pdfFile);
+          await NotatiAPI.updateNote(existingNote._numId, fd, true);
+        } else {
+          await NotatiAPI.updateNote(existingNote._numId, {
+            course:         course.id,
+            chapter_number: Number(chapterNumber),
+            chapter_title:  chapterTitle.trim(),
+            description:    description.trim(),
+            price:          Number(price),
+          });
+        }
         toast.success('Note updated', `Ch.${chapterNumber} is live.`);
       } else {
         const fd = new FormData();

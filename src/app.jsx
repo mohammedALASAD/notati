@@ -120,7 +120,7 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
             <ContentInbox user={user} onPublish={handlePublishFromInbox}/>
           )}
           {isAdmin && current === 'notes' && (
-            <NotesManager user={user}
+            <NotesManager key={refreshKey} user={user}
                           onEdit={(n) => { setEditingNote(n); setPublishUpload(null); }}
                           onAddNew={() => { setEditingNote(null); setPublishUpload({ id: null }); }}/>
           )}
