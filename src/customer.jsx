@@ -477,7 +477,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
               const inBag   = bag && bag.some(i => i.id === n.id);
               return (
                 <div key={n.id} className={`notecard ${canRead ? '' : 'notecard-locked'}`}
-                     onClick={canRead ? () => NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message)) : undefined}
+                     onClick={canRead ? () => onOpenNote(n) : undefined}
                      style={{ position: 'relative', cursor: canRead ? 'pointer' : 'default' }}>
                   {isFree && (
                     <span style={{ position: 'absolute', top: 10, right: 10,
@@ -992,7 +992,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
                      style={{ cursor: canRead ? 'pointer' : 'default', padding: '14px 16px',
                               borderRadius: 'var(--r-5)', border: '1px solid var(--border-2)',
                               background: 'var(--notati-paper)', display: 'flex', alignItems: 'center', gap: 14 }}
-                     onClick={canRead ? () => NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message)) : undefined}>
+                     onClick={canRead ? () => onOpenNote(n) : undefined}>
 
                   {/* Chapter number bubble */}
                   <div style={{ width: 42, height: 42, borderRadius: 'var(--r-3)', flexShrink: 0,
@@ -1035,10 +1035,21 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
                       </button>
                     )}
                     {canRead && (
-                      <button className="btn btn-soft btn-sm"
-                              onClick={(e) => { e.stopPropagation(); NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message)); }}>
-                        Read <Icons.ArrowRight size={14}/>
-                      </button>
+                      <>
+                        <button className="btn btn-ghost btn-sm" title="Download PDF"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!n.pdfFile) { toast.info('No file', 'No PDF attached yet.'); return; }
+                                  NotatiAPI.downloadNoteFile(n._numId, n.fileName || n.title + '.pdf')
+                                    .catch(err => toast.error('Download failed', err.message));
+                                }}>
+                          <Icons.Download size={14}/>
+                        </button>
+                        <button className="btn btn-soft btn-sm"
+                                onClick={(e) => { e.stopPropagation(); onOpenNote(n); }}>
+                          <Icons.Eye size={13}/> Preview
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1178,21 +1189,36 @@ function NoteReader({ note, open, onClose }) {
 
   return (
     <Modal open={open} onClose={onClose} size="lg"
-           title={note.title}
-           subtitle={`${note.college} · ${note.courseName} · Ch.${note.chapterNumber}: ${note.chapterTitle} · ${fmtDate(note.publishedAt)}`}
+           title={note.chapterTitle || note.title}
+           subtitle={`${note.college} · ${note.courseName}`}
            footer={<>
              <button className="btn btn-ghost" onClick={onClose}>Close</button>
              <button className="btn btn-primary" onClick={download}>
                <Icons.Download size={15}/> Download PDF
              </button>
            </>}>
-      {(note.tags || []).length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-          {note.tags.map(t => <span key={t} className="tag tag-soft">{t}</span>)}
-        </div>
-      )}
+
+      {/* Note info card */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px',
+                    background: 'var(--bg-2)', borderRadius: 'var(--r-5)',
+                    padding: '14px 18px', marginBottom: 16 }}>
+        {[
+          ['Course',   note.courseName],
+          ['College',  note.college],
+          ['Chapter',  `Ch.${note.chapterNumber}: ${note.chapterTitle}`],
+          ['Price',    note.isFree || Number(note.price||0) === 0 ? 'Free' : `BD ${Number(note.price).toFixed(3)}`],
+          ['Published', fmtDate(note.publishedAt)],
+        ].map(([label, val]) => (
+          <div key={label}>
+            <div style={{ font: 'var(--type-label)', fontSize: 10, color: 'var(--fg-3)',
+                          textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 2 }}>{label}</div>
+            <div style={{ font: 'var(--type-body)', color: 'var(--fg-1)', fontWeight: 500 }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
       {note.description && (
-        <p style={{ font: 'var(--type-body)', color: 'var(--fg-2)', margin: '0 0 14px', lineHeight: 1.55 }}>
+        <p style={{ font: 'var(--type-body)', color: 'var(--fg-2)', margin: '0 0 16px', lineHeight: 1.6 }}>
           {note.description}
         </p>
       )}
