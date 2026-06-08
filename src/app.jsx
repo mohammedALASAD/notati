@@ -176,7 +176,7 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
    ============================================================ */
 function App() {
   const [user, setUser]      = useStateApp(NotatiStore.getSession());
-  const [mode, setMode]      = useStateApp('login'); // when logged out: login | signup
+  const [mode, setMode]      = useStateApp('landing'); // when logged out: landing | login | signup
   const [route, setRoute]    = useStateApp(parseHash());
 
   // Wake backend on first load (Render free tier sleeps after inactivity)
@@ -205,7 +205,7 @@ function App() {
   const handleLogout = useCallbackApp(() => {
     NotatiStore.clearSession();
     setUser(null);
-    setMode('login');
+    setMode('landing');
     window.location.hash = '';
   }, []);
 
@@ -215,9 +215,9 @@ function App() {
   }, [user]);
 
   if (!user) {
-    return mode === 'signup'
-      ? <SignupView onAuth={handleAuth} switchTo={setMode}/>
-      : <LoginView onAuth={handleAuth} switchTo={setMode}/>;
+    if (mode === 'signup') return <SignupView onAuth={handleAuth} switchTo={setMode}/>;
+    if (mode === 'login')  return <LoginView  onAuth={handleAuth} switchTo={setMode}/>;
+    return <LandingPage onLogin={() => setMode('login')} onSignup={() => setMode('signup')}/>;
   }
 
   return (

@@ -1256,4 +1256,201 @@ function NoteReader({ note, open, onClose }) {
   );
 }
 
-Object.assign(window, { CustomerDashboard, UploadContent, MyUploads, NotesLibrary, NoteReader, BagDrawer, BagCheckoutModal });
+/* ============================================================
+   Landing Page — public-facing notes browser (no login required)
+   ============================================================ */
+function LandingPage({ onLogin, onSignup }) {
+  const { toast } = useToast();
+  const [notes, setNotes]           = useStateC([]);
+  const [loading, setLoading]       = useStateC(true);
+  const [q, setQ]                   = useStateC('');
+  const [collegeFilter, setCollegeFilter] = useStateC('all');
+  const [priceFilter, setPriceFilter]     = useStateC('all');
+  const [readingNote, setReadingNote]     = useStateC(null);
+
+  useEffectC(() => {
+    NotatiAPI.getNotes()
+      .then(n => { setNotes(n); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const filtered = useMemoC(() => {
+    const ql = q.trim().toLowerCase();
+    return notes.filter(n => {
+      if (collegeFilter !== 'all' && n.college !== collegeFilter) return false;
+      if (priceFilter === 'free' && n.price && Number(n.price) > 0) return false;
+      if (priceFilter === 'paid' && (!n.price || Number(n.price) === 0)) return false;
+      if (!ql) return true;
+      return [n.title, n.college, n.courseName, n.chapterTitle, n.description]
+        .some(s => (s || '').toLowerCase().includes(ql));
+    });
+  }, [notes, q, collegeFilter, priceFilter]);
+
+  function handleDownload(n) {
+    if (!n.pdfFile) { toast.info('No file', 'No PDF attached yet.'); return; }
+    NotatiAPI.downloadNoteFile(n._numId, n.fileName || n.title + '.pdf')
+      .catch(err => toast.error('Download failed', err.message));
+  }
+
+  const freeCount = notes.filter(n => !n.price || Number(n.price) === 0).length;
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--notati-paper)' }}>
+
+      {/* ── Sticky navbar ── */}
+      <nav style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 32px', height: 60,
+        borderBottom: '1px solid var(--border-1)',
+        background: 'var(--notati-paper)', position: 'sticky', top: 0, zIndex: 10
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Icons.Notes size={20} style={{ color: 'var(--notati-walnut)' }}/>
+          <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>Notati</span>
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-ghost btn-sm" onClick={onLogin}>Log in</button>
+          <button className="btn btn-primary btn-sm" onClick={onSignup}>
+            Create account <Icons.ArrowRight size={13}/>
+          </button>
+        </div>
+      </nav>
+
+      {/* ── Hero ── */}
+      <section style={{ maxWidth: 640, margin: '0 auto', padding: '64px 24px 52px', textAlign: 'center' }}>
+        {!loading && freeCount > 0 && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 20,
+            background: 'var(--notati-cream)', border: '1px solid var(--border-2)',
+            borderRadius: 'var(--r-pill)', padding: '5px 14px'
+          }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%',
+                           background: 'var(--notati-sage)', display: 'inline-block' }}/>
+            <span style={{ font: 'var(--type-label)', fontSize: 12, color: 'var(--fg-2)' }}>
+              {freeCount} free chapter{freeCount !== 1 ? 's' : ''} available now
+            </span>
+          </div>
+        )}
+        <h1 className="display" style={{ marginBottom: 16, fontSize: 'clamp(28px, 5vw, 46px)', lineHeight: 1.1 }}>
+          Your notes, organised.<br/>Browse before you sign up.
+        </h1>
+        <p style={{ font: 'var(--type-body)', color: 'var(--fg-2)', fontSize: 16, lineHeight: 1.7,
+                    maxWidth: 460, margin: '0 auto 28px' }}>
+          Free chapters are yours to read and download right now.
+          Create an account to upload content and unlock paid chapters.
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={onSignup} style={{ padding: '10px 22px' }}>
+            Create account <Icons.ArrowRight size={15}/>
+          </button>
+          <button className="btn btn-outline" onClick={onLogin} style={{ padding: '10px 22px' }}>
+            Log in
+          </button>
+        </div>
+      </section>
+
+      {/* ── Notes library ── */}
+      <main style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 80px' }}>
+        <section className="panel">
+          <div className="panel-head" style={{ flexWrap: 'wrap', gap: 12 }}>
+            <h3>{loading ? '…' : `${filtered.length} notes`}</h3>
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
+              <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)}
+                      style={{ font: 'var(--type-body)', padding: '7px 14px',
+                               borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
+                               background: 'var(--notati-paper)' }}>
+                <option value="all">All colleges</option>
+                {COLLEGES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)}
+                      style={{ font: 'var(--type-body)', padding: '7px 14px',
+                               borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
+                               background: 'var(--notati-paper)' }}>
+                <option value="all">All notes</option>
+                <option value="free">Free only</option>
+                <option value="paid">Paid only</option>
+              </select>
+              <div className="search-mini" style={{ minWidth: 260 }}>
+                <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+                <input value={q} onChange={(e) => setQ(e.target.value)}
+                       placeholder="Search by course, chapter, title…"/>
+              </div>
+            </div>
+          </div>
+
+          <div className="panel-body flush">
+            {loading ? (
+              <div style={{ padding: 40, textAlign: 'center',
+                            font: 'var(--type-body)', color: 'var(--fg-3)' }}>Loading notes…</div>
+            ) : filtered.length === 0 ? (
+              <div style={{ padding: 30 }}>
+                <EmptyState title="No notes match" message="Try a different search or filter."/>
+              </div>
+            ) : (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Note</th>
+                    <th>College · Course</th>
+                    <th>Price</th>
+                    <th className="r">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(n => {
+                    const isFree = !n.price || Number(n.price) === 0;
+                    return (
+                      <tr key={n.id}>
+                        <td data-l="Note">
+                          <div className="name-cell" style={{ maxWidth: 360 }}>
+                            <span className="nm">Ch.{n.chapterNumber}: {n.chapterTitle}</span>
+                            <span className="em">{n.title}</span>
+                          </div>
+                        </td>
+                        <td data-l="College · Course">
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ font: 'var(--type-caption)', fontStyle: 'normal',
+                                           fontSize: 12, color: 'var(--fg-3)' }}>{n.college}</span>
+                            <span className="tag tag-walnut">{n.courseName}</span>
+                          </div>
+                        </td>
+                        <td data-l="Price">
+                          <span className={`tag ${isFree ? 'tag-soft' : 'tag-bark'}`} style={{ fontWeight: 700 }}>
+                            {isFree ? 'Free' : `BD ${Number(n.price).toFixed(3)}`}
+                          </span>
+                        </td>
+                        <td className="r" data-l="Actions">
+                          <div className="row-actions">
+                            {isFree ? (
+                              <>
+                                <button className="btn btn-ghost btn-sm" title="Download PDF"
+                                        onClick={() => handleDownload(n)}>
+                                  <Icons.Download size={14}/>
+                                </button>
+                                <button className="btn btn-soft btn-sm" onClick={() => setReadingNote(n)}>
+                                  <Icons.Eye size={13}/> Preview
+                                </button>
+                              </>
+                            ) : (
+                              <button className="btn btn-primary btn-sm" onClick={onSignup}>
+                                <Icons.Lock size={12}/> Create account
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+      </main>
+
+      <NoteReader open={!!readingNote} note={readingNote} onClose={() => setReadingNote(null)}/>
+    </div>
+  );
+}
+
+Object.assign(window, { CustomerDashboard, UploadContent, MyUploads, NotesLibrary, NoteReader, BagDrawer, BagCheckoutModal, LandingPage });

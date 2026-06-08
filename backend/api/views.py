@@ -109,14 +109,14 @@ class NoteListCreateView(generics.ListCreateAPIView):
         return qs
 
     def get_serializer_class(self):
-        if self.request.user.role == 'admin':
+        if self.request.user.is_authenticated and self.request.user.role == 'admin':
             return NoteAdminSerializer
         return NoteSerializer
 
     def get_permissions(self):
         if self.request.method == 'POST':
             return [IsAdmin()]
-        return [IsAuthenticated()]
+        return [AllowAny()]
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -127,20 +127,23 @@ class NoteDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdminOrReadOnly]
 
     def get_serializer_class(self):
-        if self.request.user.role == 'admin':
+        if self.request.user.is_authenticated and self.request.user.role == 'admin':
             return NoteAdminSerializer
         return NoteSerializer
 
 
 class NoteDownloadView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request, pk):
         note = get_object_or_404(Note, pk=pk)
-        if not note.is_free and request.user.role != 'admin':
-            has_access = note.access_grants.filter(user=request.user).exists()
-            if not has_access:
-                return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
+        if not note.is_free:
+            if not request.user.is_authenticated:
+                return Response({'detail': 'Login required.'}, status=status.HTTP_401_UNAUTHORIZED)
+            if request.user.role != 'admin':
+                has_access = note.access_grants.filter(user=request.user).exists()
+                if not has_access:
+                    return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
         if not note.pdf_file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
