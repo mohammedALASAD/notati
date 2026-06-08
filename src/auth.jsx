@@ -38,15 +38,6 @@ function AuthShell({ children, switchTo, mode, onGuest }) {
             : <>Already a member? <a href="#" onClick={(e) => { e.preventDefault(); switchTo('login'); }}>Sign in</a></>}
         </div>
         {children}
-        {onGuest && (
-          <div style={{ textAlign: 'center', marginTop: 18 }}>
-            <a href="#" style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 13,
-                                  color: 'var(--fg-3)', textDecoration: 'underline' }}
-               onClick={(e) => { e.preventDefault(); onGuest(); }}>
-              Continue as guest — browse free notes without an account
-            </a>
-          </div>
-        )}
       </main>
     </div>
   );
@@ -104,6 +95,19 @@ function LoginView({ onAuth, switchTo, onGuest }) {
           {busy ? 'Signing in...' : 'Sign in'}
           {!busy && <Icons.ArrowRight size={16}/>}
         </button>
+
+        {onGuest && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--border-1)' }}/>
+              <span style={{ font: 'var(--type-label)', fontSize: 11, color: 'var(--fg-3)' }}>OR</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--border-1)' }}/>
+            </div>
+            <button type="button" className="btn btn-outline btn-block" onClick={onGuest}>
+              Browse free notes as guest
+            </button>
+          </>
+        )}
       </form>
     </AuthShell>
   );
@@ -178,6 +182,19 @@ function SignupView({ onAuth, switchTo, onGuest }) {
           {busy ? 'Creating your account...' : 'Create account'}
           {!busy && <Icons.ArrowRight size={16}/>}
         </button>
+
+        {onGuest && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--border-1)' }}/>
+              <span style={{ font: 'var(--type-label)', fontSize: 11, color: 'var(--fg-3)' }}>OR</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--border-1)' }}/>
+            </div>
+            <button type="button" className="btn btn-outline btn-block" onClick={onGuest}>
+              Browse free notes as guest
+            </button>
+          </>
+        )}
 
         <p style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)', marginTop: 14 }}>
           By signing up you agree to our friendly terms — be kind, share fairly, no plagiarism.
