@@ -6,7 +6,7 @@
 
 const { useState: useStateA } = React;
 
-function AuthShell({ children, switchTo, mode }) {
+function AuthShell({ children, switchTo, mode, onGuest }) {
   return (
     <div className="auth-page">
       <aside className="auth-aside">
@@ -38,13 +38,22 @@ function AuthShell({ children, switchTo, mode }) {
             : <>Already a member? <a href="#" onClick={(e) => { e.preventDefault(); switchTo('login'); }}>Sign in</a></>}
         </div>
         {children}
+        {onGuest && (
+          <div style={{ textAlign: 'center', marginTop: 18 }}>
+            <a href="#" style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 13,
+                                  color: 'var(--fg-3)', textDecoration: 'underline' }}
+               onClick={(e) => { e.preventDefault(); onGuest(); }}>
+              Continue as guest — browse free notes without an account
+            </a>
+          </div>
+        )}
       </main>
     </div>
   );
 }
 
 /* ---------- Login ---------- */
-function LoginView({ onAuth, switchTo }) {
+function LoginView({ onAuth, switchTo, onGuest }) {
   const { toast } = useToast();
   const [email,    setEmail]    = useStateA('');
   const [password, setPassword] = useStateA('');
@@ -71,7 +80,7 @@ function LoginView({ onAuth, switchTo }) {
   }
 
   return (
-    <AuthShell mode="login" switchTo={switchTo}>
+    <AuthShell mode="login" switchTo={switchTo} onGuest={onGuest}>
       <form className="auth-card" onSubmit={submit} noValidate>
         <span className="eyebrow">01 · Sign in</span>
         <h2>Welcome back.</h2>
@@ -101,7 +110,7 @@ function LoginView({ onAuth, switchTo }) {
 }
 
 /* ---------- Sign up ---------- */
-function SignupView({ onAuth, switchTo }) {
+function SignupView({ onAuth, switchTo, onGuest }) {
   const { toast } = useToast();
   const [name,     setName]     = useStateA('');
   const [email,    setEmail]    = useStateA('');
@@ -131,7 +140,7 @@ function SignupView({ onAuth, switchTo }) {
   }
 
   return (
-    <AuthShell mode="signup" switchTo={switchTo}>
+    <AuthShell mode="signup" switchTo={switchTo} onGuest={onGuest}>
       <form className="auth-card" onSubmit={submit} noValidate>
         <span className="eyebrow">02 · Create account</span>
         <h2>Join Notati.</h2>

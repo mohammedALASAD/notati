@@ -215,8 +215,8 @@ function App() {
   }, [user]);
 
   if (!user) {
-    if (mode === 'signup') return <SignupView onAuth={handleAuth} switchTo={setMode}/>;
-    if (mode === 'login')  return <LoginView  onAuth={handleAuth} switchTo={setMode}/>;
+    if (mode === 'signup') return <SignupView onAuth={handleAuth} switchTo={setMode} onGuest={() => setMode('landing')}/>;
+    if (mode === 'login')  return <LoginView  onAuth={handleAuth} switchTo={setMode} onGuest={() => setMode('landing')}/>;
     return <LandingPage onLogin={() => setMode('login')} onSignup={() => setMode('signup')}/>;
   }
 

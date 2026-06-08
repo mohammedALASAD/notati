@@ -1258,15 +1258,17 @@ function NoteReader({ note, open, onClose }) {
 
 /* ============================================================
    Landing Page — public-facing notes browser (no login required)
+   Two-level: course grid → chapter list (mirrors NotesLibrary)
    ============================================================ */
 function LandingPage({ onLogin, onSignup }) {
   const { toast } = useToast();
-  const [notes, setNotes]           = useStateC([]);
-  const [loading, setLoading]       = useStateC(true);
-  const [q, setQ]                   = useStateC('');
-  const [collegeFilter, setCollegeFilter] = useStateC('all');
-  const [priceFilter, setPriceFilter]     = useStateC('all');
-  const [readingNote, setReadingNote]     = useStateC(null);
+  const [notes, setNotes]                   = useStateC([]);
+  const [loading, setLoading]               = useStateC(true);
+  const [q, setQ]                           = useStateC('');
+  const [college, setCollege]               = useStateC('all');
+  const [selectedCourse, setSelectedCourse] = useStateC(null);
+  const [priceFilter, setPriceFilter]       = useStateC('all');
+  const [readingNote, setReadingNote]       = useStateC(null);
 
   useEffectC(() => {
     NotatiAPI.getNotes()
@@ -1274,17 +1276,35 @@ function LandingPage({ onLogin, onSignup }) {
       .catch(() => setLoading(false));
   }, []);
 
-  const filtered = useMemoC(() => {
-    const ql = q.trim().toLowerCase();
-    return notes.filter(n => {
-      if (collegeFilter !== 'all' && n.college !== collegeFilter) return false;
-      if (priceFilter === 'free' && n.price && Number(n.price) > 0) return false;
-      if (priceFilter === 'paid' && (!n.price || Number(n.price) === 0)) return false;
-      if (!ql) return true;
-      return [n.title, n.college, n.courseName, n.chapterTitle, n.description]
-        .some(s => (s || '').toLowerCase().includes(ql));
+  function pickCollege(c) { setCollege(c); setSelectedCourse(null); setQ(''); }
+
+  // Level 1: group notes into course cards
+  const courses = useMemoC(() => {
+    const pool = college === 'all' ? notes : notes.filter(n => n.college === college);
+    const map = {};
+    pool.forEach(n => {
+      if (!map[n.courseName]) map[n.courseName] = { courseName: n.courseName, college: n.college, notes: [] };
+      map[n.courseName].notes.push(n);
     });
-  }, [notes, q, collegeFilter, priceFilter]);
+    Object.values(map).forEach(c => c.notes.sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber)));
+    const ql = q.trim().toLowerCase();
+    return Object.values(map).filter(c =>
+      !ql || c.courseName.toLowerCase().includes(ql) || c.college.toLowerCase().includes(ql)
+    );
+  }, [notes, college, q]);
+
+  // Level 2: chapters for selected course, with optional price filter
+  const courseChapters = useMemoC(() => {
+    if (!selectedCourse) return [];
+    return notes
+      .filter(n => {
+        if (n.courseName !== selectedCourse) return false;
+        if (priceFilter === 'free' && n.price && Number(n.price) > 0) return false;
+        if (priceFilter === 'paid' && (!n.price || Number(n.price) === 0)) return false;
+        return true;
+      })
+      .sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber));
+  }, [notes, selectedCourse, priceFilter]);
 
   function handleDownload(n) {
     if (!n.pdfFile) { toast.info('No file', 'No PDF attached yet.'); return; }
@@ -1292,31 +1312,150 @@ function LandingPage({ onLogin, onSignup }) {
       .catch(err => toast.error('Download failed', err.message));
   }
 
+  function handleQuickLook(n) {
+    if (!n.pdfFile) { toast.info('No file', 'No PDF attached yet.'); return; }
+    NotatiAPI.previewNoteFile(n._numId)
+      .catch(err => toast.error('Preview failed', err.message));
+  }
+
   const freeCount = notes.filter(n => !n.price || Number(n.price) === 0).length;
 
+  /* ── Shared navbar ── */
+  const Navbar = (
+    <nav style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '0 32px', height: 60,
+      borderBottom: '1px solid var(--border-1)',
+      background: 'var(--notati-paper)', position: 'sticky', top: 0, zIndex: 10
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <img src="ds/assets/notati-mark.svg" alt="Notati" style={{ height: 28 }}/>
+        <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>Notati</span>
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button className="btn btn-ghost btn-sm" onClick={onLogin}>Log in</button>
+        <button className="btn btn-primary btn-sm" onClick={onSignup}>
+          Create account <Icons.ArrowRight size={13}/>
+        </button>
+      </div>
+    </nav>
+  );
+
+  /* ── Level 2: Chapter list ── */
+  if (selectedCourse) {
+    const allChapters  = notes.filter(n => n.courseName === selectedCourse);
+    const courseCollege = allChapters[0]?.college || '';
+    const chFree = allChapters.filter(n => !n.price || Number(n.price) === 0).length;
+    const chPaid = allChapters.length - chFree;
+
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--notati-paper)' }}>
+        {Navbar}
+        <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px 80px' }}>
+          <div className="page-head">
+            <div className="ttl">
+              <span className="tag tag-soft">Library</span>
+              <h1>{selectedCourse}</h1>
+              <p className="sub">
+                {courseCollege} · {allChapters.length} chapter{allChapters.length !== 1 ? 's' : ''}
+                {chFree > 0 && ` · ${chFree} free`}
+                {chPaid > 0 && ` · ${chPaid} paid`}
+              </p>
+            </div>
+            <div className="actions">
+              <button className="btn btn-outline"
+                      onClick={() => { setSelectedCourse(null); setQ(''); setPriceFilter('all'); }}>
+                <Icons.ArrowLeft size={16}/> All courses
+              </button>
+            </div>
+          </div>
+
+          <section className="panel">
+            <div className="panel-head" style={{ flexWrap: 'wrap', gap: 10 }}>
+              <div className="filters" style={{ margin: 0 }}>
+                {[{ id: 'all', label: 'All' }, { id: 'free', label: 'Free' }, { id: 'paid', label: 'Paid' }].map(o => (
+                  <button key={o.id}
+                          className={`btn btn-sm ${priceFilter === o.id ? 'btn-primary' : 'btn-soft'}`}
+                          onClick={() => setPriceFilter(o.id)}
+                          style={{ borderRadius: 'var(--r-pill)' }}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {courseChapters.length === 0 ? (
+                <EmptyState title="No chapters match" message="Try changing the filter."/>
+              ) : courseChapters.map(n => {
+                const isFree = !n.price || Number(n.price) === 0;
+                return (
+                  <div key={n.id} style={{
+                    padding: '14px 16px', borderRadius: 'var(--r-5)',
+                    border: '1px solid var(--border-2)', background: 'var(--notati-paper)',
+                    display: 'flex', alignItems: 'center', gap: 14
+                  }}>
+                    <div style={{
+                      width: 42, height: 42, borderRadius: 'var(--r-3)', flexShrink: 0,
+                      background: isFree ? 'var(--notati-sage)' : 'var(--notati-cream)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: isFree ? 'var(--notati-paper)' : 'var(--fg-3)',
+                      fontSize: 16, fontWeight: 700
+                    }}>
+                      {n.chapterNumber}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 2 }}>
+                        Ch.{n.chapterNumber}: {n.chapterTitle}
+                      </div>
+                      <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                        {n.title}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      {isFree ? (
+                        <>
+                          <span style={{ background: 'var(--notati-sage)', color: 'var(--notati-paper)',
+                                         font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
+                                         borderRadius: 'var(--r-pill)' }}>FREE</span>
+                          <button className="btn btn-ghost btn-sm" title="Download PDF"
+                                  onClick={() => handleDownload(n)}>
+                            <Icons.Download size={14}/>
+                          </button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => handleQuickLook(n)}>
+                            Quick look <Icons.ArrowRight size={13}/>
+                          </button>
+                          <button className="btn btn-soft btn-sm" onClick={() => setReadingNote(n)}>
+                            <Icons.Eye size={13}/> Preview
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="tag tag-bark" style={{ fontWeight: 700 }}>
+                            BD {Number(n.price).toFixed(3)}
+                          </span>
+                          <button className="btn btn-primary btn-sm" onClick={onSignup}>
+                            <Icons.Lock size={12}/> Create account
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+        <NoteReader open={!!readingNote} note={readingNote} onClose={() => setReadingNote(null)}/>
+      </div>
+    );
+  }
+
+  /* ── Level 1: Course grid ── */
   return (
     <div style={{ minHeight: '100vh', background: 'var(--notati-paper)' }}>
+      {Navbar}
 
-      {/* ── Sticky navbar ── */}
-      <nav style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 32px', height: 60,
-        borderBottom: '1px solid var(--border-1)',
-        background: 'var(--notati-paper)', position: 'sticky', top: 0, zIndex: 10
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Icons.Notes size={20} style={{ color: 'var(--notati-walnut)' }}/>
-          <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>Notati</span>
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn btn-ghost btn-sm" onClick={onLogin}>Log in</button>
-          <button className="btn btn-primary btn-sm" onClick={onSignup}>
-            Create account <Icons.ArrowRight size={13}/>
-          </button>
-        </div>
-      </nav>
-
-      {/* ── Hero ── */}
+      {/* Hero */}
       <section style={{ maxWidth: 640, margin: '0 auto', padding: '64px 24px 52px', textAlign: 'center' }}>
         {!loading && freeCount > 0 && (
           <div style={{
@@ -1349,100 +1488,63 @@ function LandingPage({ onLogin, onSignup }) {
         </div>
       </section>
 
-      {/* ── Notes library ── */}
+      {/* Course grid */}
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 80px' }}>
         <section className="panel">
-          <div className="panel-head" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <h3>{loading ? '…' : `${filtered.length} notes`}</h3>
-            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
-              <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)}
-                      style={{ font: 'var(--type-body)', padding: '7px 14px',
-                               borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
-                               background: 'var(--notati-paper)' }}>
-                <option value="all">All colleges</option>
-                {COLLEGES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)}
-                      style={{ font: 'var(--type-body)', padding: '7px 14px',
-                               borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
-                               background: 'var(--notati-paper)' }}>
-                <option value="all">All notes</option>
-                <option value="free">Free only</option>
-                <option value="paid">Paid only</option>
-              </select>
-              <div className="search-mini" style={{ minWidth: 260 }}>
-                <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
-                <input value={q} onChange={(e) => setQ(e.target.value)}
-                       placeholder="Search by course, chapter, title…"/>
-              </div>
+          <div className="panel-head" style={{ flexWrap: 'wrap', gap: 10 }}>
+            <FilterDropdown
+              value={college}
+              onChange={pickCollege}
+              options={COLLEGES.map(c => ({ val: c, lbl: c }))}
+              placeholder="All colleges"
+              icon={<Icons.Filter size={13}/>}/>
+            <div className="search-mini" style={{ minWidth: 260, marginLeft: 'auto' }}>
+              <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by course name…"/>
             </div>
           </div>
-
-          <div className="panel-body flush">
+          <div className="panel-body">
             {loading ? (
-              <div style={{ padding: 40, textAlign: 'center',
-                            font: 'var(--type-body)', color: 'var(--fg-3)' }}>Loading notes…</div>
-            ) : filtered.length === 0 ? (
-              <div style={{ padding: 30 }}>
-                <EmptyState title="No notes match" message="Try a different search or filter."/>
+              <div style={{ padding: 40, textAlign: 'center', font: 'var(--type-body)', color: 'var(--fg-3)' }}>
+                Loading courses…
               </div>
+            ) : courses.length === 0 ? (
+              <EmptyState title="No courses yet" message="The library is empty — check back soon."/>
             ) : (
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Note</th>
-                    <th>College · Course</th>
-                    <th>Price</th>
-                    <th className="r">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(n => {
-                    const isFree = !n.price || Number(n.price) === 0;
-                    return (
-                      <tr key={n.id}>
-                        <td data-l="Note">
-                          <div className="name-cell" style={{ maxWidth: 360 }}>
-                            <span className="nm">Ch.{n.chapterNumber}: {n.chapterTitle}</span>
-                            <span className="em">{n.title}</span>
-                          </div>
-                        </td>
-                        <td data-l="College · Course">
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <span style={{ font: 'var(--type-caption)', fontStyle: 'normal',
-                                           fontSize: 12, color: 'var(--fg-3)' }}>{n.college}</span>
-                            <span className="tag tag-walnut">{n.courseName}</span>
-                          </div>
-                        </td>
-                        <td data-l="Price">
-                          <span className={`tag ${isFree ? 'tag-soft' : 'tag-bark'}`} style={{ fontWeight: 700 }}>
-                            {isFree ? 'Free' : `BD ${Number(n.price).toFixed(3)}`}
-                          </span>
-                        </td>
-                        <td className="r" data-l="Actions">
-                          <div className="row-actions">
-                            {isFree ? (
-                              <>
-                                <button className="btn btn-ghost btn-sm" title="Download PDF"
-                                        onClick={() => handleDownload(n)}>
-                                  <Icons.Download size={14}/>
-                                </button>
-                                <button className="btn btn-soft btn-sm" onClick={() => setReadingNote(n)}>
-                                  <Icons.Eye size={13}/> Preview
-                                </button>
-                              </>
-                            ) : (
-                              <button className="btn btn-primary btn-sm" onClick={onSignup}>
-                                <Icons.Lock size={12}/> Create account
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="grid-3">
+                {courses.map(({ courseName, college: coll, notes: cNotes }) => {
+                  const free = cNotes.filter(n => !n.price || Number(n.price) === 0).length;
+                  const paid = cNotes.length - free;
+                  return (
+                    <div key={courseName} className="notecard" style={{ cursor: 'pointer' }}
+                         onClick={() => setSelectedCourse(courseName)}>
+                      <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{coll}</div>
+                      <span className="course">{courseName}</span>
+                      <div className="title">{cNotes.length} chapter{cNotes.length !== 1 ? 's' : ''} available</div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                        {free > 0 && (
+                          <span style={{ background: 'var(--notati-sage)', color: 'var(--notati-paper)',
+                                         font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
+                                         borderRadius: 'var(--r-pill)' }}>{free} free</span>
+                        )}
+                        {paid > 0 && (
+                          <span style={{ background: 'var(--notati-cream)', color: 'var(--fg-2)',
+                                         border: '1px solid var(--border-2)',
+                                         font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
+                                         borderRadius: 'var(--r-pill)' }}>{paid} paid</span>
+                        )}
+                      </div>
+                      <div className="foot">
+                        <span style={{ opacity: .5 }}>{fmtDate(cNotes[0].publishedAt)}</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                                       color: 'var(--notati-walnut)', fontWeight: 700 }}>
+                          Browse chapters <Icons.ArrowRight size={13}/>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </section>
