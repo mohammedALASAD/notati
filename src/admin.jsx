@@ -68,7 +68,6 @@ function AdminDashboard({ user, onNav }) {
     <div>
       <div className="page-head">
         <div className="ttl">
-          <span className="tag tag-soft">01 · Overview</span>
           <h1>Hey {user.name.split(' ')[0]} — here's the room.</h1>
           <p className="sub">A quick read on the inbox, the library, and who's joined this week. Anything pending is yours to turn around.</p>
         </div>
@@ -87,16 +86,20 @@ function AdminDashboard({ user, onNav }) {
         <Stat hero label="Pending reviews"
               num={pending.length}
               delta={{ dir: pending.length > 0 ? 'up' : '', text: pending.length > 0 ? `${pending.length} need your eyes` : 'All clear · nice work' }}
-              icon="Clock"/>
+              icon="Clock"
+              onClick={() => onNav('inbox')} navLabel="Open inbox"/>
         <Stat tone="walnut" label="Total uploads" num={uploads.length}
               delta={{ text: `${reviewed.length} reviewed · ${pending.length} pending` }}
-              icon="Inbox"/>
+              icon="Inbox"
+              onClick={() => onNav('inbox')} navLabel="View all uploads"/>
         <Stat tone="sage" label="Published notes" num={notes.length}
               delta={{ text: notes.length > 0 ? `${notes.length} in the library` : 'Nothing published yet' }}
-              icon="Notes"/>
+              icon="Notes"
+              onClick={() => onNav('notes')} navLabel="Manage notes"/>
         <Stat tone="amber" label="Registered users" num={users.length}
               delta={{ text: `${customers.length} students` }}
-              icon="Users"/>
+              icon="Users"
+              onClick={() => onNav('users')} navLabel="View users"/>
       </div>
 
       {/* Recent inbox + recent notes */}
@@ -105,7 +108,7 @@ function AdminDashboard({ user, onNav }) {
           <div className="panel-head">
             <h3>Recent submissions</h3>
             <span className="sub">Latest five files from students</span>
-            <button className="btn btn-ghost btn-sm" onClick={() => onNav('inbox')}>
+            <button className="btn btn-ghost btn-sm" onClick={() => onNav('inbox')} style={{ marginLeft: 'auto' }}>
               View all <Icons.ArrowRight size={14}/>
             </button>
           </div>
@@ -116,45 +119,47 @@ function AdminDashboard({ user, onNav }) {
                             message="When students upload slides, decks, or scans, they land here."/>
               </div>
             ) : (
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>File</th>
-                    <th>From</th>
-                    <th>When</th>
-                    <th className="r">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentInbox.map(up => {
-                    const who = uploaderOf(up, users);
-                    return (
-                      <tr key={up.id} style={{ cursor: 'pointer' }} onClick={() => onNav('inbox')}>
-                        <td data-l="File">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <FileTypeChip type={up.fileType}/>
-                            <div className="name-cell">
-                              <span className="nm">{up.title}</span>
-                              <span className="em">{up.fileName}</span>
+              <div className="scroll-table">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>File</th>
+                      <th>From</th>
+                      <th>When</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentInbox.map(up => {
+                      const who = uploaderOf(up, users);
+                      return (
+                        <tr key={up.id} style={{ cursor: 'pointer' }} onClick={() => onNav('inbox')}>
+                          <td data-l="File">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <FileTypeChip type={up.fileType}/>
+                              <div className="name-cell">
+                                <span className="nm">{up.title}</span>
+                                <span className="em">{up.fileName}</span>
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td data-l="From">
-                          <div className="uploader-cell">
-                            <span className="avatar-sm">{who.name.charAt(0)}</span>
-                            <div className="meta">
-                              <span className="nm">{who.name}</span>
-                              <span className="em">{who.email}</span>
+                          </td>
+                          <td data-l="From">
+                            <div className="uploader-cell">
+                              <span className="avatar-sm">{who.name.charAt(0)}</span>
+                              <div className="meta">
+                                <span className="nm">{who.name}</span>
+                                <span className="em">{who.email}</span>
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td data-l="When">{fmtRelative(up.uploadedAt)}</td>
-                        <td className="r" data-l="Status"><StatusBadge status={up.status}/></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          </td>
+                          <td data-l="When" style={{ whiteSpace: 'nowrap' }}>{fmtRelative(up.uploadedAt)}</td>
+                          <td data-l="Status"><StatusBadge status={up.status}/></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </section>
@@ -162,27 +167,27 @@ function AdminDashboard({ user, onNav }) {
         <section className="panel" style={{ background: 'var(--notati-cream)' }}>
           <div className="panel-head" style={{ borderBottomColor: 'var(--border-2)' }}>
             <h3>Latest notes</h3>
-            <button className="btn btn-ghost btn-sm" onClick={() => onNav('notes')}>
+            <button className="btn btn-ghost btn-sm" onClick={() => onNav('notes')} style={{ marginLeft: 'auto' }}>
               All notes <Icons.ArrowRight size={14}/>
             </button>
           </div>
-          <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {recentNotes.length === 0 ? (
               <EmptyState title="No notes yet" message="Publish your first Note from any pending submission."/>
             ) : recentNotes.map(n => (
-              <div key={n.id} style={{ background: 'var(--notati-paper)', borderRadius: 'var(--r-5)',
-                                       padding: 14, border: '1px solid var(--border-2)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span className="tag tag-walnut">{n.courseName}</span>
-                  {n.chapterNumber && <span className="tag tag-soft">Ch.{n.chapterNumber}</span>}
-                  <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+              <div key={n.id} className="note-list-card">
+                <div className="nlc-head">
+                  <span className="tag tag-walnut" style={{ fontSize: 11 }}>{n.courseName}</span>
+                  {n.chapterNumber && <span className="tag tag-soft" style={{ fontSize: 11 }}>Ch.{n.chapterNumber}</span>}
+                  {(!n.price || Number(n.price) === 0)
+                    ? <span className="tag tag-soft" style={{ fontSize: 10 }}>Free</span>
+                    : <span className="tag tag-bark" style={{ fontSize: 10 }}>BD {Number(n.price).toFixed(3)}</span>}
+                  <span style={{ marginLeft: 'auto', font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 11, color: 'var(--fg-3)' }}>
                     {fmtRelative(n.publishedAt)}
                   </span>
                 </div>
-                <div style={{ font: 'var(--type-h3)', fontSize: 15, color: 'var(--fg-1)', marginBottom: 4 }}>
-                  {n.title}
-                </div>
-                <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                <div className="nlc-title">{n.title}</div>
+                <div className="nlc-meta">
                   {n.college}{n.chapterTitle ? ` · ${n.chapterTitle}` : ''}
                 </div>
               </div>
@@ -197,12 +202,14 @@ function AdminDashboard({ user, onNav }) {
 /* ============================================================
    Content Inbox — all uploaded files with filter + download + review action
    ============================================================ */
-function ContentInbox({ user, onPublish }) {
+function ContentInbox({ user, onPublish, topbarSearch }) {
   const { toast } = useToast();
   const [users,   setUsers]   = useStateAd([]);
   const [uploads, setUploads] = useStateAd([]);
   const [q, setQ] = useStateAd('');
   const [filter, setFilter] = useStateAd('all');
+
+  useEffectAd(() => { setQ(topbarSearch || ''); }, [topbarSearch]);
   const [typeFilter, setTypeFilter] = useStateAd('all');
   const [collegeFilter, setCollegeFilter] = useStateAd('all');
   const [confirmDel, setConfirmDel] = useStateAd(null);
@@ -253,7 +260,6 @@ function ContentInbox({ user, onPublish }) {
     <div>
       <div className="page-head">
         <div className="ttl">
-          <span className="tag tag-soft">02 · Inbox</span>
           <h1>Content inbox</h1>
           <p className="sub">Every file students have submitted, oldest pending first. Open one to publish a Note back.</p>
         </div>
@@ -273,24 +279,18 @@ function ContentInbox({ user, onPublish }) {
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
-            <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)}
-                    style={{ font: 'var(--type-body)', padding: '7px 14px',
-                             borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
-                             background: 'var(--notati-paper)' }}>
+          <div className="filter-bar">
+            <select className="filter-select" value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)}>
               <option value="all">All colleges</option>
               {COLLEGES_AD.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
-                    style={{ font: 'var(--type-body)', padding: '7px 14px',
-                             borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
-                             background: 'var(--notati-paper)' }}>
+            <select className="filter-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
               <option value="all">All types</option>
               <option value="pdf">PDF</option>
               <option value="docx">DOCX</option>
               <option value="pptx">PPTX</option>
             </select>
-            <div className="search-mini" style={{ minWidth: 260 }}>
+            <div className="search-mini" style={{ minWidth: 240 }}>
               <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search filename, title, student…"/>
             </div>
@@ -304,65 +304,67 @@ function ContentInbox({ user, onPublish }) {
                           message="Try clearing the search or switching to All to see everything."/>
             </div>
           ) : (
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Submission</th>
-                  <th>Uploader</th>
-                  <th>Type</th>
-                  <th>Uploaded</th>
-                  <th>Status</th>
-                  <th className="r">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(up => {
-                  const who = uploaderOf(up, users);
-                  return (
-                    <tr key={up.id}>
-                      <td data-l="Submission">
-                        <div className="name-cell" style={{ maxWidth: 340 }}>
-                          <span className="nm">{up.title}</span>
-                          <span className="em">{up.fileName} · {fmtSize(up.sizeKB)}</span>
-                        </div>
-                      </td>
-                      <td data-l="Uploader">
-                        <div className="uploader-cell">
-                          <span className="avatar-sm">{who.name.charAt(0)}</span>
-                          <div className="meta">
-                            <span className="nm">{who.name}</span>
-                            <span className="em">{who.email}</span>
+            <div className="scroll-table">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Submission</th>
+                    <th>Uploader</th>
+                    <th>Type</th>
+                    <th>Uploaded</th>
+                    <th>Status</th>
+                    <th className="r">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(up => {
+                    const who = uploaderOf(up, users);
+                    return (
+                      <tr key={up.id}>
+                        <td data-l="Submission">
+                          <div className="name-cell" style={{ maxWidth: 300 }}>
+                            <span className="nm">{up.title}</span>
+                            <span className="em">{up.fileName} · {fmtSize(up.sizeKB)}</span>
                           </div>
-                        </div>
-                      </td>
-                      <td data-l="Type"><FileTypeChip type={up.fileType}/></td>
-                      <td data-l="Uploaded">{fmtDate(up.uploadedAt)}</td>
-                      <td data-l="Status"><StatusBadge status={up.status}/></td>
-                      <td className="r" data-l="Actions">
-                        <div className="row-actions">
-                          <button className="btn btn-ghost btn-sm" onClick={() => handlePreview(up)} title="Preview file">
-                            <Icons.Eye size={15}/>
-                          </button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(up)} title="Download original">
-                            <Icons.Download size={15}/>
-                          </button>
-                          {up.status === 'pending'
-                            ? <button className="btn btn-primary btn-sm" onClick={() => onPublish(up)}>
-                                Publish note <Icons.ArrowRight size={14}/>
-                              </button>
-                            : <button className="btn btn-soft btn-sm" onClick={() => onPublish(up)}>
-                                <Icons.Edit size={14}/> Update
-                              </button>}
-                          <button className="btn btn-danger btn-sm" title="Delete" onClick={() => setConfirmDel(up)}>
-                            <Icons.Trash size={15}/>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td data-l="Uploader">
+                          <div className="uploader-cell">
+                            <span className="avatar-sm">{who.name.charAt(0)}</span>
+                            <div className="meta">
+                              <span className="nm">{who.name}</span>
+                              <span className="em">{who.email}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td data-l="Type"><FileTypeChip type={up.fileType}/></td>
+                        <td data-l="Uploaded" style={{ whiteSpace: 'nowrap' }}>{fmtDate(up.uploadedAt)}</td>
+                        <td data-l="Status"><StatusBadge status={up.status}/></td>
+                        <td className="r" data-l="Actions">
+                          <div className="row-actions">
+                            <button className="btn btn-ghost btn-sm" onClick={() => handlePreview(up)} title="Preview file">
+                              <Icons.Eye size={15}/>
+                            </button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(up)} title="Download original">
+                              <Icons.Download size={15}/>
+                            </button>
+                            {up.status === 'pending'
+                              ? <button className="btn btn-primary btn-sm" onClick={() => onPublish(up)}>
+                                  Publish note <Icons.ArrowRight size={14}/>
+                                </button>
+                              : <button className="btn btn-soft btn-sm" onClick={() => onPublish(up)}>
+                                  <Icons.Edit size={14}/> Update
+                                </button>}
+                            <button className="btn btn-danger btn-sm" title="Delete" onClick={() => setConfirmDel(up)}>
+                              <Icons.Trash size={15}/>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </section>
@@ -612,13 +614,15 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
 /* ============================================================
    Notes Manager — list / edit / delete published notes
    ============================================================ */
-function NotesManager({ user, onEdit, onAddNew }) {
+function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
   const { toast } = useToast();
   const [notes, setNotes] = useStateAd([]);
   const [q, setQ] = useStateAd('');
   const [collegeFilter, setCollegeFilter] = useStateAd('all');
   const [priceFilter, setPriceFilter] = useStateAd('all');
   const [confirmDel, setConfirmDel] = useStateAd(null);
+
+  useEffectAd(() => { setQ(topbarSearch || ''); }, [topbarSearch]);
 
   function refresh() { NotatiAPI.getNotes().then(n => setNotes(n)).catch(() => {}); }
   useEffectAd(() => { refresh(); }, []);
@@ -656,7 +660,6 @@ function NotesManager({ user, onEdit, onAddNew }) {
     <div>
       <div className="page-head">
         <div className="ttl">
-          <span className="tag tag-soft">04 · Notes</span>
           <h1>Published notes</h1>
           <p className="sub">Everything you've shipped to the library. Edit metadata, swap the PDF, or pull it offline when something changes.</p>
         </div>
@@ -670,23 +673,17 @@ function NotesManager({ user, onEdit, onAddNew }) {
       <section className="panel">
         <div className="panel-head" style={{ flexWrap: 'wrap', gap: 12 }}>
           <h3>{filtered.length} notes</h3>
-          <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
-            <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)}
-                    style={{ font: 'var(--type-body)', padding: '7px 14px',
-                             borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
-                             background: 'var(--notati-paper)' }}>
+          <div className="filter-bar">
+            <select className="filter-select" value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)}>
               <option value="all">All colleges</option>
               {COLLEGES_AD.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)}
-                    style={{ font: 'var(--type-body)', padding: '7px 14px',
-                             borderRadius: 'var(--r-pill)', border: '1px solid var(--border-1)',
-                             background: 'var(--notati-paper)' }}>
+            <select className="filter-select" value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)}>
               <option value="all">All prices</option>
               <option value="free">Free</option>
               <option value="paid">Paid</option>
             </select>
-            <div className="search-mini" style={{ minWidth: 260 }}>
+            <div className="search-mini" style={{ minWidth: 240 }}>
               <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by title, course, chapter…"/>
             </div>
@@ -702,51 +699,52 @@ function NotesManager({ user, onEdit, onAddNew }) {
                                   </button>}/>
             </div>
           ) : (
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Note</th>
-                  <th>College · Course</th>
-                  <th>Price</th>
-                  <th>Tags</th>
-                  <th>Published</th>
-                  <th className="r">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(n => (
-                  <tr key={n.id}>
-                    <td data-l="Note">
-                      <div className="name-cell" style={{ maxWidth: 360 }}>
-                        <span className="nm">{n.title}</span>
-                        <span className="em">{n.fileName} · {fmtSize(n.sizeKB)}</span>
-                      </div>
-                    </td>
-                    <td data-l="College · Course">
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>{n.college}</span>
-                        <span className="tag tag-walnut">{n.courseName}</span>
-                      </div>
-                    </td>
-                    <td data-l="Price">
-                      <span className={`tag ${!n.price || n.price === 0 ? 'tag-soft' : 'tag-bark'}`}
-                            style={{ fontWeight: 700 }}>
-                        {fmtPrice(n.price)}
-                      </span>
-                    </td>
-                    <td data-l="Tags">
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {n.tags.slice(0, 3).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
-                        {n.tags.length > 3 ? <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>+{n.tags.length - 3}</span> : null}
-                      </div>
-                    </td>
-                    <td data-l="Published">{fmtDate(n.publishedAt)}</td>
-                    <td className="r" data-l="Actions">
-                      <div className="row-actions">
-                        <button className="btn btn-ghost btn-sm" title="Preview" onClick={() => preview(n)}>
-                          <Icons.Eye size={15}/>
-                        </button>
-                        <button className="btn btn-ghost btn-sm" title="Edit" onClick={() => onEdit(n)}>
+            <div className="scroll-table">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Note</th>
+                    <th>College · Course</th>
+                    <th>Price</th>
+                    <th>Tags</th>
+                    <th>Published</th>
+                    <th className="r">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(n => (
+                    <tr key={n.id}>
+                      <td data-l="Note">
+                        <div className="name-cell" style={{ maxWidth: 300 }}>
+                          <span className="nm">{n.title}</span>
+                          <span className="em">{n.fileName} · {fmtSize(n.sizeKB)}</span>
+                        </div>
+                      </td>
+                      <td data-l="College · Course">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>{n.college}</span>
+                          <span className="tag tag-walnut">{n.courseName}</span>
+                        </div>
+                      </td>
+                      <td data-l="Price">
+                        <span className={`tag ${!n.price || n.price === 0 ? 'tag-soft' : 'tag-bark'}`}
+                              style={{ fontWeight: 700 }}>
+                          {fmtPrice(n.price)}
+                        </span>
+                      </td>
+                      <td data-l="Tags">
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {n.tags.slice(0, 3).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
+                          {n.tags.length > 3 ? <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>+{n.tags.length - 3}</span> : null}
+                        </div>
+                      </td>
+                      <td data-l="Published" style={{ whiteSpace: 'nowrap' }}>{fmtDate(n.publishedAt)}</td>
+                      <td className="r" data-l="Actions">
+                        <div className="row-actions">
+                          <button className="btn btn-ghost btn-sm" title="Preview" onClick={() => preview(n)}>
+                            <Icons.Eye size={15}/>
+                          </button>
+                          <button className="btn btn-ghost btn-sm" title="Edit" onClick={() => onEdit(n)}>
                           <Icons.Edit size={15}/>
                         </button>
                         <button className="btn btn-danger btn-sm" title="Delete" onClick={() => setConfirmDel(n)}>
@@ -758,6 +756,7 @@ function NotesManager({ user, onEdit, onAddNew }) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </section>
@@ -791,12 +790,13 @@ function NotesManager({ user, onEdit, onAddNew }) {
 /* ============================================================
    Users List
    ============================================================ */
-function UsersList() {
+function UsersList({ topbarSearch }) {
   const [users,   setUsers]   = useStateAd([]);
   const [uploads, setUploads] = useStateAd([]);
   const [q, setQ] = useStateAd('');
   const [role, setRole] = useStateAd('all');
 
+  useEffectAd(() => { setQ(topbarSearch || ''); }, [topbarSearch]);
   useEffectAd(() => {
     Promise.all([NotatiAPI.getUsers(), NotatiAPI.getUploads()])
       .then(([u, up]) => { setUsers(u); setUploads(up); });
@@ -814,7 +814,6 @@ function UsersList() {
     <div>
       <div className="page-head">
         <div className="ttl">
-          <span className="tag tag-soft">05 · Users</span>
           <h1>Registered users</h1>
           <p className="sub">Everyone with a Notati account. Students sign up themselves; admins are seeded.</p>
         </div>
@@ -846,44 +845,46 @@ function UsersList() {
               <EmptyState title="No matches" message="Try a different name or email."/>
             </div>
           ) : (
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Joined</th>
-                  <th className="r">Uploads</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(u => {
-                  const ups = uploads.filter(x => x.userId === u.id).length;
-                  return (
-                    <tr key={u.id}>
-                      <td data-l="Name">
-                        <div className="uploader-cell">
-                          <span className="avatar-sm">{u.name.charAt(0)}</span>
-                          <div className="meta">
-                            <span className="nm">{u.name}</span>
+            <div className="scroll-table">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Joined</th>
+                    <th className="r">Uploads</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(u => {
+                    const ups = uploads.filter(x => x.userId === u.id).length;
+                    return (
+                      <tr key={u.id}>
+                        <td data-l="Name">
+                          <div className="uploader-cell">
+                            <span className="avatar-sm">{u.name.charAt(0)}</span>
+                            <div className="meta">
+                              <span className="nm">{u.name}</span>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td data-l="Email"><span style={{ color: 'var(--fg-2)' }}>{u.email}</span></td>
-                      <td data-l="Role">
-                        <span className={`tag ${u.role === 'admin' ? 'tag-bark' : 'tag-soft'}`}>
-                          {u.role === 'admin' ? 'Admin' : 'Student'}
-                        </span>
-                      </td>
-                      <td data-l="Joined">{fmtDate(u.joinedAt || u.created_at)}</td>
-                      <td className="r" data-l="Uploads">
-                        <span style={{ font: 'var(--type-body-bold)' }}>{ups}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td data-l="Email"><span style={{ color: 'var(--fg-2)' }}>{u.email}</span></td>
+                        <td data-l="Role">
+                          <span className={`tag ${u.role === 'admin' ? 'tag-bark' : 'tag-soft'}`}>
+                            {u.role === 'admin' ? 'Admin' : 'Student'}
+                          </span>
+                        </td>
+                        <td data-l="Joined" style={{ whiteSpace: 'nowrap' }}>{fmtDate(u.joinedAt || u.created_at)}</td>
+                        <td className="r" data-l="Uploads">
+                          <span style={{ font: 'var(--type-body-bold)' }}>{ups}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </section>
@@ -986,7 +987,6 @@ function AccessManager() {
     <div>
       <div className="page-head">
         <div className="ttl">
-          <span className="tag tag-soft">06 · Access</span>
           <h1>Unlock access</h1>
           <p className="sub">
             After receiving a BenefitPay payment, find the student by email then grant them access to the chapter they paid for.

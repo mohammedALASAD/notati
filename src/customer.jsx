@@ -391,7 +391,6 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
     <div>
       <div className="page-head">
         <div className="ttl">
-          <span className="tag tag-soft">01 · Dashboard</span>
           <h1>Hey {user.name.split(' ')[0]} — ready to study?</h1>
           <p className="sub">
             Pick up where you left off. Your uploads sit at the top, the library is one tap away.
@@ -616,7 +615,6 @@ function UploadContent({ user, onDone }) {
     <div>
       <div className="page-head">
         <div className="ttl">
-          <span className="tag tag-soft">02 · Upload</span>
           <h1>Send us something to summarise.</h1>
           <p className="sub">Drop a slide deck, a reading, or your own draft. We'll turn it into clean notes within a couple of days.</p>
         </div>
@@ -781,7 +779,6 @@ function MyUploads({ user, onNav, onOpenNote }) {
     <div>
       <div className="page-head">
         <div className="ttl">
-          <span className="tag tag-soft">03 · My uploads</span>
           <h1>Your submissions</h1>
           <p className="sub">Everything you've sent in. When a Note is ready, you'll see a button to read it.</p>
         </div>
@@ -912,12 +909,13 @@ function FilterDropdown({ value, onChange, options, placeholder, icon }) {
 /* ============================================================
    Notes Library — two-level browse: course grid → chapter list
    ============================================================ */
-function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
+function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topbarSearch }) {
   const { toast } = useToast();
   const [notes,   setNotes]   = useStateC([]);
   const [loading, setLoading] = useStateC(true);
   const [q, setQ] = useStateC('');
 
+  useEffectC(() => { setQ(topbarSearch || ''); }, [topbarSearch]);
   useEffectC(() => {
     NotatiAPI.getNotes()
       .then(n => { setNotes(n); setLoading(false); })
@@ -966,7 +964,6 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
       <div>
         <div className="page-head">
           <div className="ttl">
-            <span className="tag tag-soft">04 · Library</span>
             <h1>{selectedCourse}</h1>
             <p className="sub">
               {courseCollege} · {courseChapters.length} chapter{courseChapters.length !== 1 ? 's' : ''}
@@ -1076,7 +1073,6 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
     <div>
       <div className="page-head">
         <div className="ttl">
-          <span className="tag tag-soft">04 · Library</span>
           <h1>Notes library</h1>
           <p className="sub">Browse by course. Free chapters are readable instantly — paid chapters are unlocked after payment via BenefitPay.</p>
         </div>
@@ -1354,7 +1350,6 @@ function LandingPage({ onLogin, onSignup }) {
         <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px 80px' }}>
           <div className="page-head">
             <div className="ttl">
-              <span className="tag tag-soft">Library</span>
               <h1>{selectedCourse}</h1>
               <p className="sub">
                 {courseCollege} · {allChapters.length} chapter{allChapters.length !== 1 ? 's' : ''}

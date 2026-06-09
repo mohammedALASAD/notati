@@ -381,6 +381,32 @@ input, textarea, select { font-family: inherit; }
 .page-head .sub { font-size: 15px; color: var(--fg-3); max-width: 640px; line-height: 1.5; }
 .page-head .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
+/* ---------- Filter bar ---------- */
+.filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.filter-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-left: auto;
+}
+.filter-select {
+  font: var(--type-body); font-size: 14px;
+  padding: 7px 32px 7px 14px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-1);
+  background: var(--notati-paper);
+  color: var(--fg-1);
+  cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239e8f82' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color var(--dur-base) var(--ease-out);
+}
+.filter-select:focus { outline: none; border-color: var(--notati-walnut); border-width: 1.5px; }
+.filter-select:hover { border-color: var(--border-1); }
+
+/* ---------- Scrollable table wrapper ---------- */
+.scroll-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 /* ---------- Stat cards (dashboard overview) ---------- */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
 .stat {
@@ -390,9 +416,11 @@ input, textarea, select { font-family: inherit; }
   border-radius: var(--r-5);
   padding: 22px 22px 20px;
   overflow: hidden;
-  transition: transform var(--dur-base) var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
 }
 .stat:hover { transform: translateY(-2px); }
+.stat-clickable { cursor: pointer; }
+.stat-clickable:hover { transform: translateY(-3px); box-shadow: var(--elev-2); }
 .stat .lbl {
   font: var(--type-label); letter-spacing: .08em; text-transform: uppercase;
   color: var(--fg-3); margin-bottom: 14px;
@@ -420,6 +448,12 @@ input, textarea, select { font-family: inherit; }
 .stat-sage  .ic { background: rgba(122, 155, 107, .18); color: var(--notati-forest); }
 .stat-walnut .ic { background: var(--notati-cream); color: var(--notati-walnut); }
 .stat-bark  .ic { background: var(--notati-bark); color: var(--notati-paper); }
+.stat .stat-nav {
+  display: inline-flex; align-items: center; gap: 4px;
+  font: var(--type-label); font-size: 11px; color: var(--fg-3);
+  margin-top: 10px; letter-spacing: .06em;
+}
+.stat-hero .stat-nav { color: var(--notati-clay); }
 
 /* Featured stat — uses dark band on hero */
 .stat-hero {
@@ -501,6 +535,28 @@ input, textarea, select { font-family: inherit; }
 .uploader-cell .meta { display: flex; flex-direction: column; }
 .uploader-cell .nm { font: var(--type-body-bold); font-size: 14px; }
 .uploader-cell .em { font: var(--type-caption); font-style: normal; color: var(--fg-3); font-size: 12px; }
+
+/* ---------- Latest-notes card (dashboard panel) ---------- */
+.note-list-card {
+  background: var(--notati-paper);
+  border-radius: var(--r-5);
+  padding: 16px 18px;
+  border: 1px solid var(--border-2);
+  transition: border-color var(--dur-base) var(--ease-out);
+}
+.note-list-card:hover { border-color: var(--border-1); }
+.note-list-card .nlc-head {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-bottom: 8px;
+}
+.note-list-card .nlc-title {
+  font: var(--type-h3); font-size: 15px; color: var(--fg-1);
+  margin-bottom: 4px; line-height: 1.35;
+}
+.note-list-card .nlc-meta {
+  font: var(--type-caption); font-style: normal;
+  font-size: 12px; color: var(--fg-3);
+}
 
 /* ---------- Note card variant (compact) ---------- */
 .notecard {
@@ -879,6 +935,8 @@ input, textarea, select { font-family: inherit; }
   .auth-aside { padding: 36px 32px; min-height: auto; }
   .auth-aside .pitch h1 { font-size: 38px; }
   .topbar .search-mini { display: none; }
+  .filter-bar { margin-left: 0; width: 100%; }
+  .panel-head { flex-wrap: wrap; }
 }
 
 @media (max-width: 720px) {
@@ -898,13 +956,19 @@ input, textarea, select { font-family: inherit; }
   .shell-collapsed .side-section,
   .shell-collapsed .side-user .meta { display: initial; opacity: 1; height: auto; padding: revert; }
   .shell-collapsed .side-link { justify-content: flex-start; padding: 10px 12px; }
-  .page { padding: 20px; }
-  .page-head h1 { font-size: 28px; }
-  .stats { grid-template-columns: 1fr; }
-  .stat-hero { grid-column: span 1; }
+  .page { padding: 16px; }
+  .page-head { margin-bottom: 20px; }
+  .page-head h1 { font-size: 26px; }
+  .page-head .sub { font-size: 14px; }
+  .page-head .actions { width: 100%; }
+  .stats { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .stat-hero { grid-column: span 2; }
+  .stat .num { font-size: 32px; }
   .grid-3, .grid-4 { grid-template-columns: 1fr; }
   .field-row { grid-template-columns: 1fr; }
-  .topbar { padding: 14px 18px; }
+  .topbar { padding: 12px 16px; gap: 10px; }
+  .topbar .crumb { font-size: 12px; }
+  .filter-select { font-size: 13px; }
   .tbl thead { display: none; }
   .tbl tbody td { display: block; padding: 6px 16px; border: 0; }
   .tbl tbody tr {
@@ -918,4 +982,24 @@ input, textarea, select { font-family: inherit; }
     font: var(--type-label); letter-spacing: .08em;
     color: var(--fg-3); margin-right: 8px;
   }
+  .tbl td.r { text-align: left; }
+  .modal-bg { padding: 16px; }
+  .modal { max-height: calc(100vh - 32px); }
+}
+
+@media (max-width: 480px) {
+  .auth-aside { display: none; }
+  .auth-page { grid-template-columns: 1fr; }
+  .auth-main { padding: 32px 20px; align-items: flex-start; padding-top: 48px; }
+  .auth-card { max-width: 100%; }
+  .stats { grid-template-columns: 1fr; }
+  .stat-hero { grid-column: span 1; }
+  .page { padding: 12px; }
+  .panel-head { padding: 14px 16px 12px; }
+  .panel-body { padding: 14px 16px; }
+  .topbar { padding: 10px 14px; }
+  .filters { gap: 6px; }
+  .filter-bar { gap: 8px; }
+  .filter-select { width: 100%; }
+  .search-mini { min-width: 0 !important; width: 100%; }
 }

@@ -60,6 +60,7 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
   const currentLabel = (navMap.find(n => n.id === current) || navMap[0]).label;
 
   function bump() { setRefreshKey(k => k + 1); }
+  function navWithClear(id) { setSearch(''); onNav(id); }
 
   async function handlePublishFromInbox(upload) {
     let linkedNote = null;
@@ -90,7 +91,7 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
   return (
     <div className={shellCls()} key={refreshKey}>
       <Sidebar nav={nav} current={current}
-               onNav={(id) => onNav(id)}
+               onNav={navWithClear}
                user={user}
                onLogout={onLogout}
                isOpen={sideOpen}
@@ -114,33 +115,35 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
         <div className="page">
           {/* ----- ADMIN PAGES ----- */}
           {isAdmin && current === 'overview' && (
-            <AdminDashboard user={user} onNav={onNav}/>
+            <AdminDashboard user={user} onNav={navWithClear}/>
           )}
           {isAdmin && current === 'inbox' && (
-            <ContentInbox user={user} onPublish={handlePublishFromInbox}/>
+            <ContentInbox user={user} onPublish={handlePublishFromInbox} topbarSearch={search}/>
           )}
           {isAdmin && current === 'notes' && (
             <NotesManager key={refreshKey} user={user}
                           onEdit={(n) => { setEditingNote(n); setPublishUpload(null); }}
-                          onAddNew={() => { setEditingNote(null); setPublishUpload({ id: null }); }}/>
+                          onAddNew={() => { setEditingNote(null); setPublishUpload({ id: null }); }}
+                          topbarSearch={search}/>
           )}
-          {isAdmin && current === 'users' && <UsersList/>}
+          {isAdmin && current === 'users' && <UsersList topbarSearch={search}/>}
           {isAdmin && current === 'access' && <AccessManager/>}
 
           {/* ----- CUSTOMER PAGES ----- */}
           {!isAdmin && current === 'overview' && (
-            <CustomerDashboard user={user} onNav={onNav} onOpenNote={setReadingNote}
+            <CustomerDashboard user={user} onNav={navWithClear} onOpenNote={setReadingNote}
                                bag={bagItems} onAddToBag={handleAddToBag} onRemoveFromBag={handleRemoveFromBag}/>
           )}
           {!isAdmin && current === 'upload' && (
-            <UploadContent user={user} onDone={() => onNav('uploads')}/>
+            <UploadContent user={user} onDone={() => navWithClear('uploads')}/>
           )}
           {!isAdmin && current === 'uploads' && (
-            <MyUploads user={user} onNav={onNav} onOpenNote={setReadingNote}/>
+            <MyUploads user={user} onNav={navWithClear} onOpenNote={setReadingNote}/>
           )}
           {!isAdmin && current === 'library' && (
             <NotesLibrary user={user} onOpenNote={setReadingNote}
-                          bag={bagItems} onAddToBag={handleAddToBag} onRemoveFromBag={handleRemoveFromBag}/>
+                          bag={bagItems} onAddToBag={handleAddToBag} onRemoveFromBag={handleRemoveFromBag}
+                          topbarSearch={search}/>
           )}
         </div>
       </div>

@@ -270,14 +270,20 @@ function Topbar({ crumb, current, role, onMenu, search, onSearch, bagCount, onOp
 /* ============================================================
    Stat card
    ============================================================ */
-function Stat({ label, num, delta, icon, tone, hero }) {
+function Stat({ label, num, delta, icon, tone, hero, onClick, navLabel }) {
   const Ic = Icons[icon] || Icons.Folder;
   return (
-    <div className={`stat ${tone ? 'stat-' + tone : ''} ${hero ? 'stat-hero' : ''}`}>
+    <div className={`stat ${tone ? 'stat-' + tone : ''} ${hero ? 'stat-hero' : ''} ${onClick ? 'stat-clickable' : ''}`}
+         onClick={onClick}>
       <span className="ic"><Ic size={18}/></span>
       <div className="lbl">{label}</div>
       <div className="num">{num}</div>
       {delta ? <div className={`delta ${delta.dir || ''}`}>{delta.text}</div> : null}
+      {onClick && (
+        <div className="stat-nav">
+          {navLabel || 'View all'} <Icons.ArrowRight size={11}/>
+        </div>
+      )}
     </div>
   );
 }
