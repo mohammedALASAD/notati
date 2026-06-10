@@ -1216,7 +1216,7 @@ function TestimonialsManager() {
           <h3>Pending approval <span className="badge badge-amber">{pending.length}</span></h3>
         </div>
         <div className="panel-body">
-          {loading ? <Spinner/> : pending.length === 0 ? (
+          {loading ? <div style={{ padding: '20px 0', color: 'var(--fg-3)', fontSize: 13 }}>Loading…</div> : pending.length === 0 ? (
             <EmptyState title="All clear" message="No testimonials waiting for review."/>
           ) : pending.map(item => (
             <div key={item.id} className="testimonial-row">
@@ -1245,7 +1245,7 @@ function TestimonialsManager() {
           <h3>Live on site <span className="badge badge-sage">{approved.length}</span></h3>
         </div>
         <div className="panel-body">
-          {loading ? <Spinner/> : approved.length === 0 ? (
+          {loading ? <div style={{ padding: '20px 0', color: 'var(--fg-3)', fontSize: 13 }}>Loading…</div> : approved.length === 0 ? (
             <EmptyState title="None approved yet" message="Approve some reviews above."/>
           ) : approved.map(item => (
             <div key={item.id} className="testimonial-row">
