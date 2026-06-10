@@ -534,7 +534,78 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
         </section>
       </div>
 
+      <TestimonialForm user={user}/>
     </div>
+  );
+}
+
+/* ============================================================
+   Testimonial submit form (shown on student dashboard)
+   ============================================================ */
+function TestimonialForm({ user }) {
+  const { toast } = useToast();
+  const [text,    setText]    = useStateC('');
+  const [course,  setCourse]  = useStateC('');
+  const [sending, setSending] = useStateC(false);
+  const [done,    setDone]    = useStateC(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setSending(true);
+    try {
+      await NotatiAPI.submitTestimonial({ text: text.trim(), course: course.trim() });
+      setDone(true);
+      setText('');
+      setCourse('');
+      toast.success('Review submitted', 'Thanks! It will appear once approved.');
+    } catch {
+      toast.error('Could not submit', 'Please try again.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <section className="panel" style={{ marginTop: 24 }}>
+      <div className="panel-head">
+        <h3>Share your experience</h3>
+      </div>
+      <div className="panel-body">
+        {done ? (
+          <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--fg-2)' }}>
+            <Icons.Check size={28} style={{ color: 'var(--notati-sage)', marginBottom: 8 }}/>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Review submitted</div>
+            <div style={{ fontSize: 13 }}>It will show on the login page once approved.</div>
+            <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }}
+                    onClick={() => setDone(false)}>Submit another</button>
+          </div>
+        ) : (
+          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="field">
+              <label>Your review <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>(max 300 chars)</span></label>
+              <textarea rows={3} maxLength={300} required
+                        placeholder="How did Notati help you? Be honest."
+                        value={text} onChange={e => setText(e.target.value)}
+                        style={{ resize: 'vertical', minHeight: 80 }}/>
+              <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>
+                {text.length}/300
+              </div>
+            </div>
+            <div className="field">
+              <label>Course <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>(optional, e.g. MGMT 233)</span></label>
+              <input type="text" maxLength={50} placeholder="MGMT 233"
+                     value={course} onChange={e => setCourse(e.target.value)}/>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-primary" type="submit" disabled={sending || !text.trim()}>
+                {sending ? 'Submitting…' : 'Submit review'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </section>
   );
 }
 

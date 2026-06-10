@@ -31,4 +31,10 @@ urlpatterns = [
     path('admin/users/',        views.AdminUserListView.as_view(),    name='admin-users'),
     path('admin/users/<int:pk>/', views.AdminUserDetailView.as_view(), name='admin-user-detail'),
     path('admin/stats/',        views.admin_stats,                    name='admin-stats'),
+
+    # Testimonials
+    path('testimonials/',              views.TestimonialPublicView.as_view(),       name='testimonial-list'),
+    path('testimonials/submit/',       views.TestimonialCreateView.as_view(),       name='testimonial-submit'),
+    path('admin/testimonials/',        views.TestimonialAdminListView.as_view(),    name='admin-testimonial-list'),
+    path('admin/testimonials/<int:pk>/', views.TestimonialAdminDetailView.as_view(), name='admin-testimonial-detail'),
 ]

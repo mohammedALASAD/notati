@@ -114,3 +114,17 @@ class Upload(models.Model):
 
     def __str__(self):
         return f'{self.user.email}: {self.title}'
+
+
+class Testimonial(models.Model):
+    user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='testimonials')
+    text       = models.TextField(max_length=300)
+    course     = models.CharField(max_length=200, blank=True)
+    approved   = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user.name}: {self.text[:50]}'

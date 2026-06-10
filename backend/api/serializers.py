@@ -1,6 +1,6 @@
 import re
 from rest_framework import serializers
-from .models import User, Course, Note, Access, Upload
+from .models import User, Course, Note, Access, Upload, Testimonial
 
 
 def _signed_url(url):
@@ -171,3 +171,25 @@ class UploadSerializer(serializers.ModelSerializer):
 class UploadAdminSerializer(UploadSerializer):
     class Meta(UploadSerializer.Meta):
         read_only_fields = ['id', 'user', 'created_at']
+
+
+class TestimonialSerializer(serializers.ModelSerializer):
+    user_name    = serializers.CharField(source='user.name', read_only=True)
+    user_college = serializers.CharField(source='user.college', read_only=True)
+
+    class Meta:
+        model  = Testimonial
+        fields = ['id', 'user_name', 'user_college', 'text', 'course', 'approved', 'created_at']
+        read_only_fields = ['id', 'user_name', 'user_college', 'approved', 'created_at']
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+
+class TestimonialAdminSerializer(TestimonialSerializer):
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+
+    class Meta(TestimonialSerializer.Meta):
+        fields = TestimonialSerializer.Meta.fields + ['user_email']
+        read_only_fields = ['id', 'user_name', 'user_email', 'user_college', 'created_at']

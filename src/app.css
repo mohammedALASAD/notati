@@ -987,6 +987,25 @@ input, textarea, select { font-family: inherit; }
   .modal { max-height: calc(100vh - 32px); }
 }
 
+/* ── Testimonial rows (admin manager) ── */
+.testimonial-row {
+  display: flex; align-items: flex-start; gap: 16px;
+  padding: 14px 0; border-bottom: 1px solid var(--border-1);
+}
+.testimonial-row:last-child { border-bottom: none; }
+.tr-body { flex: 1; min-width: 0; }
+.tr-text { font-size: 14px; color: var(--fg-1); margin-bottom: 4px; line-height: 1.5; }
+.tr-meta { font: var(--type-caption); color: var(--fg-3); }
+.tr-acts { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* ── Quote rotation dots (auth aside) ── */
+.quote-dots { display: flex; gap: 6px; margin-top: 12px; }
+.qdot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(255,255,255,.3); cursor: pointer; transition: background .2s;
+}
+.qdot-active { background: var(--notati-amber); }
+
 @media (max-width: 480px) {
   .auth-aside { display: none; }
   .auth-page { grid-template-columns: 1fr; }

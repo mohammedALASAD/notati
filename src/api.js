@@ -256,6 +256,24 @@
       const blob = await _proxyFetch(BASE + `/notes/${noteId}/download/`);
       return URL.createObjectURL(blob);
     },
+
+    /* Testimonials */
+    async getTestimonials() {
+      const data = await req('GET', '/testimonials/');
+      return list(data);
+    },
+    async submitTestimonial(payload) {
+      return req('POST', '/testimonials/submit/', payload);
+    },
+    async getAdminTestimonials() {
+      return list(await req('GET', '/admin/testimonials/'));
+    },
+    async updateTestimonial(id, payload) {
+      return req('PATCH', `/admin/testimonials/${id}/`, payload);
+    },
+    async deleteTestimonial(id) {
+      return req('DELETE', `/admin/testimonials/${id}/`);
+    },
   };
 
   async function _proxyFetch(url) {

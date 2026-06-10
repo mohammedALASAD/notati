@@ -1166,4 +1166,106 @@ function AccessManager() {
   );
 }
 
-Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, AccessManager });
+/* ============================================================
+   Testimonials Manager (admin)
+   ============================================================ */
+function TestimonialsManager() {
+  const { toast } = useToast();
+  const [items,   setItems]   = useStateAd([]);
+  const [loading, setLoading] = useStateAd(true);
+
+  function load() {
+    setLoading(true);
+    NotatiAPI.getAdminTestimonials()
+      .then(data => { setItems(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }
+
+  useEffectAd(load, []);
+
+  async function approve(item) {
+    try {
+      await NotatiAPI.updateTestimonial(item.id, { approved: true });
+      toast.success('Approved', item.user_name);
+      load();
+    } catch { toast.error('Failed', 'Could not approve.'); }
+  }
+
+  async function reject(item) {
+    try {
+      await NotatiAPI.deleteTestimonial(item.id);
+      toast.success('Removed', item.user_name);
+      load();
+    } catch { toast.error('Failed', 'Could not remove.'); }
+  }
+
+  const pending  = items.filter(i => !i.approved);
+  const approved = items.filter(i => i.approved);
+
+  return (
+    <div>
+      <div className="page-head">
+        <div className="ttl">
+          <h1>Testimonials</h1>
+          <p className="sub">Approve student reviews to show them on the login page.</p>
+        </div>
+      </div>
+
+      <section className="panel" style={{ marginBottom: 24 }}>
+        <div className="panel-head">
+          <h3>Pending approval <span className="badge badge-amber">{pending.length}</span></h3>
+        </div>
+        <div className="panel-body">
+          {loading ? <Spinner/> : pending.length === 0 ? (
+            <EmptyState title="All clear" message="No testimonials waiting for review."/>
+          ) : pending.map(item => (
+            <div key={item.id} className="testimonial-row">
+              <div className="tr-body">
+                <div className="tr-text">"{item.text}"</div>
+                <div className="tr-meta">
+                  {item.user_name}{item.course ? ` · ${item.course}` : ''}{item.user_college ? ` · ${item.user_college}` : ''}
+                  <span style={{ color: 'var(--fg-3)', marginLeft: 8 }}>{item.user_email}</span>
+                </div>
+              </div>
+              <div className="tr-acts">
+                <button className="btn btn-primary btn-sm" onClick={() => approve(item)}>
+                  <Icons.Check size={13}/> Approve
+                </button>
+                <button className="btn btn-danger btn-sm" onClick={() => reject(item)}>
+                  <Icons.Close size={13}/> Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h3>Live on site <span className="badge badge-sage">{approved.length}</span></h3>
+        </div>
+        <div className="panel-body">
+          {loading ? <Spinner/> : approved.length === 0 ? (
+            <EmptyState title="None approved yet" message="Approve some reviews above."/>
+          ) : approved.map(item => (
+            <div key={item.id} className="testimonial-row">
+              <div className="tr-body">
+                <div className="tr-text">"{item.text}"</div>
+                <div className="tr-meta">
+                  {item.user_name}{item.course ? ` · ${item.course}` : ''}{item.user_college ? ` · ${item.user_college}` : ''}
+                </div>
+              </div>
+              <div className="tr-acts">
+                <button className="btn btn-danger btn-sm" onClick={() => reject(item)}>
+                  <Icons.Close size={13}/> Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, AccessManager, TestimonialsManager });

@@ -4,9 +4,33 @@
    Calls props.onAuth(user) on success.
    ============================================================ */
 
-const { useState: useStateA } = React;
+const { useState: useStateA, useEffect: useEffectA } = React;
+
+const FALLBACK_QUOTE = {
+  text: 'Chapter 4 made sense in 8 minutes. Worth every minute of revision.',
+  user_name: 'Mariam',
+  course: 'MGMT 233',
+  user_college: 'University of Bahrain',
+};
 
 function AuthShell({ children, switchTo, mode, onGuest }) {
+  const [quotes, setQuotes]   = useStateA([FALLBACK_QUOTE]);
+  const [qIndex, setQIndex]   = useStateA(0);
+
+  useEffectA(() => {
+    NotatiAPI.getTestimonials().then(data => {
+      if (data && data.length > 0) setQuotes(data);
+    }).catch(() => {});
+  }, []);
+
+  useEffectA(() => {
+    if (quotes.length <= 1) return;
+    const t = setInterval(() => setQIndex(i => (i + 1) % quotes.length), 6000);
+    return () => clearInterval(t);
+  }, [quotes]);
+
+  const q = quotes[qIndex];
+
   return (
     <div className="auth-page">
       <aside className="auth-aside">
@@ -26,8 +50,18 @@ function AuthShell({ children, switchTo, mode, onGuest }) {
         </div>
 
         <div className="quote">
-          "Chapter 4 made sense in 8 minutes. Worth every minute of revision."
-          <span className="by">— Mariam, MGMT 233 · University of Bahrain</span>
+          "{q.text}"
+          <span className="by">
+            — {q.user_name}{q.course ? `, ${q.course}` : ''}{q.user_college ? ` · ${q.user_college}` : ''}
+          </span>
+          {quotes.length > 1 && (
+            <div className="quote-dots">
+              {quotes.map((_, i) => (
+                <span key={i} className={`qdot${i === qIndex ? ' qdot-active' : ''}`}
+                      onClick={() => setQIndex(i)}/>
+              ))}
+            </div>
+          )}
         </div>
       </aside>
 

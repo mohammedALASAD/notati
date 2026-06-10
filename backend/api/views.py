@@ -9,11 +9,12 @@ from rest_framework.views import APIView
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 
-from .models import User, Course, Note, Access, Upload
+from .models import User, Course, Note, Access, Upload, Testimonial
 from .serializers import (
     RegisterSerializer, UserSerializer, UserAdminSerializer,
     CourseSerializer, NoteSerializer, NoteAdminSerializer,
     AccessSerializer, UploadSerializer, UploadAdminSerializer,
+    TestimonialSerializer, TestimonialAdminSerializer,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
 
@@ -254,3 +255,32 @@ def admin_stats(request):
         'uploads':  Upload.objects.filter(status='pending').count(),
         'accesses': Access.objects.count(),
     })
+
+
+# ── Testimonials ──────────────────────────────────────────────────────────────
+
+class TestimonialPublicView(generics.ListAPIView):
+    serializer_class   = TestimonialSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        return Testimonial.objects.filter(approved=True)
+
+
+class TestimonialCreateView(generics.CreateAPIView):
+    serializer_class   = TestimonialSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class TestimonialAdminListView(generics.ListAPIView):
+    serializer_class   = TestimonialAdminSerializer
+    permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        return Testimonial.objects.all()
+
+
+class TestimonialAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class   = TestimonialAdminSerializer
+    permission_classes = [IsAdmin]
+    queryset           = Testimonial.objects.all()
