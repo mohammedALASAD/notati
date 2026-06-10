@@ -1331,6 +1331,7 @@ function LandingPage({ onLogin, onSignup }) {
   const { toast } = useToast();
   const [notes, setNotes]                   = useStateC([]);
   const [loading, setLoading]               = useStateC(true);
+  const [loadSecs, setLoadSecs]             = useStateC(0);
   const [q, setQ]                           = useStateC('');
   const [college, setCollege]               = useStateC('all');
   const [selectedCourse, setSelectedCourse] = useStateC(null);
@@ -1342,6 +1343,12 @@ function LandingPage({ onLogin, onSignup }) {
       .then(n => { setNotes(n); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffectC(() => {
+    if (!loading) return;
+    const t = setInterval(() => setLoadSecs(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [loading]);
 
   function pickCollege(c) { setCollege(c); setSelectedCourse(null); setQ(''); }
 
@@ -1571,8 +1578,18 @@ function LandingPage({ onLogin, onSignup }) {
           </div>
           <div className="panel-body">
             {loading ? (
-              <div style={{ padding: 40, textAlign: 'center', font: 'var(--type-body)', color: 'var(--fg-3)' }}>
-                Loading courses…
+              <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+                <div style={{ display: 'inline-block', width: 32, height: 32, border: '3px solid var(--border-2)',
+                              borderTopColor: 'var(--notati-amber)', borderRadius: '50%',
+                              animation: 'spin 0.9s linear infinite', marginBottom: 16 }}/>
+                <div style={{ font: 'var(--type-body)', color: 'var(--fg-2)', marginBottom: 6 }}>
+                  {loadSecs < 5 ? 'Loading courses…' : 'Still loading — the server is waking up…'}
+                </div>
+                {loadSecs >= 5 && (
+                  <div style={{ font: 'var(--type-caption)', color: 'var(--fg-3)', fontSize: 12, maxWidth: 300, margin: '0 auto' }}>
+                    First visit after a quiet period takes ~20 seconds. Almost there.
+                  </div>
+                )}
               </div>
             ) : courses.length === 0 ? (
               <EmptyState title="No courses yet" message="The library is empty — check back soon."/>

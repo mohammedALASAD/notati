@@ -1022,3 +1022,7 @@ input, textarea, select { font-family: inherit; }
   .filter-select { width: 100%; }
   .search-mini { min-width: 0 !important; width: 100%; }
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
