@@ -73,7 +73,6 @@ function LoginView({ onAuth, switchTo, onGuest }) {
   return (
     <AuthShell mode="login" switchTo={switchTo} onGuest={onGuest}>
       <form className="auth-card" onSubmit={submit} noValidate>
-        <span className="eyebrow">01 · Sign in</span>
         <h2>Welcome back.</h2>
         <p className="sub">Pick up where you left off — your notes are waiting.</p>
 
@@ -146,7 +145,6 @@ function SignupView({ onAuth, switchTo, onGuest }) {
   return (
     <AuthShell mode="signup" switchTo={switchTo} onGuest={onGuest}>
       <form className="auth-card" onSubmit={submit} noValidate>
-        <span className="eyebrow">02 · Create account</span>
         <h2>Join Notati.</h2>
         <p className="sub">Get clear, student-written notes — and contribute your own.</p>
 
