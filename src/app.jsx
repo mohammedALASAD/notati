@@ -21,6 +21,7 @@ const ADMIN_NAV = [
 const CUSTOMER_NAV = [
   { id: 'overview', label: 'Dashboard',     icon: 'Dashboard' },
   { id: 'library',  label: 'Notes library', icon: 'Library' },
+  { id: 'mynotes',  label: 'My notes',      icon: 'BookOpen' },
   { section: 'My stuff' },
   { id: 'upload',   label: 'Upload content',icon: 'Upload' },
   { id: 'uploads',  label: 'My uploads',    icon: 'Folder' }
@@ -146,6 +147,9 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
             <NotesLibrary user={user} onOpenNote={setReadingNote}
                           bag={bagItems} onAddToBag={handleAddToBag} onRemoveFromBag={handleRemoveFromBag}
                           topbarSearch={search}/>
+          )}
+          {!isAdmin && current === 'mynotes' && (
+            <MyNotesPage user={user} onOpenNote={setReadingNote}/>
           )}
         </div>
       </div>

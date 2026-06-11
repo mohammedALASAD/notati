@@ -1638,4 +1638,157 @@ function LandingPage({ onLogin, onSignup }) {
   );
 }
 
-Object.assign(window, { CustomerDashboard, UploadContent, MyUploads, NotesLibrary, NoteReader, BagDrawer, BagCheckoutModal, LandingPage });
+/* ============================================================
+   MyNotesPage — notes the student can actually access
+   ============================================================ */
+function MyNotesPage({ user, onOpenNote }) {
+  const { toast } = useToast();
+  const [notes,          setNotes]          = useStateC([]);
+  const [loading,        setLoading]        = useStateC(true);
+  const [selectedCourse, setSelectedCourse] = useStateC(null);
+  const [q,              setQ]              = useStateC('');
+
+  useEffectC(() => {
+    NotatiAPI.getNotes()
+      .then(n => { setNotes(n.filter(note => note.hasAccess)); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  // Group accessible notes into course folders
+  const courses = useMemoC(() => {
+    const map = {};
+    notes.forEach(n => {
+      if (!map[n.courseName]) map[n.courseName] = { courseName: n.courseName, college: n.college, notes: [] };
+      map[n.courseName].notes.push(n);
+    });
+    Object.values(map).forEach(c => c.notes.sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber)));
+    const ql = q.trim().toLowerCase();
+    return Object.values(map).filter(c =>
+      !ql || c.courseName.toLowerCase().includes(ql) || c.college.toLowerCase().includes(ql)
+    );
+  }, [notes, q]);
+
+  const courseChapters = useMemoC(() => {
+    if (!selectedCourse) return [];
+    return notes.filter(n => n.courseName === selectedCourse)
+                .sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber));
+  }, [notes, selectedCourse]);
+
+  function download(n) {
+    if (!n._numId) { toast.info('No file', 'No PDF attached yet.'); return; }
+    NotatiAPI.downloadNoteFile(n._numId, n.fileName || n.title + '.pdf')
+      .catch(e => toast.error('Download failed', e.message));
+  }
+
+  /* ---- Level 2: Chapter list ---- */
+  if (selectedCourse) {
+    const courseCollege = courseChapters[0]?.college || '';
+    return (
+      <div>
+        <div className="page-head">
+          <div className="ttl">
+            <h1>{selectedCourse}</h1>
+            <p className="sub">{courseCollege} · {courseChapters.length} chapter{courseChapters.length !== 1 ? 's' : ''}</p>
+          </div>
+          <button className="btn btn-soft btn-sm" onClick={() => setSelectedCourse(null)}>
+            <Icons.ArrowLeft size={14}/> All courses
+          </button>
+        </div>
+
+        <section className="panel">
+          <div className="panel-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {courseChapters.map(n => (
+                <div key={n.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 16px', background: 'var(--notati-cream)',
+                  borderRadius: 'var(--r-5)', border: '1px solid var(--border-2)', gap: 12
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ font: 'var(--type-body)', fontWeight: 600, color: 'var(--fg-1)', fontSize: 14, marginBottom: 2 }}>
+                      Ch.{n.chapterNumber}: {n.chapterTitle || n.title}
+                    </div>
+                    <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                      {n.title}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <button className="btn btn-soft btn-sm" onClick={() => onOpenNote(n)}>
+                      <Icons.Eye size={13}/> Read
+                    </button>
+                    {n.pdfFile && (
+                      <button className="btn btn-outline btn-sm" onClick={() => download(n)}>
+                        <Icons.Download size={13}/> PDF
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  /* ---- Level 1: Course folders ---- */
+  return (
+    <div>
+      <div className="page-head">
+        <div className="ttl">
+          <h1>My Notes</h1>
+          <p className="sub">Chapters you have access to — free and unlocked.</p>
+        </div>
+      </div>
+
+      <section className="panel">
+        <div className="panel-head">
+          <div className="search-mini" style={{ minWidth: 260 }}>
+            <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by course name…"/>
+          </div>
+        </div>
+        <div className="panel-body">
+          {loading ? (
+            <div style={{ padding: '32px 0', textAlign: 'center', font: 'var(--type-body)', color: 'var(--fg-3)' }}>
+              Loading…
+            </div>
+          ) : courses.length === 0 ? (
+            <EmptyState
+              title="No notes yet"
+              message={notes.length === 0
+                ? "You don't have access to any notes yet. Browse the library and unlock chapters."
+                : "No courses match your search."}/>
+          ) : (
+            <div className="grid-3">
+              {courses.map(({ courseName, college: coll, notes: cNotes }) => (
+                <div key={courseName} className="notecard" style={{ cursor: 'pointer' }}
+                     onClick={() => setSelectedCourse(courseName)}>
+                  <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{coll}</div>
+                  <span className="course">{courseName}</span>
+                  <div className="title">{cNotes.length} chapter{cNotes.length !== 1 ? 's' : ''} unlocked</div>
+                  <div style={{ marginTop: 10 }}>
+                    <span style={{ background: 'var(--notati-sage)', color: 'var(--notati-paper)',
+                                   font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
+                                   borderRadius: 'var(--r-pill)' }}>
+                      {cNotes.length} accessible
+                    </span>
+                  </div>
+                  <div className="foot">
+                    <span style={{ opacity: .5 }}>{fmtDate(cNotes[0].publishedAt)}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                                   color: 'var(--notati-walnut)', fontWeight: 700 }}>
+                      Open <Icons.ArrowRight size={13}/>
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+Object.assign(window, { CustomerDashboard, UploadContent, MyUploads, NotesLibrary, NoteReader, BagDrawer, BagCheckoutModal, LandingPage, MyNotesPage });
