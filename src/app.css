@@ -257,7 +257,7 @@ input, textarea, select { font-family: inherit; }
 }
 .side-logo img { width: 32px; height: 32px; flex-shrink: 0; }
 .side-logo .name {
-  font-family: 'Overlock', var(--font-serif); font-weight: 700; font-size: 22px;
+  font-family: 'Overlock', var(--font-serif); font-weight: 900; font-size: 22px;
   letter-spacing: -.02em; white-space: nowrap;
 }
 .shell-collapsed .side-logo .name { display: none; }

@@ -5,16 +5,11 @@
    Then use vars like color: var(--fg-1); font: var(--type-h1);
    ============================================================ */
 
-/* ---------- Brand fonts (local) ----------
-   Caladea = brand serif (display, headings, brand moments).
+/* ---------- Brand fonts ----------
+   Overlock = brand serif (display, headings, brand moments) — loaded via Google Fonts.
    Carlito = brand sans (body, UI, captions, labels).
    DM Sans + DM Serif Display also bundled as a secondary system.
    --------------------------------------- */
-
-@font-face { font-family: 'Caladea'; src: url('fonts/Caladea-Regular.ttf')   format('truetype'); font-weight: 400; font-style: normal;  font-display: swap; }
-@font-face { font-family: 'Caladea'; src: url('fonts/Caladea-Italic.ttf')    format('truetype'); font-weight: 400; font-style: italic;  font-display: swap; }
-@font-face { font-family: 'Caladea'; src: url('fonts/Caladea-Bold.ttf')      format('truetype'); font-weight: 700; font-style: normal;  font-display: swap; }
-@font-face { font-family: 'Caladea'; src: url('fonts/Caladea-BoldItalic.ttf') format('truetype'); font-weight: 700; font-style: italic; font-display: swap; }
 
 @font-face { font-family: 'Carlito'; src: url('fonts/Carlito-Regular.ttf')   format('truetype'); font-weight: 400; font-style: normal;  font-display: swap; }
 @font-face { font-family: 'Carlito'; src: url('fonts/Carlito-Italic.ttf')    format('truetype'); font-weight: 400; font-style: italic;  font-display: swap; }
@@ -73,14 +68,14 @@
   --link-hover: var(--notati-bark);
 
   /* ---------- Type families ---------- */
-  --font-serif: 'Caladea', 'Cambria', 'Georgia', serif;
+  --font-serif: 'Overlock', 'Cambria', 'Georgia', serif;
   --font-sans:  'Carlito', 'Calibri', 'Helvetica Neue', 'Arial', sans-serif;
   --font-mono:  ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
 
   /* ---------- Type scale (px, scaled up from brand pt for screen) ---------- */
-  --fs-display: 42px;  /* Brand display — Caladea Bold 32pt */
-  --fs-h1:      28px;  /* H1 — Caladea Bold 22pt */
-  --fs-h2:      20px;  /* H2 — Caladea Bold 16pt */
+  --fs-display: 42px;  /* Brand display — Overlock Bold 32pt */
+  --fs-h1:      28px;  /* H1 — Overlock Bold 22pt */
+  --fs-h2:      20px;  /* H2 — Overlock Bold 16pt */
   --fs-h3:      17px;  /* H3 — Carlito Bold 13pt */
   --fs-body:    15px;  /* Body — Carlito 10pt */
   --fs-caption: 13px;  /* Caption — Carlito Italic 9pt */
