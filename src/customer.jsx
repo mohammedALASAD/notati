@@ -1687,8 +1687,6 @@ function LandingPage({ onLogin, onSignup }) {
                             color: 'var(--notati-clay)', marginBottom: 20 }}>Platform</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {[
-                  { label: 'Notes library', action: onSignup },
-                  { label: 'Upload content', action: onSignup },
                   { label: 'Log in', action: onLogin },
                   { label: 'Create account', action: onSignup },
                 ].map(({ label, action }) => (
@@ -1723,8 +1721,8 @@ function LandingPage({ onLogin, onSignup }) {
           </div>
           <div style={{ borderTop: '1px solid rgba(251,247,243,.1)', paddingTop: 28,
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <span style={{ color: 'rgba(251,247,243,.35)', fontSize: 13 }}>© 2025 Notati. All rights reserved.</span>
-            <span style={{ color: 'rgba(251,247,243,.35)', fontSize: 13 }}>Made for students in Bahrain</span>
+            <span style={{ color: 'rgba(251,247,243,.35)', fontSize: 13 }}>© {new Date().getFullYear()} Notati. All rights reserved.</span>
+            <span style={{ color: 'rgba(251,247,243,.35)', fontSize: 13 }}>Made for students</span>
           </div>
         </div>
       </footer>
