@@ -84,6 +84,13 @@ function LoginView({ onAuth, switchTo, onGuest }) {
   const [password, setPassword] = useStateA('');
   const [err,      setErr]      = useStateA('');
   const [busy,     setBusy]     = useStateA(false);
+  const [busySecs, setBusySecs] = useStateA(0);
+
+  useEffectA(() => {
+    if (!busy) { setBusySecs(0); return; }
+    const t = setInterval(() => setBusySecs(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [busy]);
 
   async function submit(e) {
     e.preventDefault();
@@ -103,6 +110,11 @@ function LoginView({ onAuth, switchTo, onGuest }) {
       }
     }
   }
+
+  const showWait = busy && busySecs >= 3;
+  const waitMsg  = busySecs < 9  ? 'Waking the server up…'
+                 : busySecs < 17 ? 'Server is starting — almost there…'
+                 :                 'Taking a bit longer than usual, hang tight…';
 
   return (
     <AuthShell mode="login" switchTo={switchTo} onGuest={onGuest}>
@@ -128,6 +140,27 @@ function LoginView({ onAuth, switchTo, onGuest }) {
           {busy ? 'Signing in...' : 'Sign in'}
           {!busy && <Icons.ArrowRight size={16}/>}
         </button>
+
+        {showWait && (
+          <div style={{ marginTop: 20, textAlign: 'center' }}>
+            <div style={{ font: 'var(--type-caption)', color: 'var(--fg-3)', marginBottom: 10 }}>
+              {waitMsg}
+            </div>
+            <div style={{ width: '100%', height: 3, background: 'var(--border-2)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: 2,
+                background: 'var(--notati-amber)',
+                width: `${Math.min(88, Math.round(100 * (1 - Math.exp(-busySecs / 12))))}%`,
+                transition: 'width 1s ease-out'
+              }}/>
+            </div>
+            {busySecs >= 5 && (
+              <div style={{ font: 'var(--type-caption)', color: 'var(--fg-3)', fontSize: 12, marginTop: 8 }}>
+                First visit after a quiet period takes ~20 seconds.
+              </div>
+            )}
+          </div>
+        )}
 
         {onGuest && (
           <>
