@@ -241,7 +241,7 @@ function Sidebar({ nav, current, onNav, user, onLogout, collapsed, isOpen, onClo
 /* ============================================================
    Topbar — breadcrumb + role tag + (optional) search
    ============================================================ */
-function Topbar({ crumb, current, role, onMenu, search, onSearch, bagCount, onOpenBag }) {
+function Topbar({ crumb, current, role, onMenu, search, onSearch, searchPlaceholder, bagCount, onOpenBag }) {
   return (
     <div className="topbar">
       <button className="menu-btn" onClick={onMenu} aria-label="Toggle menu">
@@ -255,7 +255,7 @@ function Topbar({ crumb, current, role, onMenu, search, onSearch, bagCount, onOp
           <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
           <input value={search}
                  onChange={(e) => onSearch && onSearch(e.target.value)}
-                 placeholder="Search notes, uploads, users…"/>
+                 placeholder={searchPlaceholder || 'Search…'}/>
         </div>
       ) : null}
       {role === 'Student' && onOpenBag && (

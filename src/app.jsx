@@ -61,8 +61,16 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
   const navMap = nav.filter(n => !n.section);
   const currentLabel = (navMap.find(n => n.id === current) || navMap[0]).label;
 
+  const searchablePages = isAdmin ? ['inbox', 'notes', 'users'] : null;
+  const searchActive = isAdmin ? searchablePages.includes(current) : true;
+
   function bump() { setRefreshKey(k => k + 1); }
   function navWithClear(id) { setSearch(''); onNav(id); }
+
+  function handleSearch(val) {
+    setSearch(val);
+    if (!isAdmin && val && current !== 'library') onNav('library');
+  }
 
   async function handlePublishFromInbox(upload) {
     let linkedNote = null;
@@ -109,8 +117,9 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
             if (window.matchMedia('(max-width: 720px)').matches) setSideOpen(o => !o);
             else setCollapsed(c => !c);
           }}
-          search={search}
-          onSearch={setSearch}
+          search={searchActive ? search : undefined}
+          onSearch={handleSearch}
+          searchPlaceholder={isAdmin ? 'Search notes, uploads, users…' : 'Search notes…'}
           bagCount={!isAdmin ? bagItems.length : 0}
           onOpenBag={!isAdmin ? () => setBagOpen(true) : undefined}/>
 
