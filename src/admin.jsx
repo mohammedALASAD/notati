@@ -461,6 +461,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
     if (!courseName.trim())      { setErr('Course name is required.'); return; }
     if (!String(chapterNumber).trim()) { setErr('Chapter number is required.'); return; }
     if (!chapterTitle.trim())    { setErr('Chapter title is required.'); return; }
+    if (!description.trim())     { setErr('Description is required.'); return; }
     setBusy(true); setErr('');
     try {
       const course = await NotatiAPI.findOrCreateCourse(courseName.trim(), college);
@@ -575,9 +576,9 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
         <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Management, Chapter 4, Motivation"/>
       </div>
       <div className="field">
-        <label>Short description</label>
+        <label>Description <span style={{ color: 'var(--notati-crimson)' }}>*</span></label>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)}
-                  placeholder="One or two sentences in the Notati voice — what the student gets out of these notes."/>
+                  placeholder="One or two sentences — what the student gets out of these notes." required/>
       </div>
 
       <label style={{ font: 'var(--type-label)', letterSpacing: '.08em', textTransform: 'uppercase',

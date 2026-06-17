@@ -1228,10 +1228,6 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
    ============================================================ */
 function NoteReader({ note, open, onClose }) {
   const { toast } = useToast();
-  const [page, setPage] = useStateC(1);
-  const totalPages = 4;
-
-  useEffectC(() => { if (open) setPage(1); }, [open, note]);
   if (!open || !note) return null;
 
   function download() {
@@ -1265,7 +1261,6 @@ function NoteReader({ note, open, onClose }) {
           ['College',   note.college],
           ['Chapter',   `Ch.${note.chapterNumber}: ${note.chapterTitle}`],
           ['Price',     isFreeNote ? 'Free' : `BD ${Number(note.price).toFixed(3)}`],
-          ['Published', fmtDate(note.publishedAt)],
         ].map(([label, val]) => (
           <div key={label}>
             <div style={{ font: 'var(--type-label)', fontSize: 10, color: 'var(--fg-3)',
@@ -1275,26 +1270,10 @@ function NoteReader({ note, open, onClose }) {
         ))}
       </div>
 
-      {note.description && (
-        <p style={{ font: 'var(--type-body)', color: 'var(--fg-2)', margin: '0 0 16px', lineHeight: 1.6 }}>
-          {note.description}
-        </p>
-      )}
-
       {/* Styled PDF preview */}
       <div className="pdfview">
         <div className="toolbar">
-          <span style={{ fontWeight: 700, color: 'var(--notati-paper)' }}>{note.fileName}</span>
-          <span className="sep"></span>
-          <div className="pgctrl">
-            <button onClick={() => setPage(Math.max(1, page - 1))} aria-label="Previous page">
-              <Icons.ArrowLeft size={14}/>
-            </button>
-            <span>Page {page} / {totalPages}</span>
-            <button onClick={() => setPage(Math.min(totalPages, page + 1))} aria-label="Next page">
-              <Icons.ArrowRight size={14}/>
-            </button>
-          </div>
+          <span style={{ fontWeight: 700, color: 'var(--notati-paper)' }}>{note.fileName || `${note.courseName} · Ch.${note.chapterNumber}`}</span>
         </div>
         <div className="page">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
@@ -1304,23 +1283,17 @@ function NoteReader({ note, open, onClose }) {
               Notati · From the student, to the student
             </span>
           </div>
-          <div style={{ height: 4, width: 60, background: 'var(--notati-amber)', borderRadius: 2, marginBottom: 14 }}></div>
-          <h2>{note.title}</h2>
-          <div className="ph-line"></div>
-          <div className="ph-line mid"></div>
-          <div className="ph-line short"></div>
-          <h3>What this chapter actually says</h3>
-          <div className="ph-line"></div>
-          <div className="ph-line mid"></div>
-          <div className="ph-line"></div>
-          <div className="ph-line short"></div>
-          <h3>The two flavors</h3>
-          <div className="ph-line"></div>
-          <div className="ph-line mid"></div>
-          <p style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12,
-                      color: 'var(--fg-3)', marginTop: 24, textAlign: 'right' }}>
-            Page {page}
-          </p>
+          <div style={{ height: 4, width: 60, background: 'var(--notati-amber)', borderRadius: 2, marginBottom: 20 }}></div>
+          <h2 style={{ marginBottom: 16 }}>{note.chapterTitle || note.title}</h2>
+          {note.description ? (
+            <p style={{ font: 'var(--type-body)', color: 'var(--fg-2)', lineHeight: 1.75, margin: 0, fontSize: 14 }}>
+              {note.description}
+            </p>
+          ) : (
+            <p style={{ font: 'var(--type-body)', color: 'var(--fg-3)', lineHeight: 1.75, margin: 0, fontSize: 13, fontStyle: 'italic' }}>
+              No description available.
+            </p>
+          )}
         </div>
       </div>
     </Modal>
