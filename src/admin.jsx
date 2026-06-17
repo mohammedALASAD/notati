@@ -1002,7 +1002,7 @@ function AccessManager() {
             <div className="field" style={{ flex: 1, margin: 0 }}>
               <label>Student email</label>
               <input value={email} onChange={(e) => setEmail(e.target.value)}
-                     placeholder="e.g. mariam@university.edu" type="email" required/>
+                     placeholder="e.g. mariam@gmail.com" type="email" required/>
             </div>
             <button type="submit" className="btn btn-primary" style={{ flexShrink: 0 }}>
               <Icons.Search size={15}/> Find
