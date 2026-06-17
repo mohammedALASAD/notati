@@ -32,6 +32,7 @@ urlpatterns = [
     path('admin/users/<int:pk>/', views.AdminUserDetailView.as_view(), name='admin-user-detail'),
     path('admin/stats/',             views.admin_stats,             name='admin-stats'),
     path('admin/chapter-rankings/', views.admin_chapter_rankings,  name='chapter-rankings'),
+    path('admin/sales/',            views.admin_sales,             name='admin-sales'),
 
     # Testimonials
     path('testimonials/',              views.TestimonialPublicView.as_view(),       name='testimonial-list'),

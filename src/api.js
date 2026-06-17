@@ -201,6 +201,11 @@
       return Array.isArray(data) ? data : [];
     },
 
+    async getSalesData() {
+      const data = await req('GET', '/admin/sales/');
+      return data || { total_revenue: '0.000', total_sales: 0, rows: [] };
+    },
+
     async grantAccess(userId, noteId) {
       return req('POST', '/access/', { user: Number(userId), note: Number(noteId) });
     },

@@ -285,6 +285,41 @@ def admin_chapter_rankings(request):
     return Response(data)
 
 
+@api_view(['GET'])
+@permission_classes([IsAdmin])
+def admin_sales(request):
+    from django.db.models import Count
+    notes = (
+        Note.objects.select_related('course')
+        .filter(price__gt=0)
+        .annotate(sales=Count('access_grants'))
+        .filter(sales__gt=0)
+        .order_by('course__college', 'course__name', 'chapter_number')
+    )
+    rows = []
+    total_revenue = 0.0
+    total_sales = 0
+    for n in notes:
+        revenue = float(n.price) * n.sales
+        total_revenue += revenue
+        total_sales += n.sales
+        rows.append({
+            'id': n.id,
+            'college': n.course.college,
+            'course_name': n.course.name,
+            'chapter_number': n.chapter_number,
+            'chapter_title': n.chapter_title,
+            'price': str(n.price),
+            'sales': n.sales,
+            'revenue': f'{revenue:.3f}',
+        })
+    return Response({
+        'total_revenue': f'{total_revenue:.3f}',
+        'total_sales': total_sales,
+        'rows': rows,
+    })
+
+
 # ── Testimonials ──────────────────────────────────────────────────────────────
 
 class TestimonialPublicView(generics.ListAPIView):

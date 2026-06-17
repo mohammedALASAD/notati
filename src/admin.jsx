@@ -1270,6 +1270,246 @@ function TestimonialsManager() {
 }
 
 /* ============================================================
+   Sales View — revenue breakdown by college / course / chapter
+   ============================================================ */
+function SalesView({ salesData, loading }) {
+  const [collegeFilter,    setCollegeFilter]    = useStateAd('all');
+  const [sortBy,           setSortBy]           = useStateAd('revenue');
+  const [expandedColleges, setExpandedColleges] = useStateAd(() => new Set());
+  const [expandedCourses,  setExpandedCourses]  = useStateAd(() => new Set());
+
+  const colleges = useMemoAd(() => {
+    if (!salesData) return [];
+    return Array.from(new Set(salesData.rows.map(r => r.college))).sort();
+  }, [salesData]);
+
+  const { filteredRows, filteredRevenue, filteredSales } = useMemoAd(() => {
+    if (!salesData) return { filteredRows: [], filteredRevenue: 0, filteredSales: 0 };
+    const rows = collegeFilter === 'all'
+      ? salesData.rows
+      : salesData.rows.filter(r => r.college === collegeFilter);
+    return {
+      filteredRows: rows,
+      filteredRevenue: rows.reduce((s, r) => s + Number(r.revenue), 0),
+      filteredSales:   rows.reduce((s, r) => s + r.sales, 0),
+    };
+  }, [salesData, collegeFilter]);
+
+  const grouped = useMemoAd(() => {
+    const map = {};
+    filteredRows.forEach(r => {
+      if (!map[r.college]) map[r.college] = { revenue: 0, sales: 0, courses: {} };
+      map[r.college].revenue += Number(r.revenue);
+      map[r.college].sales   += r.sales;
+      const cn = r.course_name;
+      if (!map[r.college].courses[cn]) map[r.college].courses[cn] = { revenue: 0, sales: 0, chapters: [] };
+      map[r.college].courses[cn].revenue += Number(r.revenue);
+      map[r.college].courses[cn].sales   += r.sales;
+      map[r.college].courses[cn].chapters.push(r);
+    });
+    const entries = Object.entries(map);
+    entries.sort((a, b) => sortBy === 'revenue' ? b[1].revenue - a[1].revenue : b[1].sales - a[1].sales);
+    return entries;
+  }, [filteredRows, sortBy]);
+
+  function toggleCollege(college) {
+    setExpandedColleges(prev => {
+      const next = new Set(prev);
+      if (next.has(college)) next.delete(college); else next.add(college);
+      return next;
+    });
+  }
+  function toggleCourse(key) {
+    setExpandedCourses(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  if (loading) return (
+    <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
+      Loading sales data…
+    </div>
+  );
+  if (!salesData || salesData.rows.length === 0) return (
+    <EmptyState title="No sales yet"
+                message="Sales appear here once students start buying paid chapters."/>
+  );
+
+  return (
+    <div>
+      {/* Summary cards */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Total revenue', value: `BD ${filteredRevenue.toFixed(3)}`, sub: 'from paid chapters', color: 'var(--notati-walnut)' },
+          { label: 'Total sales',   value: String(filteredSales),              sub: 'access grants sold', color: 'var(--notati-amber)' },
+          { label: 'Avg per sale',  value: `BD ${filteredSales > 0 ? (filteredRevenue / filteredSales).toFixed(3) : '0.000'}`,
+            sub: 'average chapter price', color: 'var(--fg-1)' },
+        ].map(card => (
+          <div key={card.label} style={{ flex: 1, minWidth: 160, background: 'var(--bg-section)',
+                        border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)', padding: '16px 20px' }}>
+            <div style={{ fontSize: 11, color: 'var(--fg-3)', fontWeight: 600,
+                          textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+              {card.label}
+            </div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: card.color, lineHeight: 1 }}>
+              {card.value}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 6 }}>{card.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter + sort bar */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
+        <select className="filter-select" value={collegeFilter}
+                onChange={e => setCollegeFilter(e.target.value)}>
+          <option value="all">All colleges</option>
+          {colleges.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select className="filter-select" value={sortBy}
+                onChange={e => setSortBy(e.target.value)}>
+          <option value="revenue">Sort by revenue</option>
+          <option value="sales">Sort by sales</option>
+        </select>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <button className="btn btn-soft btn-sm"
+                  onClick={() => setExpandedColleges(new Set(grouped.map(([c]) => c)))}>
+            Expand all
+          </button>
+          <button className="btn btn-soft btn-sm"
+                  onClick={() => { setExpandedColleges(new Set()); setExpandedCourses(new Set()); }}>
+            Collapse all
+          </button>
+        </div>
+      </div>
+
+      {/* Tree table */}
+      {grouped.length === 0 ? (
+        <EmptyState title="No matches" message="Try a different college filter."/>
+      ) : (
+        <section className="panel">
+          <div className="panel-body flush">
+            <div className="scroll-table">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th className="r" style={{ width: 90 }}>Sales</th>
+                    <th className="r" style={{ width: 130 }}>Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grouped.map(([college, cData]) => {
+                    const colExpanded = expandedColleges.has(college);
+                    const courseEntries = Object.entries(cData.courses).sort((a, b) =>
+                      sortBy === 'revenue' ? b[1].revenue - a[1].revenue : b[1].sales - a[1].sales
+                    );
+                    const rows = [
+                      <tr key={`col-${college}`} onClick={() => toggleCollege(college)}
+                          style={{ cursor: 'pointer', background: 'var(--bg-section)' }}>
+                        <td data-l="Name">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 11, color: 'var(--fg-3)', width: 14,
+                                           textAlign: 'center', flexShrink: 0, userSelect: 'none' }}>
+                              {colExpanded ? '▾' : '▸'}
+                            </span>
+                            <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--fg-1)' }}>
+                              {college}
+                            </span>
+                            <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+                              · {courseEntries.length} course{courseEntries.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="r" data-l="Sales">
+                          <span style={{ fontWeight: 700, fontSize: 14 }}>{cData.sales}</span>
+                        </td>
+                        <td className="r" data-l="Revenue">
+                          <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--notati-walnut)' }}>
+                            BD {cData.revenue.toFixed(3)}
+                          </span>
+                        </td>
+                      </tr>
+                    ];
+                    if (colExpanded) {
+                      courseEntries.forEach(([course, coData]) => {
+                        const courseKey = `${college}::${course}`;
+                        const coExpanded = expandedCourses.has(courseKey);
+                        const chapters = [...coData.chapters].sort((a, b) => a.chapter_number - b.chapter_number);
+                        rows.push(
+                          <tr key={`co-${courseKey}`} onClick={() => toggleCourse(courseKey)}
+                              style={{ cursor: 'pointer' }}>
+                            <td data-l="Name">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 24 }}>
+                                <span style={{ fontSize: 11, color: 'var(--fg-3)', width: 14,
+                                               textAlign: 'center', flexShrink: 0, userSelect: 'none' }}>
+                                  {coExpanded ? '▾' : '▸'}
+                                </span>
+                                <span className="tag tag-walnut" style={{ fontSize: 12 }}>{course}</span>
+                                <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+                                  {chapters.length} ch.
+                                </span>
+                              </div>
+                            </td>
+                            <td className="r" data-l="Sales">
+                              <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>{coData.sales}</span>
+                            </td>
+                            <td className="r" data-l="Revenue">
+                              <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>BD {coData.revenue.toFixed(3)}</span>
+                            </td>
+                          </tr>
+                        );
+                        if (coExpanded) {
+                          chapters.forEach(ch => {
+                            rows.push(
+                              <tr key={`ch-${ch.id}`}>
+                                <td data-l="Name">
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 64 }}>
+                                    <div style={{
+                                      width: 28, height: 28, borderRadius: 'var(--r-3)', flexShrink: 0,
+                                      background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                      fontSize: 12, fontWeight: 700
+                                    }}>
+                                      {ch.chapter_number}
+                                    </div>
+                                    <div style={{ minWidth: 0 }}>
+                                      <span style={{ fontSize: 13, color: 'var(--fg-1)', fontWeight: 600 }}>
+                                        {ch.chapter_title}
+                                      </span>
+                                      <span className="tag tag-bark" style={{ marginLeft: 8, fontSize: 10 }}>
+                                        BD {Number(ch.price).toFixed(3)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="r" data-l="Sales">
+                                  <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>{ch.sales}</span>
+                                </td>
+                                <td className="r" data-l="Revenue">
+                                  <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>BD {Number(ch.revenue).toFixed(3)}</span>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        }
+                      });
+                    }
+                    return rows;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
    Chapter Insights (admin)
    ============================================================ */
 function ChapterInsights() {
@@ -1284,6 +1524,17 @@ function ChapterInsights() {
   const [loadingRanks,     setLoadingRanks]     = useStateAd(true);
   const [rankPriceFilter,  setRankPriceFilter]  = useStateAd('all');
   const [rankCollegeFilter,setRankCollegeFilter]= useStateAd('all');
+  const [insightsTab,  setInsightsTab]  = useStateAd('access');
+  const [salesData,    setSalesData]    = useStateAd(null);
+  const [loadingSales, setLoadingSales] = useStateAd(false);
+
+  useEffectAd(() => {
+    if (insightsTab !== 'sales' || salesData) return;
+    setLoadingSales(true);
+    NotatiAPI.getSalesData()
+      .then(setSalesData).catch(() => {})
+      .finally(() => setLoadingSales(false));
+  }, [insightsTab]);
 
   useEffectAd(() => {
     NotatiAPI.getNotes().then(setNotes).catch(() => {});
@@ -1342,10 +1593,25 @@ function ChapterInsights() {
       <div className="page-head">
         <div className="ttl">
           <h1>Insights</h1>
-          <p className="sub">Look up who has access to any chapter, and see which chapters are selling best.</p>
+          <p className="sub">Look up who has access to any chapter, track revenue, and see which chapters are selling best.</p>
+        </div>
+        <div className="actions">
+          <div className="filters" style={{ margin: 0 }}>
+            {[
+              { id: 'access', label: 'Access & Rankings' },
+              { id: 'sales',  label: 'Sales' },
+            ].map(t => (
+              <button key={t.id}
+                      className={`btn btn-sm ${insightsTab === t.id ? 'btn-primary' : 'btn-soft'}`}
+                      onClick={() => setInsightsTab(t.id)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
+      {insightsTab === 'access' && (<>
       {/* ── Chapter access lookup ── */}
       <section className="panel" style={{ marginBottom: 20 }}>
         <div className="panel-head">
@@ -1514,7 +1780,7 @@ function ChapterInsights() {
       </section>
 
       {/* ── Chapter rankings ── */}
-      <section className="panel">
+      <section className="panel" style={{ marginTop: 20 }}>
         <div className="panel-head">
           <h3>Most accessed chapters</h3>
           <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
@@ -1654,6 +1920,11 @@ function ChapterInsights() {
           )}
         </div>
       </section>
+      </>)}
+
+      {insightsTab === 'sales' && (
+        <SalesView salesData={salesData} loading={loadingSales}/>
+      )}
     </div>
   );
 }
