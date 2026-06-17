@@ -1582,16 +1582,27 @@ function LandingPage({ onLogin, onSignup }) {
           </div>
           <div className="panel-body">
             {loading ? (
-              <div style={{ padding: '48px 24px', textAlign: 'center' }}>
-                <div style={{ display: 'inline-block', width: 32, height: 32, border: '3px solid var(--border-2)',
+              <div style={{ padding: '56px 24px', textAlign: 'center' }}>
+                <div style={{ display: 'inline-block', width: 36, height: 36, border: '3px solid var(--border-2)',
                               borderTopColor: 'var(--notati-amber)', borderRadius: '50%',
-                              animation: 'spin 0.9s linear infinite', marginBottom: 16 }}/>
-                <div style={{ font: 'var(--type-body)', color: 'var(--fg-2)', marginBottom: 6 }}>
-                  {loadSecs < 5 ? 'Loading courses…' : 'Still loading — the server is waking up…'}
+                              animation: 'spin 0.9s linear infinite', marginBottom: 20 }}/>
+                <div style={{ font: 'var(--type-body)', color: 'var(--fg-2)', marginBottom: 16 }}>
+                  {loadSecs < 3  ? 'Loading courses…'
+                 : loadSecs < 9  ? 'Waking the server up…'
+                 : loadSecs < 17 ? 'Server is starting — almost there…'
+                 :                 'Taking a bit longer than usual, hang tight…'}
+                </div>
+                <div style={{ width: 220, height: 3, background: 'var(--border-2)', borderRadius: 2, margin: '0 auto 16px', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', borderRadius: 2,
+                    background: 'var(--notati-amber)',
+                    width: `${Math.min(88, Math.round(100 * (1 - Math.exp(-loadSecs / 12))))}%`,
+                    transition: 'width 1s ease-out'
+                  }}/>
                 </div>
                 {loadSecs >= 5 && (
-                  <div style={{ font: 'var(--type-caption)', color: 'var(--fg-3)', fontSize: 12, maxWidth: 300, margin: '0 auto' }}>
-                    First visit after a quiet period takes ~20 seconds. Almost there.
+                  <div style={{ font: 'var(--type-caption)', color: 'var(--fg-3)', fontSize: 12, maxWidth: 280, margin: '0 auto' }}>
+                    First visit after a quiet period takes ~20 seconds.
                   </div>
                 )}
               </div>
