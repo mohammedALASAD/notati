@@ -1357,68 +1357,64 @@ function ChapterInsights() {
         <div className="panel-body">
 
           {/* Search */}
-          <div style={{ position: 'relative' }}>
-            <div className="search-mini" style={{ fontSize: 14 }}>
-              <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
-              <input
-                value={chapterQ}
-                onChange={e => { setChapterQ(e.target.value); setDropOpen(true); }}
-                onFocus={() => setDropOpen(true)}
-                onBlur={() => setTimeout(() => setDropOpen(false), 160)}
-                placeholder="Search by course name or chapter title…"
-              />
-              {chapterQ && (
-                <button onClick={() => { setChapterQ(''); setDropOpen(false); }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer',
-                                 color: 'var(--fg-3)', padding: '0 4px', lineHeight: 1 }}>
-                  <Icons.Close size={14}/>
-                </button>
-              )}
-            </div>
-
-            {/* Scrollable dropdown */}
-            {dropOpen && filteredNotes.length > 0 && (
-              <div style={{
-                position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
-                zIndex: 300, background: 'var(--bg-card)',
-                border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)',
-                boxShadow: '0 12px 32px rgba(0,0,0,.22)',
-                maxHeight: 280, overflowY: 'auto'
-              }}>
-                {filteredNotes.map((n, i) => (
-                  <div key={n.id}
-                       onMouseDown={() => selectChapter(n)}
-                       style={{
-                         padding: '10px 14px', cursor: 'pointer',
-                         borderBottom: i < filteredNotes.length - 1 ? '1px solid var(--border-1)' : 'none',
-                         display: 'flex', alignItems: 'center', gap: 12, transition: 'background .1s'
-                       }}
-                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-section)'}
-                       onMouseLeave={e => e.currentTarget.style.background = ''}>
-                    <div style={{
-                      width: 34, height: 34, borderRadius: 'var(--r-3)', flexShrink: 0,
-                      background: Number(n.price) === 0 ? 'var(--notati-sage)' : 'var(--notati-walnut)',
-                      color: 'var(--notati-paper)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 13, fontWeight: 700
-                    }}>
-                      {n.chapterNumber}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)',
-                                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        Ch.{n.chapterNumber}: {n.chapterTitle}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{n.courseName}</div>
-                    </div>
-                    <span className={`tag ${Number(n.price) === 0 ? 'tag-soft' : 'tag-bark'}`} style={{ fontSize: 10, flexShrink: 0 }}>
-                      {Number(n.price) === 0 ? 'Free' : `BD ${Number(n.price).toFixed(3)}`}
-                    </span>
-                  </div>
-                ))}
-              </div>
+          <div className="search-mini" style={{ fontSize: 14 }}>
+            <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+            <input
+              value={chapterQ}
+              onChange={e => { setChapterQ(e.target.value); setDropOpen(true); }}
+              onFocus={() => setDropOpen(true)}
+              placeholder="Search by course name or chapter title…"
+            />
+            {chapterQ && (
+              <button onClick={() => { setChapterQ(''); setDropOpen(false); setSelectedNote(null); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer',
+                               color: 'var(--fg-3)', padding: '0 4px', lineHeight: 1 }}>
+                <Icons.Close size={14}/>
+              </button>
             )}
           </div>
+
+          {/* Inline scrollable results — no absolute positioning to avoid panel clipping */}
+          {dropOpen && filteredNotes.length > 0 && (
+            <div style={{
+              marginTop: 8,
+              border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)',
+              overflow: 'hidden', maxHeight: 300, overflowY: 'auto'
+            }}>
+              {filteredNotes.map((n, i) => (
+                <div key={n.id}
+                     onClick={() => selectChapter(n)}
+                     style={{
+                       padding: '10px 14px', cursor: 'pointer',
+                       borderBottom: i < filteredNotes.length - 1 ? '1px solid var(--border-1)' : 'none',
+                       display: 'flex', alignItems: 'center', gap: 12,
+                       background: 'var(--bg-card)'
+                     }}
+                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-section)'}
+                     onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-card)'}>
+                  <div style={{
+                    width: 34, height: 34, borderRadius: 'var(--r-3)', flexShrink: 0,
+                    background: Number(n.price) === 0 ? 'var(--notati-sage)' : 'var(--notati-walnut)',
+                    color: 'var(--notati-paper)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, fontWeight: 700
+                  }}>
+                    {n.chapterNumber}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)',
+                                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Ch.{n.chapterNumber}: {n.chapterTitle}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{n.courseName}</div>
+                  </div>
+                  <span className={`tag ${Number(n.price) === 0 ? 'tag-soft' : 'tag-bark'}`} style={{ fontSize: 10, flexShrink: 0 }}>
+                    {Number(n.price) === 0 ? 'Free' : `BD ${Number(n.price).toFixed(3)}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Empty hint */}
           {!selectedNote && !chapterQ && (
