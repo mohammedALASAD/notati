@@ -463,7 +463,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
           </div>
         </section>
 
-        <section className="panel" style={{ background: 'var(--notati-cream)' }}>
+        <section className="panel">
           <div className="panel-head" style={{ borderBottomColor: 'var(--border-2)' }}>
             <h3>Fresh notes for you</h3>
             <button className="btn btn-ghost btn-sm" onClick={() => onNav('library')}>
@@ -1068,7 +1068,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
 
                   {/* Chapter number bubble */}
                   <div style={{ width: 42, height: 42, borderRadius: 'var(--r-3)', flexShrink: 0,
-                                background: isFree ? 'var(--notati-sage)' : canRead ? 'var(--notati-walnut)' : inBag ? 'var(--notati-forest)' : 'var(--notati-cream)',
+                                background: isFree ? 'var(--notati-sage)' : canRead ? 'var(--notati-walnut)' : inBag ? 'var(--notati-forest)' : 'var(--bg-card-2)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 color: (isFree || canRead || inBag) ? 'var(--notati-paper)' : 'var(--fg-3)',
                                 fontSize: 16, fontWeight: 700 }}>
@@ -1196,7 +1196,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
                         </span>
                       )}
                       {paidCount > 0 && (
-                        <span style={{ background: 'var(--notati-cream)', color: 'var(--fg-2)',
+                        <span style={{ background: 'var(--bg-section)', color: 'var(--fg-2)',
                                        border: '1px solid var(--border-2)',
                                        font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
                                        borderRadius: 'var(--r-pill)' }}>
@@ -1631,7 +1631,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                                          borderRadius: 'var(--r-pill)' }}>{free} free</span>
                         )}
                         {paid > 0 && (
-                          <span style={{ background: 'var(--notati-cream)', color: 'var(--fg-2)',
+                          <span style={{ background: 'var(--bg-section)', color: 'var(--fg-2)',
                                          border: '1px solid var(--border-2)',
                                          font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
                                          borderRadius: 'var(--r-pill)' }}>{paid} paid</span>
@@ -1800,7 +1800,7 @@ function MyNotesPage({ user, onOpenNote }) {
               {courseChapters.map(n => (
                 <div key={n.id} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px 16px', background: 'var(--notati-cream)',
+                  padding: '12px 16px', background: 'var(--bg-card)',
                   borderRadius: 'var(--r-5)', border: '1px solid var(--border-2)', gap: 12
                 }}>
                   <div style={{ minWidth: 0 }}>

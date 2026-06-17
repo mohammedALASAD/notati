@@ -164,7 +164,7 @@ function AdminDashboard({ user, onNav }) {
           </div>
         </section>
 
-        <section className="panel" style={{ background: 'var(--notati-cream)' }}>
+        <section className="panel">
           <div className="panel-head" style={{ borderBottomColor: 'var(--border-2)' }}>
             <h3>Latest notes</h3>
             <button className="btn btn-ghost btn-sm" onClick={() => onNav('notes')} style={{ marginLeft: 'auto' }}>
@@ -1024,7 +1024,7 @@ function AccessManager() {
 
             {/* Student card */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14,
-                          padding: '14px 18px', background: 'var(--notati-cream)',
+                          padding: '14px 18px', background: 'var(--bg-section)',
                           border: '1px solid var(--border-2)', borderRadius: 'var(--r-5)',
                           marginBottom: 20 }}>
               <span className="avatar-sm" style={{ width: 40, height: 40, fontSize: 18 }}>
@@ -1099,11 +1099,11 @@ function AccessManager() {
                             display: 'flex', alignItems: 'center', gap: 12,
                             padding: '10px 14px', borderRadius: 'var(--r-5)',
                             border: '1px solid var(--border-1)',
-                            background: isFree ? 'var(--notati-cream)' : owned ? '#f0faf4' : 'var(--notati-paper)'
+                            background: isFree ? 'var(--bg-card)' : owned ? 'var(--bg-card)' : 'var(--bg-card)'
                           }}>
                             {/* Chapter bubble */}
                             <div style={{ width: 36, height: 36, borderRadius: 'var(--r-3)', flexShrink: 0,
-                                          background: isFree ? 'var(--notati-sage)' : owned ? 'var(--notati-walnut)' : 'var(--notati-cream)',
+                                          background: isFree ? 'var(--notati-sage)' : owned ? 'var(--notati-walnut)' : 'var(--bg-card-2)',
                                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                                           color: (isFree || owned) ? 'var(--notati-paper)' : 'var(--fg-3)',
                                           fontSize: 14, fontWeight: 700 }}>
