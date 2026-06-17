@@ -1269,4 +1269,287 @@ function TestimonialsManager() {
   );
 }
 
-Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, AccessManager, TestimonialsManager });
+/* ============================================================
+   Chapter Insights (admin)
+   - Chapter access lookup: search a chapter → see who has access
+   - Chapter rankings: most-accessed chapters
+   ============================================================ */
+function ChapterInsights() {
+  const { toast } = useToast();
+  const [notes,          setNotes]          = useStateAd([]);
+  const [chapterQ,       setChapterQ]       = useStateAd('');
+  const [dropOpen,       setDropOpen]       = useStateAd(false);
+  const [selectedNote,   setSelectedNote]   = useStateAd(null);
+  const [chapterAccess,  setChapterAccess]  = useStateAd([]);
+  const [loadingAccess,  setLoadingAccess]  = useStateAd(false);
+  const [rankings,       setRankings]       = useStateAd([]);
+  const [loadingRanks,   setLoadingRanks]   = useStateAd(true);
+
+  useEffectAd(() => {
+    NotatiAPI.getNotes().then(setNotes).catch(() => {});
+    NotatiAPI.getChapterRankings()
+      .then(setRankings)
+      .catch(() => {})
+      .finally(() => setLoadingRanks(false));
+  }, []);
+
+  const filteredNotes = useMemoAd(() => {
+    const q = chapterQ.trim().toLowerCase();
+    if (!q) return [];
+    return notes.filter(n =>
+      [n.courseName, n.chapterTitle, String(n.chapterNumber)].some(s =>
+        (s || '').toLowerCase().includes(q)
+      )
+    ).slice(0, 8);
+  }, [notes, chapterQ]);
+
+  async function selectChapter(note) {
+    setChapterQ('');
+    setDropOpen(false);
+    setSelectedNote(note);
+    setChapterAccess([]);
+    setLoadingAccess(true);
+    try {
+      const access = await NotatiAPI.getAccessListByNote(note._numId);
+      setChapterAccess(access);
+    } catch (e2) {
+      toast.error('Could not load access list', e2.message);
+    }
+    setLoadingAccess(false);
+  }
+
+  const topCount = rankings.length > 0 ? rankings[0].access_count : 1;
+
+  return (
+    <div>
+      <div className="page-head">
+        <div className="ttl">
+          <h1>Insights</h1>
+          <p className="sub">Look up who has access to any chapter, and see which chapters are selling best.</p>
+        </div>
+      </div>
+
+      {/* ── Chapter access lookup ── */}
+      <section className="panel" style={{ marginBottom: 20 }}>
+        <div className="panel-head"><h3>Chapter access lookup</h3></div>
+        <div className="panel-body">
+
+          {/* Search box */}
+          <div style={{ position: 'relative', maxWidth: 520 }}>
+            <div className="search-mini">
+              <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+              <input
+                value={chapterQ}
+                onChange={e => { setChapterQ(e.target.value); setDropOpen(true); }}
+                onFocus={() => setDropOpen(true)}
+                placeholder="Search by course name or chapter title…"
+              />
+            </div>
+
+            {dropOpen && filteredNotes.length > 0 && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+                zIndex: 200, background: 'var(--bg-card)',
+                border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)',
+                boxShadow: '0 8px 24px rgba(0,0,0,.18)', overflow: 'hidden'
+              }}>
+                {filteredNotes.map((n, i) => (
+                  <div key={n.id}
+                       onClick={() => selectChapter(n)}
+                       style={{
+                         padding: '10px 14px', cursor: 'pointer',
+                         borderBottom: i < filteredNotes.length - 1 ? '1px solid var(--border-1)' : 'none',
+                         display: 'flex', alignItems: 'center', gap: 12
+                       }}
+                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-section)'}
+                       onMouseLeave={e => e.currentTarget.style.background = ''}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: 'var(--r-3)', flexShrink: 0,
+                      background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 13, fontWeight: 700
+                    }}>
+                      {n.chapterNumber}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)' }}>
+                        Ch.{n.chapterNumber}: {n.chapterTitle}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{n.courseName}</div>
+                    </div>
+                    <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--fg-3)' }}>
+                      {Number(n.price) === 0 ? 'Free' : `BD ${Number(n.price).toFixed(3)}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Result */}
+          {selectedNote && (
+            <div style={{ marginTop: 20 }}>
+              {/* Chapter header */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                padding: '14px 18px', background: 'var(--bg-section)',
+                border: '1px solid var(--border-2)', borderRadius: 'var(--r-5)',
+                marginBottom: 16
+              }}>
+                <div style={{
+                  width: 42, height: 42, borderRadius: 'var(--r-3)', flexShrink: 0,
+                  background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 16, fontWeight: 800
+                }}>
+                  {selectedNote.chapterNumber}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 2 }}>
+                    Ch.{selectedNote.chapterNumber}: {selectedNote.chapterTitle}
+                  </div>
+                  <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+                    {selectedNote.courseName}
+                    {Number(selectedNote.price) > 0
+                      ? ` · BD ${Number(selectedNote.price).toFixed(3)}`
+                      : ' · Free'}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ font: 'var(--type-h3)', color: 'var(--notati-walnut)', fontSize: 26, fontWeight: 800 }}>
+                    {loadingAccess ? '…' : chapterAccess.length}
+                  </div>
+                  <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 11, color: 'var(--fg-3)' }}>
+                    students with access
+                  </div>
+                </div>
+              </div>
+
+              {loadingAccess ? (
+                <div style={{ padding: '20px 0', color: 'var(--fg-3)', fontSize: 13 }}>Loading…</div>
+              ) : chapterAccess.length === 0 ? (
+                <EmptyState title="No access grants yet"
+                            message="No student has been granted access to this chapter."/>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {chapterAccess.map(a => (
+                    <div key={a.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '10px 14px', borderRadius: 'var(--r-5)',
+                      border: '1px solid var(--border-1)', background: 'var(--bg-card)'
+                    }}>
+                      <span className="avatar-sm" style={{ width: 34, height: 34, fontSize: 15, flexShrink: 0 }}>
+                        {(a.user_name || '?').charAt(0)}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)' }}>
+                          {a.user_name || '—'}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{a.user_email}</div>
+                      </div>
+                      <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)', flexShrink: 0 }}>
+                        Granted {fmtDate(a.granted_at)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!selectedNote && (
+            <p style={{ marginTop: 16, font: 'var(--type-caption)', fontStyle: 'normal', color: 'var(--fg-3)', fontSize: 13 }}>
+              Type a course name or chapter title above, then click a result to see who has access.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* ── Chapter rankings ── */}
+      <section className="panel">
+        <div className="panel-head">
+          <h3>Most accessed chapters</h3>
+          <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+            Ranked by total access grants (paid unlocks)
+          </span>
+        </div>
+        <div className="panel-body">
+          {loadingRanks ? (
+            <div style={{ padding: '20px 0', color: 'var(--fg-3)', fontSize: 13 }}>Loading…</div>
+          ) : rankings.length === 0 ? (
+            <EmptyState title="No sales data yet"
+                        message="Rankings will appear here once students start unlocking paid chapters."/>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {rankings.map((r, idx) => (
+                <div key={r.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  padding: '12px 16px', borderRadius: 'var(--r-5)',
+                  border: '1px solid var(--border-1)', background: 'var(--bg-card)'
+                }}>
+                  {/* Rank */}
+                  <div style={{
+                    width: 28, flexShrink: 0, textAlign: 'center',
+                    font: 'var(--type-h3)', fontSize: 15, fontWeight: 800,
+                    color: idx === 0 ? 'var(--notati-amber)'
+                         : idx === 1 ? 'var(--fg-2)'
+                         : idx === 2 ? 'var(--notati-walnut)'
+                         : 'var(--fg-3)'
+                  }}>
+                    #{idx + 1}
+                  </div>
+
+                  {/* Chapter bubble */}
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 'var(--r-3)', flexShrink: 0,
+                    background: idx === 0 ? 'var(--notati-amber)' : 'var(--notati-walnut)',
+                    color: 'var(--notati-paper)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, fontWeight: 700
+                  }}>
+                    {r.chapter_number}
+                  </div>
+
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)',
+                                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Ch.{r.chapter_number}: {r.chapter_title}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+                      {r.course_name}
+                      {Number(r.price) > 0 && ` · BD ${Number(r.price).toFixed(3)}`}
+                    </div>
+                  </div>
+
+                  {/* Bar */}
+                  <div style={{ width: 100, flexShrink: 0 }}>
+                    <div style={{ height: 6, borderRadius: 3, background: 'var(--border-2)', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%', borderRadius: 3,
+                        background: idx === 0 ? 'var(--notati-amber)' : 'var(--notati-walnut)',
+                        width: `${Math.max(4, Math.round(100 * r.access_count / topCount))}%`
+                      }}/>
+                    </div>
+                  </div>
+
+                  {/* Count */}
+                  <div style={{ flexShrink: 0, textAlign: 'right', minWidth: 52 }}>
+                    <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--fg-1)' }}>
+                      {r.access_count}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--fg-3)', marginLeft: 3 }}>
+                      {r.access_count === 1 ? 'sale' : 'sales'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, AccessManager, TestimonialsManager, ChapterInsights });

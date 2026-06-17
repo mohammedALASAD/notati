@@ -14,8 +14,9 @@ const ADMIN_NAV = [
   { id: 'inbox',        label: 'Content inbox', icon: 'Inbox' },
   { id: 'notes',        label: 'Notes manager', icon: 'Notes' },
   { id: 'users',        label: 'Users',         icon: 'Users' },
-  { id: 'access',       label: 'Unlock access', icon: 'Lock' },
-  { id: 'testimonials', label: 'Testimonials',  icon: 'Star' },
+  { id: 'access',       label: 'Unlock access', icon: 'Lock'     },
+  { id: 'insights',    label: 'Insights',      icon: 'BarChart' },
+  { id: 'testimonials', label: 'Testimonials',  icon: 'Star'    },
 ];
 
 const CUSTOMER_NAV = [
@@ -141,6 +142,7 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
           )}
           {isAdmin && current === 'users' && <UsersList topbarSearch={search}/>}
           {isAdmin && current === 'access' && <AccessManager/>}
+          {isAdmin && current === 'insights' && <ChapterInsights/>}
           {isAdmin && current === 'testimonials' && <TestimonialsManager/>}
 
           {/* ----- CUSTOMER PAGES ----- */}

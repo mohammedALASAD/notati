@@ -191,6 +191,16 @@
       return list(data);
     },
 
+    async getAccessListByNote(noteId) {
+      const data = await req('GET', `/access/?note=${noteId}`);
+      return list(data);
+    },
+
+    async getChapterRankings() {
+      const data = await req('GET', '/admin/chapter-rankings/');
+      return Array.isArray(data) ? data : [];
+    },
+
     async grantAccess(userId, noteId) {
       return req('POST', '/access/', { user: Number(userId), note: Number(noteId) });
     },

@@ -185,6 +185,9 @@ class AccessListCreateView(generics.ListCreateAPIView):
             student_id = self.request.query_params.get('user')
             if student_id:
                 qs = qs.filter(user_id=student_id)
+            note_id = self.request.query_params.get('note')
+            if note_id:
+                qs = qs.filter(note_id=note_id)
             return qs
         return Access.objects.filter(user=user).select_related('note__course')
 
@@ -255,6 +258,31 @@ def admin_stats(request):
         'uploads':  Upload.objects.filter(status='pending').count(),
         'accesses': Access.objects.count(),
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAdmin])
+def admin_chapter_rankings(request):
+    from django.db.models import Count
+    notes = (
+        Note.objects.select_related('course')
+        .annotate(access_count=Count('access_grants'))
+        .filter(access_count__gt=0)
+        .order_by('-access_count')[:20]
+    )
+    data = [
+        {
+            'id': n.id,
+            'chapter_number': n.chapter_number,
+            'chapter_title': n.chapter_title,
+            'course_name': n.course.name,
+            'college': n.course.college,
+            'price': str(n.price),
+            'access_count': n.access_count,
+        }
+        for n in notes
+    ]
+    return Response(data)
 
 
 # ── Testimonials ──────────────────────────────────────────────────────────────
