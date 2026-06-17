@@ -97,6 +97,7 @@
         id:        f.id,
         label:     f.label || '',
         fileUrl:   f.file_url || null,
+        filename:  f.filename || '',
         isLegacy:  f.is_legacy || false,
       })),
     };

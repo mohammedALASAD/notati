@@ -140,6 +140,7 @@ class NoteSerializer(serializers.ModelSerializer):
                 'id': nf.id,
                 'label': nf.label or '',
                 'file_url': _file_url(nf.file, self.context.get('request')),
+                'filename': nf.file.name.split('/')[-1] if nf.file else '',
             })
         if not result and obj.pdf_file:
             result.append({

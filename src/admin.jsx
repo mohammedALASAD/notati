@@ -807,9 +807,11 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
   }
 
   function preview(n) {
-    if (!n._numId || !n.pdfFile) { toast.info('No file', 'No PDF is attached to this note yet.'); return; }
-    NotatiAPI.previewNoteFile(n._numId)
-      .catch(e => toast.error('Preview failed', e.message));
+    const files = n.files || [];
+    if (files.length === 0) { toast.info('No file', 'No PDF is attached to this note yet.'); return; }
+    const f = files[0];
+    if (f.id) NotatiAPI.previewNoteFileById(f.id).catch(e => toast.error('Preview failed', e.message));
+    else NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message));
   }
 
   return (

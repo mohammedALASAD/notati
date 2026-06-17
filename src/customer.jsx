@@ -27,6 +27,35 @@ const CONTACT = {
 };
 
 /* ============================================================
+   Note file helpers — shared preview/download logic for multi-file notes
+   openReader: function that opens the NoteReader modal for a given note
+   toast: the toast object from useToast()
+   ============================================================ */
+function _buildNoteFilename(nf) {
+  const ext = nf.filename ? nf.filename.split('.').pop() : 'pdf';
+  if (nf.label) return nf.label.replace(/[/\\?%*:|"<>]/g, '_') + '.' + ext;
+  return nf.filename || 'file.pdf';
+}
+
+function _previewNote(n, openReader, toast) {
+  const files = n.files || [];
+  if (files.length === 0) { toast.info('No file', 'No PDF attached yet.'); return; }
+  if (files.length > 1) { openReader(n); return; }
+  const f = files[0];
+  if (f.id) NotatiAPI.previewNoteFileById(f.id).catch(e => toast.error('Preview failed', e.message));
+  else NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message));
+}
+
+function _downloadNote(n, openReader, toast) {
+  const files = n.files || [];
+  if (files.length === 0) { toast.info('No file', 'No PDF attached yet.'); return; }
+  if (files.length > 1) { openReader(n); return; }
+  const f = files[0];
+  if (f.id) NotatiAPI.downloadNoteFileById(f.id, _buildNoteFilename(f)).catch(e => toast.error('Download failed', e.message));
+  else NotatiAPI.downloadNoteFile(n._numId, n.fileName || n.title + '.pdf').catch(e => toast.error('Download failed', e.message));
+}
+
+/* ============================================================
    Get Access Modal — shown when a student taps a locked note
    ============================================================ */
 function GetAccessModal({ open, note, onClose }) {
@@ -1138,22 +1167,12 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
                     )}
                     {canRead && (
                       <>
-                        <button className="btn btn-ghost btn-sm" title="Download PDF"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (!n.pdfFile) { toast.info('No file', 'No PDF attached yet.'); return; }
-                                  NotatiAPI.downloadNoteFile(n._numId, n.fileName || n.title + '.pdf')
-                                    .catch(err => toast.error('Download failed', err.message));
-                                }}>
+                        <button className="btn btn-ghost btn-sm" title="Download"
+                                onClick={(e) => { e.stopPropagation(); _downloadNote(n, onOpenNote, toast); }}>
                           <Icons.Download size={14}/>
                         </button>
                         <button className="btn btn-ghost btn-sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (!n.pdfFile) { toast.info('No file', 'No PDF attached yet.'); return; }
-                                  NotatiAPI.previewNoteFile(n._numId)
-                                    .catch(err => toast.error('Preview failed', err.message));
-                                }}>
+                                onClick={(e) => { e.stopPropagation(); _previewNote(n, onOpenNote, toast); }}>
                           Quick look <Icons.ArrowRight size={13}/>
                         </button>
                         <button className="btn btn-soft btn-sm"
@@ -1264,10 +1283,9 @@ function NoteReader({ note, open, onClose }) {
 
   function downloadFile(nf) {
     if (nf.id) {
-      NotatiAPI.downloadNoteFileById(nf.id, nf.label || 'file.pdf')
+      NotatiAPI.downloadNoteFileById(nf.id, _buildNoteFilename(nf))
         .catch(e => toast.error('Download failed', e.message));
     } else if (note._numId) {
-      // legacy single-file note
       NotatiAPI.downloadNoteFile(note._numId, note.fileName || note.title + '.pdf')
         .catch(e => toast.error('Download failed', e.message));
     }
@@ -1275,7 +1293,9 @@ function NoteReader({ note, open, onClose }) {
 
   function downloadAll() {
     if (files.length === 0) { toast.error('No files', 'No files are attached to this note yet.'); return; }
-    files.forEach(nf => downloadFile(nf));
+    files.forEach((nf, i) => {
+      setTimeout(() => downloadFile(nf), i * 400);
+    });
   }
 
   const isFreeNote = note.isFree || Number(note.price || 0) === 0;
@@ -1425,17 +1445,8 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
       .sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber));
   }, [notes, selectedCourse, priceFilter]);
 
-  function handleDownload(n) {
-    if (!n.pdfFile) { toast.info('No file', 'No PDF attached yet.'); return; }
-    NotatiAPI.downloadNoteFile(n._numId, n.fileName || n.title + '.pdf')
-      .catch(err => toast.error('Download failed', err.message));
-  }
-
-  function handleQuickLook(n) {
-    if (!n.pdfFile) { toast.info('No file', 'No PDF attached yet.'); return; }
-    NotatiAPI.previewNoteFile(n._numId)
-      .catch(err => toast.error('Preview failed', err.message));
-  }
+  function handleDownload(n) { _downloadNote(n, setReadingNote, toast); }
+  function handleQuickLook(n) { _previewNote(n, setReadingNote, toast); }
 
   const freeCount = notes.filter(n => !n.price || Number(n.price) === 0).length;
 
@@ -1814,11 +1825,7 @@ function MyNotesPage({ user, onOpenNote }) {
                 .sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber));
   }, [notes, selectedCourse]);
 
-  function download(n) {
-    if (!n._numId) { toast.info('No file', 'No PDF attached yet.'); return; }
-    NotatiAPI.downloadNoteFile(n._numId, n.fileName || n.title + '.pdf')
-      .catch(e => toast.error('Download failed', e.message));
-  }
+  function download(n) { _downloadNote(n, onOpenNote, toast); }
 
   /* ---- Level 2: Chapter list ---- */
   if (selectedCourse) {
@@ -1856,9 +1863,9 @@ function MyNotesPage({ user, onOpenNote }) {
                     <button className="btn btn-soft btn-sm" onClick={() => onOpenNote(n)}>
                       <Icons.Eye size={13}/> Read
                     </button>
-                    {n.pdfFile && (
+                    {(n.files || []).length > 0 && (
                       <button className="btn btn-outline btn-sm" onClick={() => download(n)}>
-                        <Icons.Download size={13}/> PDF
+                        <Icons.Download size={13}/> {(n.files || []).length > 1 ? 'Files' : 'PDF'}
                       </button>
                     )}
                   </div>
