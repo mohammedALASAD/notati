@@ -453,7 +453,7 @@ function ViewUploadFilesModal({ open, upload, onClose }) {
           }}>
             <FileTypeChip type={ext || 'pdf'}/>
             <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
-              {f.label || `File ${i + 1}`}
+              {f.label || (f.file ? String(f.file).split('/').pop() : '') || `File ${i + 1}`}
             </span>
             <button className="btn btn-soft btn-sm" onClick={() => download(f)}>
               <Icons.Download size={13}/> Download
@@ -692,7 +692,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
           }}>
             <FileTypeChip type="pdf"/>
             <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
-              {ef.label || 'File'}
+              {ef.label || (ef.file ? String(ef.file).split('/').pop() : '') || 'File'}
             </span>
             {ef.file_url && (
               <a href={ef.file_url} target="_blank" rel="noopener noreferrer"

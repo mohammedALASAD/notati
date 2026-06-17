@@ -40,7 +40,6 @@ function _buildNoteFilename(nf) {
 function _previewNote(n, openReader, toast) {
   const files = n.files || [];
   if (files.length === 0) { toast.info('No file', 'No PDF attached yet.'); return; }
-  if (files.length > 1) { openReader(n); return; }
   const f = files[0];
   if (f.id) NotatiAPI.previewNoteFileById(f.id).catch(e => toast.error('Preview failed', e.message));
   else NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message));
@@ -49,7 +48,6 @@ function _previewNote(n, openReader, toast) {
 function _downloadNote(n, openReader, toast) {
   const files = n.files || [];
   if (files.length === 0) { toast.info('No file', 'No PDF attached yet.'); return; }
-  if (files.length > 1) { openReader(n); return; }
   const f = files[0];
   if (f.id) NotatiAPI.downloadNoteFileById(f.id, _buildNoteFilename(f)).catch(e => toast.error('Download failed', e.message));
   else NotatiAPI.downloadNoteFile(n._numId, n.fileName || n.title + '.pdf').catch(e => toast.error('Download failed', e.message));
@@ -1375,7 +1373,7 @@ function NoteReader({ note, open, onClose }) {
             }}>
               <FileTypeChip type="pdf"/>
               <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
-                {nf.label || `File ${i + 1}`}
+                {nf.label || nf.filename || `File ${i + 1}`}
               </span>
               <button className="btn btn-soft btn-sm" onClick={() => downloadFile(nf)}>
                 <Icons.Download size={13}/> Download
