@@ -1006,6 +1006,82 @@ input, textarea, select { font-family: inherit; }
 }
 .qdot-active { background: var(--notati-amber); }
 
+/* ============================================================
+   DARK MODE — overrides for elements using non-semantic brand colors
+   Semantic tokens (--bg-*, --fg-*, --border-*) auto-switch via
+   [data-theme="dark"] in colors_and_type.css. These rules handle
+   the remaining hardcoded --notati-paper / --notati-cream usages.
+   ============================================================ */
+
+/* Topbar */
+[data-theme="dark"] .topbar { background: rgba(26, 17, 8, 0.92); }
+[data-theme="dark"] .topbar .menu-btn:hover { background: var(--bg-section); }
+[data-theme="dark"] .topbar .role-tag { background: var(--bg-section); color: var(--fg-2); }
+[data-theme="dark"] .topbar .search-mini { background: var(--bg-card); }
+[data-theme="dark"] .bag-btn:hover { background: var(--bg-section); }
+
+/* Buttons */
+[data-theme="dark"] .btn-outline:hover:not(:disabled) { background: var(--bg-section); }
+[data-theme="dark"] .btn-ghost:hover:not(:disabled)   { background: var(--bg-section); }
+[data-theme="dark"] .btn-soft { background: var(--bg-card-2); color: var(--fg-2); }
+[data-theme="dark"] .btn-soft:hover:not(:disabled)    { background: var(--bg-section); }
+
+/* Tags */
+[data-theme="dark"] .tag-soft { background: var(--bg-section); }
+
+/* Stat cards */
+[data-theme="dark"] .stat { background: var(--bg-card); }
+[data-theme="dark"] .stat .ic { background: var(--bg-section); }
+[data-theme="dark"] .stat-walnut .ic { background: var(--bg-section); }
+
+/* Panels, cards, rows */
+[data-theme="dark"] .panel        { background: var(--bg-card); }
+[data-theme="dark"] .note-list-card { background: var(--bg-card); }
+[data-theme="dark"] .notecard     { background: var(--bg-card); }
+[data-theme="dark"] .filerow      { background: var(--bg-card); }
+[data-theme="dark"] .ftype        { background: var(--bg-card); }
+[data-theme="dark"] .empty        { background: var(--bg-card); }
+
+/* Tables */
+[data-theme="dark"] .tbl thead th { background: var(--bg-section); }
+[data-theme="dark"] .tbl tbody tr:hover { background: var(--bg-section); }
+
+/* Forms */
+[data-theme="dark"] .field input,
+[data-theme="dark"] .field textarea,
+[data-theme="dark"] .field select { background: var(--bg-section); }
+[data-theme="dark"] .filter-select { background: var(--bg-card); }
+
+/* Auth page */
+[data-theme="dark"] .auth-page { background: var(--bg-page); }
+[data-theme="dark"] .auth-card .eyebrow { background: var(--bg-section); }
+[data-theme="dark"] .demo-hint { background: var(--bg-section); }
+[data-theme="dark"] .demo-hint code { background: var(--bg-card); }
+
+/* Modals */
+[data-theme="dark"] .modal { background: var(--bg-card); }
+[data-theme="dark"] .modal-foot { background: var(--bg-section); }
+[data-theme="dark"] .modal-head .close:hover { background: var(--bg-section); }
+
+/* Bag drawer */
+[data-theme="dark"] .bag-drawer,
+[data-theme="dark"] .bag-head,
+[data-theme="dark"] .bag-foot { background: var(--bg-card); }
+
+/* Toasts */
+[data-theme="dark"] .toast { background: var(--bg-card); }
+[data-theme="dark"] .toast .ic { background: var(--bg-section); }
+
+/* Dropzone */
+[data-theme="dark"] .dropzone { background: var(--bg-card); }
+[data-theme="dark"] .dropzone:hover,
+[data-theme="dark"] .dropzone.over { background: var(--bg-section); border-color: var(--notati-walnut); }
+[data-theme="dark"] .dropzone.picked { background: var(--bg-section); }
+
+/* PDF viewer page */
+[data-theme="dark"] .pdfview .page { background: var(--bg-card); }
+[data-theme="dark"] .pdfview .page .ph-line { background: var(--bg-section); }
+
 @media (max-width: 480px) {
   .auth-aside { display: none; }
   .auth-page { grid-template-columns: 1fr; }

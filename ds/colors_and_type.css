@@ -160,3 +160,28 @@ hr {
   border-top: 1px solid var(--border-2);
   margin: var(--sp-5) 0;
 }
+
+/* ============================================================
+   Dark mode — overrides semantic tokens only.
+   Brand palette stays the same; only surface/text/border tokens change.
+   Applied via <html data-theme="dark">.
+   ============================================================ */
+[data-theme="dark"] {
+  --fg-1:       #F0E8DE;
+  --fg-2:       var(--notati-linen);
+  --fg-3:       var(--notati-clay);
+  --fg-on-dark: var(--notati-paper);
+
+  --bg-page:    #1A1108;
+  --bg-section: #231710;
+  --bg-card:    #2B1E14;
+  --bg-card-2:  #332619;
+  --bg-dark:    #0E0A05;
+
+  --border-1: rgba(181, 160, 144, 0.16);
+  --border-2: rgba(181, 160, 144, 0.09);
+  --border-strong: var(--notati-clay);
+
+  --link:       var(--notati-linen);
+  --link-hover: var(--notati-paper);
+}

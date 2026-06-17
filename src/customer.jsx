@@ -956,7 +956,7 @@ function FilterDropdown({ value, onChange, options, placeholder, icon }) {
       {open && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 200,
-          background: 'var(--notati-paper)', border: '1px solid var(--border-1)',
+          background: 'var(--bg-card)', border: '1px solid var(--border-1)',
           borderRadius: 'var(--r-5)', boxShadow: '0 8px 24px rgba(0,0,0,.13)',
           minWidth: 270, maxHeight: 300, overflowY: 'auto'
         }}>
@@ -967,7 +967,7 @@ function FilterDropdown({ value, onChange, options, placeholder, icon }) {
                       display: 'block', width: '100%', textAlign: 'left',
                       padding: '9px 16px', border: 'none', cursor: 'pointer',
                       font: 'var(--type-body)', fontSize: 14,
-                      background: value === val ? 'var(--notati-cream)' : 'transparent',
+                      background: value === val ? 'var(--bg-section)' : 'transparent',
                       color: value === val ? 'var(--notati-walnut)' : 'var(--fg-1)',
                       fontWeight: value === val ? 700 : 400,
                       borderLeft: value === val ? '3px solid var(--notati-walnut)' : '3px solid transparent'
@@ -1063,7 +1063,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
                 <div key={n.id}
                      style={{ cursor: canRead ? 'pointer' : 'default', padding: '14px 16px',
                               borderRadius: 'var(--r-5)', border: '1px solid var(--border-2)',
-                              background: 'var(--notati-paper)', display: 'flex', alignItems: 'center', gap: 14 }}
+                              background: 'var(--bg-card)', display: 'flex', alignItems: 'center', gap: 14 }}
                      onClick={canRead ? () => onOpenNote(n) : undefined}>
 
                   {/* Chapter number bubble */}
@@ -1404,7 +1404,7 @@ function LandingPage({ onLogin, onSignup }) {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 32px', height: 60,
       borderBottom: '1px solid var(--border-1)',
-      background: 'var(--notati-paper)', position: 'sticky', top: 0, zIndex: 10
+      background: 'var(--bg-page)', position: 'sticky', top: 0, zIndex: 10
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <img src="ds/assets/notati-mark.svg" alt="Notati" style={{ height: 28 }}/>
@@ -1427,7 +1427,7 @@ function LandingPage({ onLogin, onSignup }) {
     const chPaid = allChapters.length - chFree;
 
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--notati-paper)' }}>
+      <div style={{ minHeight: '100vh', background: 'var(--bg-page)' }}>
         {Navbar}
         <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px 80px' }}>
           <div className="page-head">
@@ -1468,12 +1468,12 @@ function LandingPage({ onLogin, onSignup }) {
                 return (
                   <div key={n.id} style={{
                     padding: '14px 16px', borderRadius: 'var(--r-5)',
-                    border: '1px solid var(--border-2)', background: 'var(--notati-paper)',
+                    border: '1px solid var(--border-2)', background: 'var(--bg-card)',
                     display: 'flex', alignItems: 'center', gap: 14
                   }}>
                     <div style={{
                       width: 42, height: 42, borderRadius: 'var(--r-3)', flexShrink: 0,
-                      background: isFree ? 'var(--notati-sage)' : 'var(--notati-cream)',
+                      background: isFree ? 'var(--notati-sage)' : 'var(--bg-section)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       color: isFree ? 'var(--notati-paper)' : 'var(--fg-3)',
                       fontSize: 16, fontWeight: 700
@@ -1529,7 +1529,7 @@ function LandingPage({ onLogin, onSignup }) {
 
   /* ── Level 1: Course grid ── */
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--notati-paper)' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-page)' }}>
       {Navbar}
 
       {/* Hero */}
@@ -1537,7 +1537,7 @@ function LandingPage({ onLogin, onSignup }) {
         {!loading && freeCount > 0 && (
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 20,
-            background: 'var(--notati-cream)', border: '1px solid var(--border-2)',
+            background: 'var(--bg-section)', border: '1px solid var(--border-2)',
             borderRadius: 'var(--r-pill)', padding: '5px 14px'
           }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%',

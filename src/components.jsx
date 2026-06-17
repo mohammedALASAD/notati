@@ -54,7 +54,9 @@ const Icons = {
   Bag:       (p) => <I {...p}><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></I>,
   Minus:     (p) => <I {...p}><line x1="5" y1="12" x2="19" y2="12"/></I>,
   BookOpen:  (p) => <I {...p}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></I>,
-  ArrowLeft: (p) => <I {...p}><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></I>
+  ArrowLeft: (p) => <I {...p}><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></I>,
+  Moon:      (p) => <I {...p}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></I>,
+  Sun:       (p) => <I {...p}><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></I>,
 };
 
 /* ============================================================
@@ -197,7 +199,7 @@ function Avatar({ name, size = 'md' }) {
    Sidebar
    props: nav, current, onNav, user, onLogout, collapsed, isOpen, onClose
    ============================================================ */
-function Sidebar({ nav, current, onNav, user, onLogout, collapsed, isOpen, onClose }) {
+function Sidebar({ nav, current, onNav, user, onLogout, collapsed, isOpen, onClose, darkMode, onThemeToggle }) {
   return (
     <>
       {isOpen ? <div className="side-backdrop" onClick={onClose}/> : null}
@@ -221,6 +223,12 @@ function Sidebar({ nav, current, onNav, user, onLogout, collapsed, isOpen, onClo
           })}
         </nav>
         <div className="side-footer">
+          <button className="side-link" onClick={onThemeToggle}
+                  title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                  style={{ marginBottom: 4 }}>
+            {darkMode ? <Icons.Sun size={18}/> : <Icons.Moon size={18}/>}
+            <span className="lbl">{darkMode ? 'Light mode' : 'Dark mode'}</span>
+          </button>
           <div className="side-user">
             <span className="av">{(user.name || '?').trim().charAt(0).toUpperCase()}</span>
             <div className="meta">

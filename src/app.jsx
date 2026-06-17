@@ -41,7 +41,7 @@ function setHash(role, page) {
 /* ============================================================
    Dashboard Shell (sidebar + topbar + page)
    ============================================================ */
-function DashboardShell({ user, role, page, onNav, onLogout }) {
+function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeToggle }) {
   const [sideOpen, setSideOpen]   = useStateApp(false);
   const [collapsed, setCollapsed] = useStateApp(false);
   const [search, setSearch]       = useStateApp('');
@@ -106,7 +106,9 @@ function DashboardShell({ user, role, page, onNav, onLogout }) {
                onLogout={onLogout}
                isOpen={sideOpen}
                onClose={() => setSideOpen(false)}
-               collapsed={collapsed}/>
+               collapsed={collapsed}
+               darkMode={darkMode}
+               onThemeToggle={onThemeToggle}/>
 
       <div className="main">
         <Topbar
@@ -196,6 +198,14 @@ function App() {
   const [user, setUser]      = useStateApp(NotatiStore.getSession());
   const [mode, setMode]      = useStateApp('landing'); // when logged out: landing | login | signup
   const [route, setRoute]    = useStateApp(parseHash());
+  const [darkMode, setDarkMode] = useStateApp(() => localStorage.getItem('notati-theme') === 'dark');
+
+  useEffectApp(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    localStorage.setItem('notati-theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
+
+  function toggleTheme() { setDarkMode(d => !d); }
 
   // Wake backend on first load (Render free tier sleeps after inactivity)
   useEffectApp(() => { NotatiAPI.warmup(); }, []);
@@ -244,7 +254,9 @@ function App() {
       role={user.role}
       page={route.page || 'overview'}
       onNav={handleNav}
-      onLogout={handleLogout}/>
+      onLogout={handleLogout}
+      darkMode={darkMode}
+      onThemeToggle={toggleTheme}/>
   );
 }
 
