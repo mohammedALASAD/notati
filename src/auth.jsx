@@ -138,7 +138,7 @@ function LoginView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
           <label htmlFor="email">Email</label>
           <input id="email" type="email" autoComplete="email" autoFocus
                  value={email} onChange={(e) => setEmail(e.target.value)}
-                 placeholder="you@uob.edu.bh" required/>
+                 placeholder="you@university.edu" required/>
         </div>
         <div className="field">
           <label htmlFor="pass">Password</label>
@@ -237,7 +237,7 @@ function SignupView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
           <label htmlFor="email2">Email</label>
           <input id="email2" type="email" autoComplete="email"
                  value={email} onChange={(e) => setEmail(e.target.value)}
-                 placeholder="you@uob.edu.bh" required/>
+                 placeholder="you@university.edu" required/>
         </div>
         <div className="field-row">
           <div className="field" style={{ marginBottom: 0 }}>
