@@ -1196,8 +1196,8 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
                         </span>
                       )}
                       {paidCount > 0 && (
-                        <span style={{ background: 'var(--bg-section)', color: 'var(--fg-2)',
-                                       border: '1px solid var(--border-2)',
+                        <span style={{ background: 'transparent', color: 'var(--fg-2)',
+                                       border: '1px solid var(--border-1)',
                                        font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
                                        borderRadius: 'var(--r-pill)' }}>
                           {paidCount} paid
@@ -1631,8 +1631,8 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                                          borderRadius: 'var(--r-pill)' }}>{free} free</span>
                         )}
                         {paid > 0 && (
-                          <span style={{ background: 'var(--bg-section)', color: 'var(--fg-2)',
-                                         border: '1px solid var(--border-2)',
+                          <span style={{ background: 'transparent', color: 'var(--fg-2)',
+                                         border: '1px solid var(--border-1)',
                                          font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
                                          borderRadius: 'var(--r-pill)' }}>{paid} paid</span>
                         )}

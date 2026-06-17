@@ -1040,9 +1040,9 @@ input, textarea, select { font-family: inherit; }
 
 /* Panels, cards, rows */
 [data-theme="dark"] .panel        { background: var(--bg-card); }
-[data-theme="dark"] .note-list-card { background: var(--bg-card); }
-[data-theme="dark"] .notecard     { background: var(--bg-card); }
-[data-theme="dark"] .filerow      { background: var(--bg-card); }
+[data-theme="dark"] .note-list-card { background: var(--bg-section); border: 1px solid var(--border-1); }
+[data-theme="dark"] .notecard     { background: var(--bg-card-2); border-color: var(--border-1); }
+[data-theme="dark"] .filerow      { background: var(--bg-section); border: 1px solid var(--border-1); }
 [data-theme="dark"] .ftype        { background: var(--bg-card); }
 [data-theme="dark"] .empty        { background: var(--bg-card); }
 
