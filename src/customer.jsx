@@ -623,58 +623,68 @@ function UploadContent({ user, onDone }) {
   const [chapterNumber, setChapterNumber] = useStateC('');
   const [chapterTitle, setChapterTitle] = useStateC('');
   const [description, setDescription]   = useStateC('');
-  const [file, setFile]   = useStateC(null);
+  const [pendingFiles, setPendingFiles] = useStateC([]);  // [{tmpId, label, file}]
+  const [pickingForIdx, setPickingForIdx] = useStateC(null);
   const [err, setErr]     = useStateC('');
   const [busy, setBusy]   = useStateC(false);
-  const [drag, setDrag]   = useStateC(false);
-  const inputRef = useRefC();
+  const fileInputRef = useRefC();
 
-  function handleFile(f) {
-    if (!f) return;
-    const ext = (f.name.split('.').pop() || '').toLowerCase();
-    if (!['pdf', 'pptx', 'docx'].includes(ext)) {
-      setErr('We only accept .pdf, .pptx, or .docx for now.');
-      setFile(null);
-      return;
-    }
-    setErr('');
-    setFile(f);
+  function addPendingFile() {
+    setPendingFiles(prev => [...prev, { tmpId: Date.now(), label: '', file: null }]);
   }
 
-  function onDrop(e) {
-    e.preventDefault(); setDrag(false);
-    const f = e.dataTransfer.files && e.dataTransfer.files[0];
-    handleFile(f);
+  function removePending(idx) {
+    setPendingFiles(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateLabel(idx, val) {
+    setPendingFiles(prev => prev.map((pf, i) => i === idx ? { ...pf, label: val } : pf));
+  }
+
+  function openFilePicker(idx) {
+    setPickingForIdx(idx);
+    if (fileInputRef.current) { fileInputRef.current.value = ''; fileInputRef.current.click(); }
+  }
+
+  function handleFilePicked(e) {
+    const f = e.target.files && e.target.files[0];
+    if (!f || pickingForIdx === null) return;
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (!['pdf', 'pptx', 'docx'].includes(ext)) {
+      setErr('We only accept .pdf, .pptx, or .docx for now.'); return;
+    }
+    setErr('');
+    setPendingFiles(prev => prev.map((pf, i) => i === pickingForIdx ? { ...pf, file: f } : pf));
+    setPickingForIdx(null);
   }
 
   function clearForm() {
     setCollege(''); setCourseName(''); setChapterNumber(''); setChapterTitle('');
-    setDescription(''); setFile(null); setErr('');
+    setDescription(''); setPendingFiles([]); setErr('');
   }
+
+  const pickedFiles = pendingFiles.filter(pf => pf.file);
 
   async function submit(e) {
     e.preventDefault();
-    setBusy(true);
-    setErr('');
+    setBusy(true); setErr('');
     if (!college)              { setErr('Select your college.');       setBusy(false); return; }
     if (!courseName.trim())    { setErr('Enter the course name.');     setBusy(false); return; }
     if (!chapterNumber.trim()) { setErr('Enter the chapter number.');  setBusy(false); return; }
     if (!chapterTitle.trim())  { setErr('Enter the chapter title.');   setBusy(false); return; }
-    if (!file)                 { setErr('Pick a file first.');         setBusy(false); return; }
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    if (!['pdf','pptx','docx'].includes(ext)) {
-      setErr('We only accept .pdf, .pptx, or .docx for now.'); setBusy(false); return;
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('title', `${courseName} — Ch.${chapterNumber}: ${chapterTitle}`);
-    fd.append('description', description || '');
-    fd.append('college', college);
-    fd.append('course_name', courseName);
-    fd.append('chapter_number', chapterNumber);
-    fd.append('chapter_title', chapterTitle);
+    if (pickedFiles.length === 0) { setErr('Add at least one file before submitting.'); setBusy(false); return; }
     try {
-      await NotatiAPI.submitUpload(fd);
+      const fd = new FormData();
+      fd.append('title', `${courseName} — Ch.${chapterNumber}: ${chapterTitle}`);
+      fd.append('description', description || '');
+      fd.append('college', college);
+      fd.append('course_name', courseName);
+      fd.append('chapter_number', chapterNumber);
+      fd.append('chapter_title', chapterTitle);
+      const upload = await NotatiAPI.submitUpload(fd);
+      for (const pf of pickedFiles) {
+        await NotatiAPI.addUploadFile(upload.id, pf.file, pf.label);
+      }
       toast.success('Submitted for review', "We will be in touch when your Note is ready.");
       clearForm();
       setTimeout(() => { setBusy(false); onDone && onDone(); }, 300);
@@ -683,8 +693,6 @@ function UploadContent({ user, onDone }) {
       toast.error('Could not upload', e2.message);
     }
   }
-
-  const ext = file ? (file.name.split('.').pop() || '').toLowerCase() : '';
 
   return (
     <div>
@@ -697,47 +705,69 @@ function UploadContent({ user, onDone }) {
 
       <form className="grid-2" onSubmit={submit}>
         <section className="panel">
-          <div className="panel-head"><h3>Your file</h3></div>
+          <div className="panel-head">
+            <h3>Your files</h3>
+            <button type="button" className="btn btn-soft btn-sm" onClick={addPendingFile}
+                    style={{ marginLeft: 'auto' }}>
+              <Icons.Plus size={13}/> Add a file
+            </button>
+          </div>
           <div className="panel-body">
-            <div className={`dropzone ${drag ? 'over' : ''} ${file ? 'picked' : ''}`}
-                 onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-                 onDragLeave={() => setDrag(false)}
-                 onDrop={onDrop}
-                 onClick={() => inputRef.current && inputRef.current.click()}>
-              <div className="stack" aria-hidden="true">
-                <div className="sheet s1"></div>
-                <div className="sheet s2"></div>
-                <div className="sheet s3"></div>
+            {pendingFiles.length === 0 ? (
+              <div style={{ padding: '20px 16px', borderRadius: 'var(--r-5)', textAlign: 'center',
+                            border: '1px dashed var(--border-1)', color: 'var(--fg-3)', fontSize: 13 }}>
+                Click "Add a file" to attach your lecture slides, notes, or readings.
+                <div style={{ display: 'inline-flex', gap: 8, marginTop: 10 }}>
+                  <FileTypeChip type="pdf"/>
+                  <FileTypeChip type="docx"/>
+                  <FileTypeChip type="pptx"/>
+                </div>
               </div>
-              {file ? (
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                    <FileTypeChip type={ext}/>
-                    <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>{file.name}</div>
-                  </div>
-                  <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-                    {fmtSize(Math.max(1, Math.round(file.size / 1024)))} · Ready to submit
-                  </div>
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}
-                          onClick={(e) => { e.stopPropagation(); setFile(null); }}>
-                    Pick a different file
+            ) : (
+              pendingFiles.map((pf, idx) => (
+                <div key={pf.tmpId} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 10px', marginBottom: 8, borderRadius: 'var(--r-5)',
+                  border: '1px solid var(--border-1)', background: 'var(--bg-card)'
+                }}>
+                  {pf.file
+                    ? <FileTypeChip type={(pf.file.name.split('.').pop() || '').toLowerCase()}/>
+                    : <div style={{ width: 28, height: 28, borderRadius: 'var(--r-3)', flexShrink: 0,
+                                     background: 'var(--bg-card-2)', border: '1px dashed var(--border-2)' }}/>}
+                  <input
+                    value={pf.label}
+                    onChange={e => updateLabel(idx, e.target.value)}
+                    placeholder="Label (optional, e.g. Lecture Slides)"
+                    style={{ flex: 1, padding: '4px 8px', border: '1px solid var(--border-1)',
+                             borderRadius: 'var(--r-3)', font: 'var(--type-body)', fontSize: 13,
+                             background: 'var(--bg-card)', color: 'var(--fg-1)' }}/>
+                  {pf.file ? (
+                    <span style={{ fontSize: 12, color: 'var(--fg-3)', whiteSpace: 'nowrap',
+                                   maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {pf.file.name}
+                    </span>
+                  ) : (
+                    <button type="button" className="btn btn-soft btn-sm"
+                            onClick={() => openFilePicker(idx)}>
+                      Pick file
+                    </button>
+                  )}
+                  {pf.file && (
+                    <button type="button" className="btn btn-ghost btn-sm"
+                            onClick={() => openFilePicker(idx)} title="Replace file">
+                      <Icons.Edit size={12}/>
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-ghost btn-sm"
+                          onClick={() => removePending(idx)} title="Remove">
+                    <Icons.Close size={13}/>
                   </button>
                 </div>
-              ) : (
-                <>
-                  <h4>Drop your file here</h4>
-                  <p>Or click to browse — PowerPoint, Word, or PDF, up to 25 MB.</p>
-                  <div style={{ display: 'inline-flex', gap: 8 }}>
-                    <FileTypeChip type="pdf"/>
-                    <FileTypeChip type="docx"/>
-                    <FileTypeChip type="pptx"/>
-                  </div>
-                </>
-              )}
-              <input ref={inputRef} type="file" style={{display:'none'}}
-                     accept=".pdf,.pptx,.docx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                     onChange={(e) => handleFile(e.target.files[0])}/>
-            </div>
+              ))
+            )}
+            <input ref={fileInputRef} type="file" style={{ display: 'none' }}
+                   accept=".pdf,.pptx,.docx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                   onChange={handleFilePicked}/>
             {err ? <div className="err" style={{ marginTop: 12 }}>{err}</div> : null}
           </div>
         </section>
@@ -777,7 +807,7 @@ function UploadContent({ user, onDone }) {
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-              <button type="submit" className="btn btn-primary" disabled={busy || !file}>
+              <button type="submit" className="btn btn-primary" disabled={busy || pickedFiles.length === 0}>
                 {busy ? 'Submitting…' : 'Submit for review'}
                 {!busy && <Icons.ArrowRight size={16}/>}
               </button>
@@ -1230,13 +1260,22 @@ function NoteReader({ note, open, onClose }) {
   const { toast } = useToast();
   if (!open || !note) return null;
 
-  function download() {
-    if (note._numId) {
+  const files = note.files || [];
+
+  function downloadFile(nf) {
+    if (nf.id) {
+      NotatiAPI.downloadNoteFileById(nf.id, nf.label || 'file.pdf')
+        .catch(e => toast.error('Download failed', e.message));
+    } else if (note._numId) {
+      // legacy single-file note
       NotatiAPI.downloadNoteFile(note._numId, note.fileName || note.title + '.pdf')
         .catch(e => toast.error('Download failed', e.message));
-    } else {
-      toast.error('No file', 'No PDF is attached to this note yet.');
     }
+  }
+
+  function downloadAll() {
+    if (files.length === 0) { toast.error('No files', 'No files are attached to this note yet.'); return; }
+    files.forEach(nf => downloadFile(nf));
   }
 
   const isFreeNote = note.isFree || Number(note.price || 0) === 0;
@@ -1247,9 +1286,13 @@ function NoteReader({ note, open, onClose }) {
            subtitle={`${note.college} · ${note.courseName}`}
            footer={<>
              <button className="btn btn-ghost" onClick={onClose}>Close</button>
-             <button className="btn btn-primary" onClick={download}>
-               <Icons.Download size={15}/> Download PDF
-             </button>
+             {files.length > 1
+               ? <button className="btn btn-primary" onClick={downloadAll}>
+                   <Icons.Download size={15}/> Download all ({files.length})
+                 </button>
+               : <button className="btn btn-primary" onClick={() => files[0] ? downloadFile(files[0]) : downloadAll()}>
+                   <Icons.Download size={15}/> Download
+                 </button>}
            </>}>
 
       {/* Note info grid */}
@@ -1296,6 +1339,31 @@ function NoteReader({ note, open, onClose }) {
           )}
         </div>
       </div>
+
+      {/* File list */}
+      {files.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ font: 'var(--type-label)', letterSpacing: '.08em', textTransform: 'uppercase',
+                        color: 'var(--fg-3)', marginBottom: 8, fontSize: 10 }}>
+            Files ({files.length})
+          </div>
+          {files.map((nf, i) => (
+            <div key={nf.id || i} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 12px', marginBottom: 6, borderRadius: 'var(--r-5)',
+              border: '1px solid var(--border-1)', background: 'var(--bg-section)'
+            }}>
+              <FileTypeChip type="pdf"/>
+              <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
+                {nf.label || `File ${i + 1}`}
+              </span>
+              <button className="btn btn-soft btn-sm" onClick={() => downloadFile(nf)}>
+                <Icons.Download size={13}/> Download
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </Modal>
   );
 }

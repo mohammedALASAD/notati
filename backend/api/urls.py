@@ -18,6 +18,16 @@ urlpatterns = [
     path('notes/<int:pk>/',     views.NoteDetailView.as_view(),       name='note-detail'),
     path('notes/<int:pk>/download/', views.NoteDownloadView.as_view(), name='note-download'),
 
+    # Note files
+    path('note-files/',                     views.NoteFileListCreateView.as_view(),  name='note-file-list'),
+    path('note-files/<int:pk>/',            views.NoteFileDetailView.as_view(),      name='note-file-detail'),
+    path('note-files/<int:pk>/download/',   views.NoteFileDownloadView.as_view(),    name='note-file-download'),
+
+    # Upload files
+    path('upload-files/',                   views.UploadFileListCreateView.as_view(),  name='upload-file-list'),
+    path('upload-files/<int:pk>/',          views.UploadFileDetailView.as_view(),      name='upload-file-detail'),
+    path('upload-files/<int:pk>/download/', views.UploadFileDownloadView.as_view(),    name='upload-file-download'),
+
     # Access
     path('access/',             views.AccessListCreateView.as_view(), name='access-list'),
     path('access/<int:pk>/',    views.AccessDetailView.as_view(),     name='access-detail'),

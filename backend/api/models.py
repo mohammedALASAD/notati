@@ -88,6 +88,20 @@ class Access(models.Model):
         return f'{self.user.email} -> {self.note}'
 
 
+class NoteFile(models.Model):
+    note    = models.ForeignKey(Note, on_delete=models.CASCADE, related_name='files')
+    label   = models.CharField(max_length=200, blank=True, default='')
+    file    = models.FileField(upload_to='note_files/')
+    order   = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'created_at']
+
+    def __str__(self):
+        return f'{self.note} – {self.label or "file"}'
+
+
 class Upload(models.Model):
     STATUS_CHOICES = [
         ('pending',  'Pending'),
@@ -96,7 +110,7 @@ class Upload(models.Model):
     ]
 
     user           = models.ForeignKey(User, on_delete=models.CASCADE, related_name='uploads')
-    file           = models.FileField(upload_to='uploads/')
+    file           = models.FileField(upload_to='uploads/', blank=True, null=True)
     title          = models.CharField(max_length=200)
     description    = models.TextField(blank=True)
     college        = models.CharField(max_length=120, blank=True)
@@ -114,6 +128,19 @@ class Upload(models.Model):
 
     def __str__(self):
         return f'{self.user.email}: {self.title}'
+
+
+class UploadFile(models.Model):
+    upload  = models.ForeignKey(Upload, on_delete=models.CASCADE, related_name='files')
+    label   = models.CharField(max_length=200, blank=True, default='')
+    file    = models.FileField(upload_to='upload_files/')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f'{self.upload} – {self.label or "file"}'
 
 
 class Testimonial(models.Model):

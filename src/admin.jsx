@@ -212,7 +212,8 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
   useEffectAd(() => { setQ(topbarSearch || ''); }, [topbarSearch]);
   const [typeFilter, setTypeFilter] = useStateAd('all');
   const [collegeFilter, setCollegeFilter] = useStateAd('all');
-  const [confirmDel, setConfirmDel] = useStateAd(null);
+  const [confirmDel, setConfirmDel]           = useStateAd(null);
+  const [viewFilesUpload, setViewFilesUpload] = useStateAd(null);
 
   function refresh() {
     Promise.all([NotatiAPI.getUploads(), NotatiAPI.getUsers()])
@@ -341,12 +342,18 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
                         <td data-l="Status"><StatusBadge status={up.status}/></td>
                         <td className="r" data-l="Actions">
                           <div className="row-actions">
-                            <button className="btn btn-ghost btn-sm" onClick={() => handlePreview(up)} title="Preview file">
-                              <Icons.Eye size={15}/>
-                            </button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(up)} title="Download original">
-                              <Icons.Download size={15}/>
-                            </button>
+                            {up.fileUrl ? (<>
+                              <button className="btn btn-ghost btn-sm" onClick={() => handlePreview(up)} title="Preview file">
+                                <Icons.Eye size={15}/>
+                              </button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(up)} title="Download original">
+                                <Icons.Download size={15}/>
+                              </button>
+                            </>) : (
+                              <button className="btn btn-soft btn-sm" onClick={() => setViewFilesUpload(up)} title="View submitted files">
+                                <Icons.File size={13}/> Files
+                              </button>
+                            )}
                             {up.status === 'pending'
                               ? <button className="btn btn-primary btn-sm" onClick={() => onPublish(up)}>
                                   Publish note <Icons.ArrowRight size={14}/>
@@ -392,7 +399,69 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
           </div>
         )}
       </Modal>
+
+      <ViewUploadFilesModal
+        open={!!viewFilesUpload}
+        upload={viewFilesUpload}
+        onClose={() => setViewFilesUpload(null)}/>
     </div>
+  );
+}
+
+/* ============================================================
+   ViewUploadFilesModal — admin views files attached to a student submission
+   ============================================================ */
+function ViewUploadFilesModal({ open, upload, onClose }) {
+  const { toast } = useToast();
+  const [files, setFiles]   = useStateAd([]);
+  const [loading, setLoading] = useStateAd(false);
+
+  useEffectAd(() => {
+    if (!open || !upload) return;
+    setLoading(true);
+    NotatiAPI.getUploadFiles(upload.id)
+      .then(f => { setFiles(f); setLoading(false); })
+      .catch(e => { toast.error('Could not load files', e.message); setLoading(false); });
+  }, [open, upload]);
+
+  function download(f) {
+    NotatiAPI.downloadUploadFileById(f.id, f.label || 'file')
+      .catch(e => toast.error('Download failed', e.message));
+  }
+
+  if (!open || !upload) return null;
+  return (
+    <Modal open={open} onClose={onClose}
+           title="Submitted files"
+           subtitle={`${upload.title} · ${upload.userEmail}`}
+           footer={<button className="btn btn-ghost" onClick={onClose}>Close</button>}>
+      {loading ? (
+        <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
+          Loading files…
+        </div>
+      ) : files.length === 0 ? (
+        <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
+          No files found for this submission.
+        </div>
+      ) : files.map((f, i) => {
+        const ext = f.file ? (String(f.file).split('.').pop() || '').toLowerCase() : '';
+        return (
+          <div key={f.id} style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '10px 12px', marginBottom: 8, borderRadius: 'var(--r-5)',
+            border: '1px solid var(--border-1)', background: 'var(--bg-section)'
+          }}>
+            <FileTypeChip type={ext || 'pdf'}/>
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
+              {f.label || `File ${i + 1}`}
+            </span>
+            <button className="btn btn-soft btn-sm" onClick={() => download(f)}>
+              <Icons.Download size={13}/> Download
+            </button>
+          </div>
+        );
+      })}
+    </Modal>
   );
 }
 
@@ -409,98 +478,116 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
   const [price, setPrice]               = useStateAd(0);
   const [tags, setTags]                 = useStateAd('');
   const [description, setDescription]   = useStateAd('');
-  const [pdfName, setPdfName]           = useStateAd('');
-  const [pdfSize, setPdfSize]           = useStateAd(0);
-  const [pdfFile, setPdfFile]           = useStateAd(null);
   const [busy, setBusy]                 = useStateAd(false);
   const [err, setErr]                   = useStateAd('');
 
+  // Multi-file state
+  const [existingFiles,  setExistingFiles]  = useStateAd([]);   // NoteFile records
+  const [pendingFiles,   setPendingFiles]   = useStateAd([]);   // {tmpId, label, file}
+  const [deletedFileIds, setDeletedFileIds] = useStateAd(() => new Set());
+  const [pickingForIdx,  setPickingForIdx]  = useStateAd(null);
+  const { useRef: useRefAd } = React;
+  const fileInputRef = useRefAd();
+
   useEffectAd(() => {
-    if (open) {
-      if (existingNote) {
-        setTitle(existingNote.title);
-        setCollege(existingNote.college || '');
-        setCourseName(existingNote.courseName || '');
-        setChapterNumber(existingNote.chapterNumber || '');
-        setChapterTitle(existingNote.chapterTitle || '');
-        setPrice(existingNote.price != null ? Number(existingNote.price) : 0);
-        setTags(existingNote.tags.join(', '));
-        setDescription(existingNote.description);
-        setPdfFile(null);
-        setPdfName(existingNote.fileName);
-        setPdfSize(existingNote.sizeKB);
-      } else {
-        setTitle(upload && upload.chapterTitle ? upload.chapterTitle : '');
-        setCollege(upload ? upload.college || '' : '');
-        setCourseName(upload ? upload.courseName || '' : '');
-        setChapterNumber(upload ? upload.chapterNumber || '' : '');
-        setChapterTitle(upload ? upload.chapterTitle || '' : '');
-        setPrice(0);
-        setTags('');
-        setDescription(upload ? upload.description || '' : '');
-        setPdfName(''); setPdfSize(0);
+    if (!open) return;
+    setExistingFiles([]); setPendingFiles([]); setDeletedFileIds(new Set()); setErr('');
+    if (existingNote) {
+      setTitle(existingNote.title);
+      setCollege(existingNote.college || '');
+      setCourseName(existingNote.courseName || '');
+      setChapterNumber(existingNote.chapterNumber || '');
+      setChapterTitle(existingNote.chapterTitle || '');
+      setPrice(existingNote.price != null ? Number(existingNote.price) : 0);
+      setTags(existingNote.tags.join(', '));
+      setDescription(existingNote.description);
+      if (existingNote._numId) {
+        NotatiAPI.getNoteFiles(existingNote._numId)
+          .then(setExistingFiles).catch(() => {});
       }
-      setErr('');
+    } else {
+      setTitle(upload && upload.chapterTitle ? upload.chapterTitle : '');
+      setCollege(upload ? upload.college || '' : '');
+      setCourseName(upload ? upload.courseName || '' : '');
+      setChapterNumber(upload ? upload.chapterNumber || '' : '');
+      setChapterTitle(upload ? upload.chapterTitle || '' : '');
+      setPrice(0); setTags('');
+      setDescription(upload ? upload.description || '' : '');
     }
   }, [open, upload, existingNote]);
 
-  function pickPdf(e) {
+  function addPendingFile() {
+    setPendingFiles(prev => [...prev, { tmpId: Date.now(), label: '', file: null }]);
+  }
+
+  function removePending(idx) {
+    setPendingFiles(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function updatePendingLabel(idx, val) {
+    setPendingFiles(prev => prev.map((pf, i) => i === idx ? { ...pf, label: val } : pf));
+  }
+
+  function openFilePicker(idx) {
+    setPickingForIdx(idx);
+    if (fileInputRef.current) { fileInputRef.current.value = ''; fileInputRef.current.click(); }
+  }
+
+  function handleFilePicked(e) {
     const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    if (!f.name.toLowerCase().endsWith('.pdf')) {
-      setErr('Notes must be a PDF.'); return;
-    }
-    setPdfName(f.name);
-    setPdfSize(Math.max(1, Math.round(f.size / 1024)));
-    setPdfFile(f);
-    setErr('');
+    if (!f || pickingForIdx === null) return;
+    setPendingFiles(prev => prev.map((pf, i) => i === pickingForIdx ? { ...pf, file: f } : pf));
+    setPickingForIdx(null);
+  }
+
+  function markDeleted(id) {
+    setDeletedFileIds(prev => { const s = new Set(prev); s.add(id); return s; });
   }
 
   async function publish() {
-    if (!college)                { setErr('Please select a college.'); return; }
-    if (!courseName.trim())      { setErr('Course name is required.'); return; }
-    if (!String(chapterNumber).trim()) { setErr('Chapter number is required.'); return; }
-    if (!chapterTitle.trim())    { setErr('Chapter title is required.'); return; }
-    if (!description.trim())     { setErr('Description is required.'); return; }
+    if (!college)                     { setErr('Please select a college.'); return; }
+    if (!courseName.trim())           { setErr('Course name is required.'); return; }
+    if (!String(chapterNumber).trim()){ setErr('Chapter number is required.'); return; }
+    if (!chapterTitle.trim())         { setErr('Chapter title is required.'); return; }
+    if (!description.trim())          { setErr('Description is required.'); return; }
     setBusy(true); setErr('');
     try {
       const course = await NotatiAPI.findOrCreateCourse(courseName.trim(), college);
+      let savedNote;
       if (existingNote) {
-        if (pdfFile) {
-          const fd = new FormData();
-          fd.append('course',         course.id);
-          fd.append('chapter_number', Number(chapterNumber));
-          fd.append('chapter_title',  chapterTitle.trim());
-          fd.append('description',    description.trim());
-          fd.append('price',          Number(price));
-          fd.append('pdf_file',       pdfFile);
-          await NotatiAPI.updateNote(existingNote._numId, fd, true);
-        } else {
-          await NotatiAPI.updateNote(existingNote._numId, {
-            course:         course.id,
-            chapter_number: Number(chapterNumber),
-            chapter_title:  chapterTitle.trim(),
-            description:    description.trim(),
-            price:          Number(price),
-          });
-        }
+        savedNote = await NotatiAPI.updateNote(existingNote._numId, {
+          course: course.id, chapter_number: Number(chapterNumber),
+          chapter_title: chapterTitle.trim(), description: description.trim(),
+          price: Number(price),
+        });
         toast.success('Note updated', `Ch.${chapterNumber} is live.`);
       } else {
         const fd = new FormData();
-        fd.append('course',          course.id);
-        fd.append('chapter_number',  chapterNumber);
-        fd.append('chapter_title',   chapterTitle.trim());
-        fd.append('description',     description.trim());
-        fd.append('price',           price);
-        if (pdfFile) fd.append('pdf_file', pdfFile);
-        const note = await NotatiAPI.createNote(fd);
+        fd.append('course', course.id);
+        fd.append('chapter_number', chapterNumber);
+        fd.append('chapter_title', chapterTitle.trim());
+        fd.append('description', description.trim());
+        fd.append('price', price);
+        savedNote = await NotatiAPI.createNote(fd);
         if (upload && upload.id) {
-          await NotatiAPI.updateUpload(upload.id, { status: 'approved', note: note._numId });
+          await NotatiAPI.updateUpload(upload.id, { status: 'approved', note: savedNote._numId });
         }
         if (upload && upload.userId) {
-          await NotatiAPI.grantAccess(upload.userId, note._numId).catch(() => {});
+          await NotatiAPI.grantAccess(upload.userId, savedNote._numId).catch(() => {});
         }
         toast.success('Note published', `Ch.${chapterNumber} is live in the library.`);
+      }
+      // Delete removed files
+      for (const id of deletedFileIds) {
+        await NotatiAPI.deleteNoteFile(id).catch(() => {});
+      }
+      // Upload pending files
+      const kept = existingFiles.filter(f => !deletedFileIds.has(f.id)).length;
+      let order = kept;
+      for (const pf of pendingFiles) {
+        if (!pf.file) continue;
+        await NotatiAPI.addNoteFile(savedNote._numId, pf.file, pf.label, order);
+        order++;
       }
       onPublished && onPublished();
       onClose();
@@ -514,6 +601,9 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
       setBusy(false);
     }
   }
+
+  const visibleExisting = existingFiles.filter(f => !deletedFileIds.has(f.id));
+  const totalFiles = visibleExisting.length + pendingFiles.filter(pf => pf.file).length;
 
   if (!open) return null;
   return (
@@ -529,6 +619,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
                {!busy && <Icons.Check size={16}/>}
              </button>
            </>}>
+
       <div className="field">
         <label>Note title</label>
         <input value={title} onChange={(e) => setTitle(e.target.value)}
@@ -570,7 +661,6 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
           Free — all students can read without paying. Paid — student must contact you via BenefitPay first.
         </div>
       </div>
-
       <div className="field">
         <label>Tags <span style={{ opacity: .5, textTransform: 'none', letterSpacing: 0 }}>(comma-separated)</span></label>
         <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Management, Chapter 4, Motivation"/>
@@ -581,32 +671,97 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
                   placeholder="One or two sentences — what the student gets out of these notes." required/>
       </div>
 
-      <label style={{ font: 'var(--type-label)', letterSpacing: '.08em', textTransform: 'uppercase',
-                      color: 'var(--fg-3)', display: 'block', margin: '4px 0 8px' }}>
-        Notes PDF
-      </label>
-      <div className={`dropzone ${pdfName ? 'picked' : ''}`}>
-        <div className="stack" aria-hidden="true">
-          <div className="sheet s1"></div>
-          <div className="sheet s2"></div>
-          <div className="sheet s3"></div>
+      {/* ── Files section ── */}
+      <div style={{ marginTop: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <label style={{ font: 'var(--type-label)', letterSpacing: '.08em', textTransform: 'uppercase',
+                          color: 'var(--fg-3)', margin: 0 }}>
+            Files {totalFiles > 0 && <span style={{ color: 'var(--notati-walnut)', marginLeft: 4 }}>{totalFiles}</span>}
+          </label>
+          <button type="button" className="btn btn-soft btn-sm" onClick={addPendingFile}>
+            <Icons.Plus size={13}/> Add a file
+          </button>
         </div>
-        {pdfName ? (
-          <div style={{ flex: 1 }}>
-            <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 4 }}>{pdfName}</div>
-            <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-              {fmtSize(pdfSize)} · Ready to publish
-            </div>
+
+        {/* Existing NoteFile records */}
+        {visibleExisting.map(ef => (
+          <div key={ef.id} style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '8px 12px', marginBottom: 6, borderRadius: 'var(--r-5)',
+            border: '1px solid var(--border-1)', background: 'var(--bg-section)'
+          }}>
+            <FileTypeChip type="pdf"/>
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
+              {ef.label || 'File'}
+            </span>
+            {ef.file_url && (
+              <a href={ef.file_url} target="_blank" rel="noopener noreferrer"
+                 className="btn btn-ghost btn-sm" title="Preview">
+                <Icons.Eye size={13}/>
+              </a>
+            )}
+            <button type="button" className="btn btn-danger btn-sm" title="Remove"
+                    onClick={() => markDeleted(ef.id)}>
+              <Icons.Trash size={13}/>
+            </button>
           </div>
-        ) : (
-          <>
-            <h4>Drop the finished PDF here</h4>
-            <p>Or click to browse — PDF only, up to 25 MB.</p>
-            <span className="types">PDF</span>
-          </>
+        ))}
+
+        {/* Pending (new) files */}
+        {pendingFiles.map((pf, idx) => (
+          <div key={pf.tmpId} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 10px', marginBottom: 6, borderRadius: 'var(--r-5)',
+            border: '1px solid var(--border-2)', background: 'var(--bg-card)'
+          }}>
+            {pf.file
+              ? <FileTypeChip type={(pf.file.name.split('.').pop() || '').toLowerCase()}/>
+              : <div style={{ width: 28, height: 28, borderRadius: 'var(--r-3)', flexShrink: 0,
+                               background: 'var(--bg-card-2)', border: '1px dashed var(--border-1)' }}/>}
+            <input
+              value={pf.label}
+              onChange={e => updatePendingLabel(idx, e.target.value)}
+              placeholder="Label (e.g. Lecture Notes, Q&A)"
+              style={{ flex: 1, padding: '4px 8px', border: '1px solid var(--border-1)',
+                       borderRadius: 'var(--r-3)', font: 'var(--type-body)', fontSize: 13,
+                       background: 'var(--bg-card)', color: 'var(--fg-1)' }}/>
+            {pf.file ? (
+              <span style={{ fontSize: 12, color: 'var(--fg-3)', whiteSpace: 'nowrap',
+                             maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {pf.file.name}
+              </span>
+            ) : (
+              <button type="button" className="btn btn-soft btn-sm"
+                      onClick={() => openFilePicker(idx)}>
+                Pick file
+              </button>
+            )}
+            {pf.file && (
+              <button type="button" className="btn btn-ghost btn-sm"
+                      onClick={() => openFilePicker(idx)} title="Replace file">
+                <Icons.Edit size={12}/>
+              </button>
+            )}
+            <button type="button" className="btn btn-ghost btn-sm"
+                    onClick={() => removePending(idx)} title="Remove">
+              <Icons.Close size={13}/>
+            </button>
+          </div>
+        ))}
+
+        {visibleExisting.length === 0 && pendingFiles.length === 0 && (
+          <div style={{ padding: '14px 16px', borderRadius: 'var(--r-5)', textAlign: 'center',
+                        border: '1px dashed var(--border-1)', color: 'var(--fg-3)', fontSize: 13 }}>
+            No files yet — click "Add a file" to attach PDFs.
+          </div>
         )}
-        <input type="file" accept=".pdf,application/pdf" onChange={pickPdf}/>
+
+        {/* Hidden file input shared by all pending rows */}
+        <input ref={fileInputRef} type="file"
+               accept=".pdf,.pptx,.docx,application/pdf"
+               onChange={handleFilePicked} style={{ display: 'none' }}/>
       </div>
+
       {err ? <div className="err" style={{ marginTop: 12 }}>{err}</div> : null}
     </Modal>
   );

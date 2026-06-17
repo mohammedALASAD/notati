@@ -9,10 +9,11 @@ from rest_framework.views import APIView
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 
-from .models import User, Course, Note, Access, Upload, Testimonial
+from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial
 from .serializers import (
     RegisterSerializer, UserSerializer, UserAdminSerializer,
     CourseSerializer, NoteSerializer, NoteAdminSerializer,
+    NoteFileSerializer, UploadFileSerializer,
     AccessSerializer, UploadSerializer, UploadAdminSerializer,
     TestimonialSerializer, TestimonialAdminSerializer,
 )
@@ -103,7 +104,7 @@ class NoteListCreateView(generics.ListCreateAPIView):
     search_fields = ['chapter_title', 'description', 'course__name']
 
     def get_queryset(self):
-        qs = Note.objects.select_related('course').all()
+        qs = Note.objects.select_related('course').prefetch_related('files').all()
         course_id = self.request.query_params.get('course')
         if course_id:
             qs = qs.filter(course_id=course_id)
@@ -124,7 +125,7 @@ class NoteListCreateView(generics.ListCreateAPIView):
 
 
 class NoteDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Note.objects.select_related('course').all()
+    queryset = Note.objects.select_related('course').prefetch_related('files').all()
     permission_classes = [IsAdminOrReadOnly]
 
     def get_serializer_class(self):
@@ -164,6 +165,93 @@ class UploadDownloadView(APIView):
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
             return _proxy_file_response(upload.file)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ── NoteFile ──────────────────────────────────────────────────────────────────
+
+class NoteFileListCreateView(generics.ListCreateAPIView):
+    serializer_class = NoteFileSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAdmin()]
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = NoteFile.objects.select_related('note__course').all()
+        note_id = self.request.query_params.get('note')
+        if note_id:
+            qs = qs.filter(note_id=note_id)
+        return qs
+
+
+class NoteFileDetailView(generics.RetrieveDestroyAPIView):
+    queryset = NoteFile.objects.all()
+    serializer_class = NoteFileSerializer
+    permission_classes = [IsAdmin]
+
+
+class NoteFileDownloadView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        nf = get_object_or_404(NoteFile, pk=pk)
+        note = nf.note
+        if not note.is_free:
+            if not request.user.is_authenticated:
+                return Response({'detail': 'Login required.'}, status=status.HTTP_401_UNAUTHORIZED)
+            if request.user.role != 'admin':
+                if not note.access_grants.filter(user=request.user).exists():
+                    return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
+        if not nf.file:
+            return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            return _proxy_file_response(nf.file)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ── UploadFile ────────────────────────────────────────────────────────────────
+
+class UploadFileListCreateView(generics.ListCreateAPIView):
+    serializer_class = UploadFileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = UploadFile.objects.select_related('upload').all()
+        if user.role != 'admin':
+            qs = qs.filter(upload__user=user)
+        upload_id = self.request.query_params.get('upload')
+        if upload_id:
+            qs = qs.filter(upload_id=upload_id)
+        return qs
+
+
+class UploadFileDetailView(generics.RetrieveDestroyAPIView):
+    serializer_class = UploadFileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'admin':
+            return UploadFile.objects.all()
+        return UploadFile.objects.filter(upload__user=user)
+
+
+class UploadFileDownloadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        uf = get_object_or_404(UploadFile, pk=pk)
+        if request.user.role != 'admin' and uf.upload.user != request.user:
+            return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
+        if not uf.file:
+            return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            return _proxy_file_response(uf.file)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

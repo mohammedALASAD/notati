@@ -93,6 +93,12 @@
       fileName:      fileName,
       tags:          [],
       publishedAt:   n.created_at,
+      files:         (n.files || []).map(f => ({
+        id:        f.id,
+        label:     f.label || '',
+        fileUrl:   f.file_url || null,
+        isLegacy:  f.is_legacy || false,
+      })),
     };
   }
 
@@ -214,6 +220,48 @@
       await req('DELETE', `/access/${accessId}/`);
     },
 
+    /* Note files */
+    async getNoteFiles(noteId) {
+      const data = await req('GET', `/note-files/?note=${noteId}`);
+      return list(data);
+    },
+    async addNoteFile(noteId, file, label, order) {
+      const fd = new FormData();
+      fd.append('note', noteId);
+      fd.append('file', file);
+      fd.append('label', label || '');
+      fd.append('order', order != null ? order : 0);
+      return req('POST', '/note-files/', fd, true);
+    },
+    async deleteNoteFile(id) {
+      await req('DELETE', `/note-files/${id}/`);
+    },
+    async downloadNoteFileById(id, filename) {
+      await _proxyDownload(BASE + `/note-files/${id}/download/`, filename);
+    },
+    async previewNoteFileById(id) {
+      await _proxyOpen(BASE + `/note-files/${id}/download/`);
+    },
+
+    /* Upload files */
+    async getUploadFiles(uploadId) {
+      const data = await req('GET', `/upload-files/?upload=${uploadId}`);
+      return list(data);
+    },
+    async addUploadFile(uploadId, file, label) {
+      const fd = new FormData();
+      fd.append('upload', uploadId);
+      fd.append('file', file);
+      fd.append('label', label || '');
+      return req('POST', '/upload-files/', fd, true);
+    },
+    async deleteUploadFile(id) {
+      await req('DELETE', `/upload-files/${id}/`);
+    },
+    async downloadUploadFileById(id, filename) {
+      await _proxyDownload(BASE + `/upload-files/${id}/download/`, filename);
+    },
+
     /* Uploads */
     async getUploads() {
       const data = await req('GET', '/uploads/');
@@ -221,7 +269,8 @@
     },
 
     async submitUpload(formData) {
-      return req('POST', '/uploads/', formData, true);
+      const raw = await req('POST', '/uploads/', formData, true);
+      return toUpload(raw);
     },
 
     async updateUpload(id, payload) {

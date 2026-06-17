@@ -1,6 +1,6 @@
 import re
 from rest_framework import serializers
-from .models import User, Course, Note, Access, Upload, Testimonial
+from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial
 
 
 def _signed_url(url):
@@ -72,11 +72,48 @@ class CourseSerializer(serializers.ModelSerializer):
         return obj.notes.count()
 
 
+def _file_url(file_field, request=None):
+    if not file_field:
+        return None
+    try:
+        url = file_field.url
+        if 'res.cloudinary.com' in url:
+            return _signed_url(url)
+        return request.build_absolute_uri(url) if request else url
+    except Exception:
+        return None
+
+
+class NoteFileSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NoteFile
+        fields = ['id', 'note', 'label', 'file', 'file_url', 'order', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+    def get_file_url(self, obj):
+        return _file_url(obj.file, self.context.get('request'))
+
+
+class UploadFileSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UploadFile
+        fields = ['id', 'upload', 'label', 'file', 'file_url', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+    def get_file_url(self, obj):
+        return _file_url(obj.file, self.context.get('request'))
+
+
 class NoteSerializer(serializers.ModelSerializer):
     course_name = serializers.CharField(source='course.name', read_only=True)
     college     = serializers.CharField(source='course.college', read_only=True)
     has_access  = serializers.SerializerMethodField()
     is_free     = serializers.BooleanField(read_only=True)
+    files       = serializers.SerializerMethodField()
 
     class Meta:
         model = Note
@@ -84,7 +121,7 @@ class NoteSerializer(serializers.ModelSerializer):
             'id', 'course', 'course_name', 'college',
             'chapter_number', 'chapter_title',
             'description', 'price', 'is_free', 'has_access',
-            'pdf_file', 'created_at',
+            'pdf_file', 'files', 'created_at',
         ]
         read_only_fields = ['id', 'created_at']
 
@@ -95,6 +132,23 @@ class NoteSerializer(serializers.ModelSerializer):
         if obj.is_free:
             return True
         return obj.access_grants.filter(user=request.user).exists()
+
+    def get_files(self, obj):
+        result = []
+        for nf in obj.files.all():
+            result.append({
+                'id': nf.id,
+                'label': nf.label or '',
+                'file_url': _file_url(nf.file, self.context.get('request')),
+            })
+        if not result and obj.pdf_file:
+            result.append({
+                'id': None,
+                'label': '',
+                'file_url': _signed_url(obj.pdf_file.url),
+                'is_legacy': True,
+            })
+        return result
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
