@@ -13,7 +13,7 @@ const FALLBACK_QUOTE = {
   user_college: 'University of Bahrain',
 };
 
-function AuthShell({ children, switchTo, mode, onGuest }) {
+function AuthShell({ children, switchTo, mode, onGuest, darkMode, onThemeToggle }) {
   const [quotes, setQuotes]   = useStateA([FALLBACK_QUOTE]);
   const [qIndex, setQIndex]   = useStateA(0);
 
@@ -66,6 +66,18 @@ function AuthShell({ children, switchTo, mode, onGuest }) {
       </aside>
 
       <main className="auth-main">
+        <button onClick={onThemeToggle}
+                title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                style={{ position: 'absolute', top: 32, left: 40,
+                         background: 'none', border: '1px solid var(--border-1)',
+                         borderRadius: 'var(--r-pill)', padding: '6px 10px',
+                         cursor: 'pointer', color: 'var(--fg-2)',
+                         display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          {darkMode ? <Icons.Sun size={15}/> : <Icons.Moon size={15}/>}
+          <span style={{ font: 'var(--type-label)', fontSize: 11, letterSpacing: '.06em' }}>
+            {darkMode ? 'Light' : 'Dark'}
+          </span>
+        </button>
         <div className="switch">
           {mode === 'login'
             ? <>New here? <a href="#" onClick={(e) => { e.preventDefault(); switchTo('signup'); }}>Create an account</a></>
@@ -78,7 +90,7 @@ function AuthShell({ children, switchTo, mode, onGuest }) {
 }
 
 /* ---------- Login ---------- */
-function LoginView({ onAuth, switchTo, onGuest }) {
+function LoginView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
   const { toast } = useToast();
   const [email,    setEmail]    = useStateA('');
   const [password, setPassword] = useStateA('');
@@ -117,7 +129,7 @@ function LoginView({ onAuth, switchTo, onGuest }) {
                  :                 'Taking a bit longer than usual, hang tight…';
 
   return (
-    <AuthShell mode="login" switchTo={switchTo} onGuest={onGuest}>
+    <AuthShell mode="login" switchTo={switchTo} onGuest={onGuest} darkMode={darkMode} onThemeToggle={onThemeToggle}>
       <form className="auth-card" onSubmit={submit} noValidate>
         <h2>Welcome back.</h2>
         <p className="sub">Pick up where you left off — your notes are waiting.</p>
@@ -180,7 +192,7 @@ function LoginView({ onAuth, switchTo, onGuest }) {
 }
 
 /* ---------- Sign up ---------- */
-function SignupView({ onAuth, switchTo, onGuest }) {
+function SignupView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
   const { toast } = useToast();
   const [name,     setName]     = useStateA('');
   const [email,    setEmail]    = useStateA('');
@@ -210,7 +222,7 @@ function SignupView({ onAuth, switchTo, onGuest }) {
   }
 
   return (
-    <AuthShell mode="signup" switchTo={switchTo} onGuest={onGuest}>
+    <AuthShell mode="signup" switchTo={switchTo} onGuest={onGuest} darkMode={darkMode} onThemeToggle={onThemeToggle}>
       <form className="auth-card" onSubmit={submit} noValidate>
         <h2>Join Notati.</h2>
         <p className="sub">Get clear, student-written notes — and contribute your own.</p>

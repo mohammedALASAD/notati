@@ -53,7 +53,7 @@ function GetAccessModal({ open, note, onClose }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
         {/* Note preview */}
-        <div style={{ background: 'var(--notati-cream)', borderRadius: 'var(--r-5)',
+        <div style={{ background: 'var(--bg-section)', borderRadius: 'var(--r-5)',
                       padding: '12px 14px', border: '1px solid var(--border-2)' }}>
           <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 2 }}>{note.college}</div>
           <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 4 }}>{note.title}</div>
@@ -89,7 +89,7 @@ function GetAccessModal({ open, note, onClose }) {
         </div>
 
         {/* BenefitPay */}
-        <div style={{ background: 'var(--notati-paper)', border: '1px solid var(--border-1)',
+        <div style={{ background: 'var(--bg-section)', border: '1px solid var(--border-1)',
                       borderRadius: 'var(--r-5)', padding: '14px 16px' }}>
           <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 8, letterSpacing: '.08em' }}>
             BENEFITPAY NUMBER
@@ -169,7 +169,7 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {items.map(i => (
               <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                       padding: '10px 14px', background: 'var(--notati-cream)',
+                                       padding: '10px 14px', background: 'var(--bg-section)',
                                        borderRadius: 'var(--r-5)', border: '1px solid var(--border-2)' }}>
                 <div>
                   <div style={{ font: 'var(--type-body)', fontWeight: 600, color: 'var(--fg-1)', fontSize: 14 }}>
@@ -218,7 +218,7 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
         </div>
 
         {/* BenefitPay */}
-        <div style={{ background: 'var(--notati-paper)', border: '1px solid var(--border-1)',
+        <div style={{ background: 'var(--bg-section)', border: '1px solid var(--border-1)',
                       borderRadius: 'var(--r-5)', padding: '14px 16px' }}>
           <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 8, letterSpacing: '.08em' }}>
             BENEFITPAY NUMBER
@@ -305,7 +305,7 @@ function BagDrawer({ open, items, user, onClose, onRemove, onClear }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 20px' }}>
               {items.map(i => (
                 <div key={i.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12,
-                                         padding: '12px 14px', background: 'var(--notati-paper)',
+                                         padding: '12px 14px', background: 'var(--bg-card)',
                                          border: '1px solid var(--border-2)', borderRadius: 'var(--r-5)' }}>
                   <div style={{ width: 36, height: 36, borderRadius: 'var(--r-3)', flexShrink: 0,
                                 background: 'var(--notati-walnut)', display: 'flex', alignItems: 'center',
@@ -1331,7 +1331,7 @@ function NoteReader({ note, open, onClose }) {
    Landing Page — public-facing notes browser (no login required)
    Two-level: course grid → chapter list (mirrors NotesLibrary)
    ============================================================ */
-function LandingPage({ onLogin, onSignup }) {
+function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
   const { toast } = useToast();
   const [notes, setNotes]                   = useStateC([]);
   const [loading, setLoading]               = useStateC(true);
@@ -1410,7 +1410,12 @@ function LandingPage({ onLogin, onSignup }) {
         <img src="ds/assets/notati-mark.svg" alt="Notati" style={{ height: 28 }}/>
         <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>Notati</span>
       </div>
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button className="btn btn-ghost btn-sm" onClick={onThemeToggle}
+                title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                style={{ padding: '7px 10px' }}>
+          {darkMode ? <Icons.Sun size={16}/> : <Icons.Moon size={16}/>}
+        </button>
         <button className="btn btn-ghost btn-sm" onClick={onLogin}>Log in</button>
         <button className="btn btn-primary btn-sm" onClick={onSignup}>
           Create account <Icons.ArrowRight size={13}/>

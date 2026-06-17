@@ -243,9 +243,9 @@ function App() {
   }, [user]);
 
   if (!user) {
-    if (mode === 'signup') return <SignupView onAuth={handleAuth} switchTo={setMode} onGuest={() => setMode('landing')}/>;
-    if (mode === 'login')  return <LoginView  onAuth={handleAuth} switchTo={setMode} onGuest={() => setMode('landing')}/>;
-    return <LandingPage onLogin={() => setMode('login')} onSignup={() => setMode('signup')}/>;
+    if (mode === 'signup') return <SignupView onAuth={handleAuth} switchTo={setMode} onGuest={() => setMode('landing')} darkMode={darkMode} onThemeToggle={toggleTheme}/>;
+    if (mode === 'login')  return <LoginView  onAuth={handleAuth} switchTo={setMode} onGuest={() => setMode('landing')} darkMode={darkMode} onThemeToggle={toggleTheme}/>;
+    return <LandingPage onLogin={() => setMode('login')} onSignup={() => setMode('signup')} darkMode={darkMode} onThemeToggle={toggleTheme}/>;
   }
 
   return (
