@@ -1280,8 +1280,10 @@ function ChapterInsights() {
   const [selectedNote,  setSelectedNote]  = useStateAd(null);
   const [chapterAccess, setChapterAccess] = useStateAd([]);
   const [loadingAccess, setLoadingAccess] = useStateAd(false);
-  const [rankings,      setRankings]      = useStateAd([]);
-  const [loadingRanks,  setLoadingRanks]  = useStateAd(true);
+  const [rankings,         setRankings]         = useStateAd([]);
+  const [loadingRanks,     setLoadingRanks]     = useStateAd(true);
+  const [rankPriceFilter,  setRankPriceFilter]  = useStateAd('all');
+  const [rankCollegeFilter,setRankCollegeFilter]= useStateAd('all');
 
   useEffectAd(() => {
     NotatiAPI.getNotes().then(setNotes).catch(() => {});
@@ -1289,6 +1291,21 @@ function ChapterInsights() {
       .then(setRankings).catch(() => {})
       .finally(() => setLoadingRanks(false));
   }, []);
+
+  const rankingColleges = useMemoAd(() => {
+    const seen = new Set();
+    rankings.forEach(r => { if (r.college) seen.add(r.college); });
+    return Array.from(seen).sort();
+  }, [rankings]);
+
+  const filteredRankings = useMemoAd(() => {
+    return rankings.filter(r => {
+      if (rankPriceFilter === 'free' && Number(r.price) !== 0) return false;
+      if (rankPriceFilter === 'paid' && Number(r.price) === 0) return false;
+      if (rankCollegeFilter !== 'all' && r.college !== rankCollegeFilter) return false;
+      return true;
+    });
+  }, [rankings, rankPriceFilter, rankCollegeFilter]);
 
   const filteredNotes = useMemoAd(() => {
     const q = chapterQ.trim().toLowerCase();
@@ -1315,7 +1332,7 @@ function ChapterInsights() {
     setLoadingAccess(false);
   }
 
-  const topCount = rankings.length > 0 ? rankings[0].access_count : 1;
+  const topCount = filteredRankings.length > 0 ? filteredRankings[0].access_count : 1;
 
   const medalColor = i => i === 0 ? 'var(--notati-amber)' : i === 1 ? '#9CA3AF' : i === 2 ? 'var(--notati-walnut)' : 'var(--fg-3)';
   const bubbleBg   = i => i === 0 ? 'var(--notati-amber)' : 'var(--notati-walnut)';
@@ -1509,6 +1526,51 @@ function ChapterInsights() {
           </span>
         </div>
         <div className="panel-body">
+
+          {/* Filter bar */}
+          {!loadingRanks && rankings.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+              {/* Price filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: 'var(--fg-3)', fontWeight: 600, minWidth: 48 }}>Price</span>
+                <div className="filters" style={{ margin: 0 }}>
+                  {[
+                    { id: 'all',  label: 'All' },
+                    { id: 'paid', label: 'Paid' },
+                    { id: 'free', label: 'Free' },
+                  ].map(o => (
+                    <button key={o.id}
+                            className={`btn btn-sm ${rankPriceFilter === o.id ? 'btn-primary' : 'btn-soft'}`}
+                            onClick={() => setRankPriceFilter(o.id)}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* College filter */}
+              {rankingColleges.length > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: 'var(--fg-3)', fontWeight: 600, minWidth: 48 }}>College</span>
+                  <div className="filters" style={{ margin: 0, flexWrap: 'wrap' }}>
+                    <button className={`btn btn-sm ${rankCollegeFilter === 'all' ? 'btn-primary' : 'btn-soft'}`}
+                            onClick={() => setRankCollegeFilter('all')}>
+                      All
+                    </button>
+                    {rankingColleges.map(c => (
+                      <button key={c}
+                              className={`btn btn-sm ${rankCollegeFilter === c ? 'btn-primary' : 'btn-soft'}`}
+                              onClick={() => setRankCollegeFilter(c)}
+                              style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {loadingRanks ? (
             <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
               Loading rankings…
@@ -1516,16 +1578,18 @@ function ChapterInsights() {
           ) : rankings.length === 0 ? (
             <EmptyState title="No sales data yet"
                         message="Rankings will appear here once students start unlocking paid chapters."/>
+          ) : filteredRankings.length === 0 ? (
+            <EmptyState title="No matches"
+                        message="No chapters match the selected filters."/>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {rankings.map((r, idx) => (
+              {filteredRankings.map((r, idx) => (
                 <div key={r.id} style={{
                   display: 'flex', alignItems: 'center', gap: 14,
                   padding: idx < 3 ? '14px 16px' : '11px 16px',
                   borderRadius: 'var(--r-5)',
                   border: `1px solid ${idx === 0 ? 'var(--notati-amber)' : 'var(--border-1)'}`,
                   background: idx === 0 ? 'color-mix(in srgb, var(--notati-amber) 8%, var(--bg-card))' : 'var(--bg-card)',
-                  transition: 'border-color .15s'
                 }}>
 
                   {/* Rank badge */}
@@ -1543,8 +1607,7 @@ function ChapterInsights() {
                     borderRadius: 'var(--r-3)', flexShrink: 0,
                     background: bubbleBg(idx), color: 'var(--notati-paper)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: idx < 3 ? 15 : 13, fontWeight: 700,
-                    transition: 'width .15s, height .15s'
+                    fontSize: idx < 3 ? 15 : 13, fontWeight: 700
                   }}>
                     {r.chapter_number}
                   </div>
@@ -1561,11 +1624,6 @@ function ChapterInsights() {
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 2 }}>
                       {r.course_name}
-                      {Number(r.price) > 0 && (
-                        <span className="tag tag-bark" style={{ fontSize: 10, marginLeft: 6 }}>
-                          BD {Number(r.price).toFixed(3)}
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -1574,9 +1632,7 @@ function ChapterInsights() {
                     <div style={{ height: 8, borderRadius: 4, background: 'var(--border-2)', overflow: 'hidden' }}>
                       <div style={{
                         height: '100%', borderRadius: 4,
-                        background: idx === 0
-                          ? 'var(--notati-amber)'
-                          : 'linear-gradient(90deg, var(--notati-walnut), var(--notati-bark, var(--notati-walnut)))',
+                        background: idx === 0 ? 'var(--notati-amber)' : 'var(--notati-walnut)',
                         width: `${Math.max(6, Math.round(100 * r.access_count / topCount))}%`,
                         transition: 'width .4s ease-out'
                       }}/>
