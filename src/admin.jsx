@@ -1271,25 +1271,22 @@ function TestimonialsManager() {
 
 /* ============================================================
    Chapter Insights (admin)
-   - Chapter access lookup: search a chapter → see who has access
-   - Chapter rankings: most-accessed chapters
    ============================================================ */
 function ChapterInsights() {
   const { toast } = useToast();
-  const [notes,          setNotes]          = useStateAd([]);
-  const [chapterQ,       setChapterQ]       = useStateAd('');
-  const [dropOpen,       setDropOpen]       = useStateAd(false);
-  const [selectedNote,   setSelectedNote]   = useStateAd(null);
-  const [chapterAccess,  setChapterAccess]  = useStateAd([]);
-  const [loadingAccess,  setLoadingAccess]  = useStateAd(false);
-  const [rankings,       setRankings]       = useStateAd([]);
-  const [loadingRanks,   setLoadingRanks]   = useStateAd(true);
+  const [notes,         setNotes]         = useStateAd([]);
+  const [chapterQ,      setChapterQ]      = useStateAd('');
+  const [dropOpen,      setDropOpen]      = useStateAd(false);
+  const [selectedNote,  setSelectedNote]  = useStateAd(null);
+  const [chapterAccess, setChapterAccess] = useStateAd([]);
+  const [loadingAccess, setLoadingAccess] = useStateAd(false);
+  const [rankings,      setRankings]      = useStateAd([]);
+  const [loadingRanks,  setLoadingRanks]  = useStateAd(true);
 
   useEffectAd(() => {
     NotatiAPI.getNotes().then(setNotes).catch(() => {});
     NotatiAPI.getChapterRankings()
-      .then(setRankings)
-      .catch(() => {})
+      .then(setRankings).catch(() => {})
       .finally(() => setLoadingRanks(false));
   }, []);
 
@@ -1300,7 +1297,7 @@ function ChapterInsights() {
       [n.courseName, n.chapterTitle, String(n.chapterNumber)].some(s =>
         (s || '').toLowerCase().includes(q)
       )
-    ).slice(0, 8);
+    ).slice(0, 20);
   }, [notes, chapterQ]);
 
   async function selectChapter(note) {
@@ -1320,6 +1317,9 @@ function ChapterInsights() {
 
   const topCount = rankings.length > 0 ? rankings[0].access_count : 1;
 
+  const medalColor = i => i === 0 ? 'var(--notati-amber)' : i === 1 ? '#9CA3AF' : i === 2 ? 'var(--notati-walnut)' : 'var(--fg-3)';
+  const bubbleBg   = i => i === 0 ? 'var(--notati-amber)' : 'var(--notati-walnut)';
+
   return (
     <div>
       <div className="page-head">
@@ -1331,113 +1331,151 @@ function ChapterInsights() {
 
       {/* ── Chapter access lookup ── */}
       <section className="panel" style={{ marginBottom: 20 }}>
-        <div className="panel-head"><h3>Chapter access lookup</h3></div>
+        <div className="panel-head">
+          <h3>Chapter access lookup</h3>
+          <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+            Search a chapter to see every student with access
+          </span>
+        </div>
         <div className="panel-body">
 
-          {/* Search box */}
-          <div style={{ position: 'relative', maxWidth: 520 }}>
-            <div className="search-mini">
+          {/* Search */}
+          <div style={{ position: 'relative' }}>
+            <div className="search-mini" style={{ fontSize: 14 }}>
               <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
               <input
                 value={chapterQ}
                 onChange={e => { setChapterQ(e.target.value); setDropOpen(true); }}
                 onFocus={() => setDropOpen(true)}
+                onBlur={() => setTimeout(() => setDropOpen(false), 160)}
                 placeholder="Search by course name or chapter title…"
               />
+              {chapterQ && (
+                <button onClick={() => { setChapterQ(''); setDropOpen(false); }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                 color: 'var(--fg-3)', padding: '0 4px', lineHeight: 1 }}>
+                  <Icons.Close size={14}/>
+                </button>
+              )}
             </div>
 
+            {/* Scrollable dropdown */}
             {dropOpen && filteredNotes.length > 0 && (
               <div style={{
-                position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
-                zIndex: 200, background: 'var(--bg-card)',
+                position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
+                zIndex: 300, background: 'var(--bg-card)',
                 border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)',
-                boxShadow: '0 8px 24px rgba(0,0,0,.18)', overflow: 'hidden'
+                boxShadow: '0 12px 32px rgba(0,0,0,.22)',
+                maxHeight: 280, overflowY: 'auto'
               }}>
                 {filteredNotes.map((n, i) => (
                   <div key={n.id}
-                       onClick={() => selectChapter(n)}
+                       onMouseDown={() => selectChapter(n)}
                        style={{
                          padding: '10px 14px', cursor: 'pointer',
                          borderBottom: i < filteredNotes.length - 1 ? '1px solid var(--border-1)' : 'none',
-                         display: 'flex', alignItems: 'center', gap: 12
+                         display: 'flex', alignItems: 'center', gap: 12, transition: 'background .1s'
                        }}
                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-section)'}
                        onMouseLeave={e => e.currentTarget.style.background = ''}>
                     <div style={{
-                      width: 32, height: 32, borderRadius: 'var(--r-3)', flexShrink: 0,
-                      background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
+                      width: 34, height: 34, borderRadius: 'var(--r-3)', flexShrink: 0,
+                      background: Number(n.price) === 0 ? 'var(--notati-sage)' : 'var(--notati-walnut)',
+                      color: 'var(--notati-paper)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 13, fontWeight: 700
                     }}>
                       {n.chapterNumber}
                     </div>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)',
+                                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         Ch.{n.chapterNumber}: {n.chapterTitle}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{n.courseName}</div>
                     </div>
-                    <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--fg-3)' }}>
+                    <span className={`tag ${Number(n.price) === 0 ? 'tag-soft' : 'tag-bark'}`} style={{ fontSize: 10, flexShrink: 0 }}>
                       {Number(n.price) === 0 ? 'Free' : `BD ${Number(n.price).toFixed(3)}`}
-                    </div>
+                    </span>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
+          {/* Empty hint */}
+          {!selectedNote && !chapterQ && (
+            <p style={{ marginTop: 14, font: 'var(--type-caption)', fontStyle: 'normal',
+                        color: 'var(--fg-3)', fontSize: 13 }}>
+              Start typing to search across all published chapters.
+            </p>
+          )}
+
           {/* Result */}
           {selectedNote && (
             <div style={{ marginTop: 20 }}>
-              {/* Chapter header */}
+
+              {/* Chapter banner */}
               <div style={{
-                display: 'flex', alignItems: 'center', gap: 14,
-                padding: '14px 18px', background: 'var(--bg-section)',
-                border: '1px solid var(--border-2)', borderRadius: 'var(--r-5)',
+                display: 'flex', alignItems: 'center', gap: 16,
+                padding: '16px 20px',
+                background: 'var(--bg-section)',
+                border: '1px solid var(--border-1)',
+                borderLeft: '4px solid var(--notati-walnut)',
+                borderRadius: 'var(--r-5)',
                 marginBottom: 16
               }}>
                 <div style={{
-                  width: 42, height: 42, borderRadius: 'var(--r-3)', flexShrink: 0,
+                  width: 48, height: 48, borderRadius: 'var(--r-3)', flexShrink: 0,
                   background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 16, fontWeight: 800
+                  fontSize: 18, fontWeight: 800
                 }}>
                   {selectedNote.chapterNumber}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 2 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg-1)', marginBottom: 3 }}>
                     Ch.{selectedNote.chapterNumber}: {selectedNote.chapterTitle}
                   </div>
-                  <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-                    {selectedNote.courseName}
-                    {Number(selectedNote.price) > 0
-                      ? ` · BD ${Number(selectedNote.price).toFixed(3)}`
-                      : ' · Free'}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>{selectedNote.courseName}</span>
+                    <span className={`tag ${Number(selectedNote.price) === 0 ? 'tag-soft' : 'tag-bark'}`} style={{ fontSize: 10 }}>
+                      {Number(selectedNote.price) === 0 ? 'Free' : `BD ${Number(selectedNote.price).toFixed(3)}`}
+                    </span>
                   </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ font: 'var(--type-h3)', color: 'var(--notati-walnut)', fontSize: 26, fontWeight: 800 }}>
+                <div style={{ textAlign: 'center', flexShrink: 0,
+                              background: 'var(--bg-card)', border: '1px solid var(--border-1)',
+                              borderRadius: 'var(--r-5)', padding: '10px 18px' }}>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--notati-walnut)', lineHeight: 1 }}>
                     {loadingAccess ? '…' : chapterAccess.length}
                   </div>
-                  <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 11, color: 'var(--fg-3)' }}>
-                    students with access
+                  <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 4 }}>
+                    {chapterAccess.length === 1 ? 'student' : 'students'}
                   </div>
                 </div>
               </div>
 
+              {/* Student list */}
               {loadingAccess ? (
-                <div style={{ padding: '20px 0', color: 'var(--fg-3)', fontSize: 13 }}>Loading…</div>
+                <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
+                  Loading access list…
+                </div>
               ) : chapterAccess.length === 0 ? (
                 <EmptyState title="No access grants yet"
                             message="No student has been granted access to this chapter."/>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {chapterAccess.map(a => (
+                  {chapterAccess.map((a, i) => (
                     <div key={a.id} style={{
                       display: 'flex', alignItems: 'center', gap: 12,
                       padding: '10px 14px', borderRadius: 'var(--r-5)',
                       border: '1px solid var(--border-1)', background: 'var(--bg-card)'
                     }}>
+                      <div style={{ width: 20, flexShrink: 0, textAlign: 'center',
+                                    fontSize: 11, color: 'var(--fg-3)', fontWeight: 600 }}>
+                        {i + 1}
+                      </div>
                       <span className="avatar-sm" style={{ width: 34, height: 34, fontSize: 15, flexShrink: 0 }}>
                         {(a.user_name || '?').charAt(0)}
                       </span>
@@ -1447,20 +1485,17 @@ function ChapterInsights() {
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{a.user_email}</div>
                       </div>
-                      <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)', flexShrink: 0 }}>
-                        Granted {fmtDate(a.granted_at)}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <Icons.Check size={13} style={{ color: 'var(--notati-sage)' }}/>
+                        <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+                          {fmtDate(a.granted_at)}
+                        </span>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-          )}
-
-          {!selectedNote && (
-            <p style={{ marginTop: 16, font: 'var(--type-caption)', fontStyle: 'normal', color: 'var(--fg-3)', fontSize: 13 }}>
-              Type a course name or chapter title above, then click a result to see who has access.
-            </p>
           )}
         </div>
       </section>
@@ -1470,77 +1505,96 @@ function ChapterInsights() {
         <div className="panel-head">
           <h3>Most accessed chapters</h3>
           <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-            Ranked by total access grants (paid unlocks)
+            Ranked by total access grants
           </span>
         </div>
         <div className="panel-body">
           {loadingRanks ? (
-            <div style={{ padding: '20px 0', color: 'var(--fg-3)', fontSize: 13 }}>Loading…</div>
+            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
+              Loading rankings…
+            </div>
           ) : rankings.length === 0 ? (
             <EmptyState title="No sales data yet"
                         message="Rankings will appear here once students start unlocking paid chapters."/>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {rankings.map((r, idx) => (
                 <div key={r.id} style={{
                   display: 'flex', alignItems: 'center', gap: 14,
-                  padding: '12px 16px', borderRadius: 'var(--r-5)',
-                  border: '1px solid var(--border-1)', background: 'var(--bg-card)'
+                  padding: idx < 3 ? '14px 16px' : '11px 16px',
+                  borderRadius: 'var(--r-5)',
+                  border: `1px solid ${idx === 0 ? 'var(--notati-amber)' : 'var(--border-1)'}`,
+                  background: idx === 0 ? 'color-mix(in srgb, var(--notati-amber) 8%, var(--bg-card))' : 'var(--bg-card)',
+                  transition: 'border-color .15s'
                 }}>
-                  {/* Rank */}
+
+                  {/* Rank badge */}
                   <div style={{
-                    width: 28, flexShrink: 0, textAlign: 'center',
-                    font: 'var(--type-h3)', fontSize: 15, fontWeight: 800,
-                    color: idx === 0 ? 'var(--notati-amber)'
-                         : idx === 1 ? 'var(--fg-2)'
-                         : idx === 2 ? 'var(--notati-walnut)'
-                         : 'var(--fg-3)'
+                    width: 32, flexShrink: 0, textAlign: 'center',
+                    fontSize: idx < 3 ? 16 : 13, fontWeight: 800,
+                    color: medalColor(idx)
                   }}>
                     #{idx + 1}
                   </div>
 
                   {/* Chapter bubble */}
                   <div style={{
-                    width: 36, height: 36, borderRadius: 'var(--r-3)', flexShrink: 0,
-                    background: idx === 0 ? 'var(--notati-amber)' : 'var(--notati-walnut)',
-                    color: 'var(--notati-paper)',
+                    width: idx < 3 ? 42 : 36, height: idx < 3 ? 42 : 36,
+                    borderRadius: 'var(--r-3)', flexShrink: 0,
+                    background: bubbleBg(idx), color: 'var(--notati-paper)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 13, fontWeight: 700
+                    fontSize: idx < 3 ? 15 : 13, fontWeight: 700,
+                    transition: 'width .15s, height .15s'
                   }}>
                     {r.chapter_number}
                   </div>
 
                   {/* Info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)',
-                                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{
+                      fontWeight: idx < 3 ? 700 : 600,
+                      fontSize: idx < 3 ? 14 : 13,
+                      color: 'var(--fg-1)',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                    }}>
                       Ch.{r.chapter_number}: {r.chapter_title}
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 2 }}>
                       {r.course_name}
-                      {Number(r.price) > 0 && ` · BD ${Number(r.price).toFixed(3)}`}
+                      {Number(r.price) > 0 && (
+                        <span className="tag tag-bark" style={{ fontSize: 10, marginLeft: 6 }}>
+                          BD {Number(r.price).toFixed(3)}
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  {/* Bar */}
-                  <div style={{ width: 100, flexShrink: 0 }}>
-                    <div style={{ height: 6, borderRadius: 3, background: 'var(--border-2)', overflow: 'hidden' }}>
+                  {/* Progress bar */}
+                  <div style={{ width: 120, flexShrink: 0 }}>
+                    <div style={{ height: 8, borderRadius: 4, background: 'var(--border-2)', overflow: 'hidden' }}>
                       <div style={{
-                        height: '100%', borderRadius: 3,
-                        background: idx === 0 ? 'var(--notati-amber)' : 'var(--notati-walnut)',
-                        width: `${Math.max(4, Math.round(100 * r.access_count / topCount))}%`
+                        height: '100%', borderRadius: 4,
+                        background: idx === 0
+                          ? 'var(--notati-amber)'
+                          : 'linear-gradient(90deg, var(--notati-walnut), var(--notati-bark, var(--notati-walnut)))',
+                        width: `${Math.max(6, Math.round(100 * r.access_count / topCount))}%`,
+                        transition: 'width .4s ease-out'
                       }}/>
                     </div>
                   </div>
 
-                  {/* Count */}
-                  <div style={{ flexShrink: 0, textAlign: 'right', minWidth: 52 }}>
-                    <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--fg-1)' }}>
+                  {/* Sales count */}
+                  <div style={{ flexShrink: 0, textAlign: 'right', minWidth: 56 }}>
+                    <span style={{
+                      fontWeight: 800,
+                      fontSize: idx < 3 ? 18 : 15,
+                      color: idx === 0 ? 'var(--notati-amber)' : 'var(--fg-1)'
+                    }}>
                       {r.access_count}
                     </span>
-                    <span style={{ fontSize: 11, color: 'var(--fg-3)', marginLeft: 3 }}>
+                    <div style={{ fontSize: 10, color: 'var(--fg-3)', marginTop: 1 }}>
                       {r.access_count === 1 ? 'sale' : 'sales'}
-                    </span>
+                    </div>
                   </div>
                 </div>
               ))}
