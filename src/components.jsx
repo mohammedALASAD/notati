@@ -325,12 +325,35 @@ function fmtSize(kb) {
 }
 
 /* ============================================================
+   PageLoader — spinner + skeleton rows/cards
+   variant: 'rows' (default) or 'cards'
+   ============================================================ */
+function PageLoader({ rows = 4, variant = 'rows' }) {
+  return (
+    <div className="page-loader">
+      <div className="page-loader-spinner"/>
+      {variant === 'cards' ? (
+        <div className="grid-3">
+          {Array.from({ length: rows }).map((_, i) => (
+            <div key={i} className="skeleton skeleton-card"/>
+          ))}
+        </div>
+      ) : (
+        Array.from({ length: rows }).map((_, i) => (
+          <div key={i} className="skeleton skeleton-row"/>
+        ))
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
    Export to window so other Babel scripts can use these
    ============================================================ */
 Object.assign(window, {
   Icons, I,
   ToastProvider, useToast, ToastContext,
   Modal, EmptyState, FileTypeChip, StatusBadge, Avatar,
-  Sidebar, Topbar, Stat,
+  Sidebar, Topbar, Stat, PageLoader,
   fmtDate, fmtRelative, fmtSize
 });

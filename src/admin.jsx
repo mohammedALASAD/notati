@@ -435,11 +435,7 @@ function ViewUploadFilesModal({ open, upload, onClose }) {
            title="Submitted files"
            subtitle={`${upload.title} · ${upload.userEmail}`}
            footer={<button className="btn btn-ghost" onClick={onClose}>Close</button>}>
-      {loading ? (
-        <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
-          Loading files…
-        </div>
-      ) : files.length === 0 ? (
+      {loading ? <PageLoader rows={3}/> : files.length === 0 ? (
         <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
           No files found for this submission.
         </div>
@@ -1374,7 +1370,7 @@ function TestimonialsManager() {
           <h3>Pending approval <span className="badge badge-amber">{pending.length}</span></h3>
         </div>
         <div className="panel-body">
-          {loading ? <div style={{ padding: '20px 0', color: 'var(--fg-3)', fontSize: 13 }}>Loading…</div> : pending.length === 0 ? (
+          {loading ? <PageLoader rows={3}/> : pending.length === 0 ? (
             <EmptyState title="All clear" message="No testimonials waiting for review."/>
           ) : pending.map(item => (
             <div key={item.id} className="testimonial-row">
@@ -1403,7 +1399,7 @@ function TestimonialsManager() {
           <h3>Live on site <span className="badge badge-sage">{approved.length}</span></h3>
         </div>
         <div className="panel-body">
-          {loading ? <div style={{ padding: '20px 0', color: 'var(--fg-3)', fontSize: 13 }}>Loading…</div> : approved.length === 0 ? (
+          {loading ? <PageLoader rows={3}/> : approved.length === 0 ? (
             <EmptyState title="None approved yet" message="Approve some reviews above."/>
           ) : approved.map(item => (
             <div key={item.id} className="testimonial-row">
@@ -1484,11 +1480,7 @@ function SalesView({ salesData, loading }) {
     });
   }
 
-  if (loading) return (
-    <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
-      Loading sales data…
-    </div>
-  );
+  if (loading) return <PageLoader rows={5}/>;
   if (!salesData || salesData.rows.length === 0) return (
     <EmptyState title="No sales yet"
                 message="Sales appear here once students start buying paid chapters."/>
@@ -1893,11 +1885,7 @@ function ChapterInsights() {
               </div>
 
               {/* Student list */}
-              {loadingAccess ? (
-                <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
-                  Loading access list…
-                </div>
-              ) : chapterAccess.length === 0 ? (
+              {loadingAccess ? <PageLoader rows={3}/> : chapterAccess.length === 0 ? (
                 <EmptyState title="No access grants yet"
                             message="No student has been granted access to this chapter."/>
               ) : (
@@ -1990,11 +1978,7 @@ function ChapterInsights() {
             </div>
           )}
 
-          {loadingRanks ? (
-            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
-              Loading rankings…
-            </div>
-          ) : rankings.length === 0 ? (
+          {loadingRanks ? <PageLoader rows={5}/> : rankings.length === 0 ? (
             <EmptyState title="No sales data yet"
                         message="Rankings will appear here once students start unlocking paid chapters."/>
           ) : filteredRankings.length === 0 ? (

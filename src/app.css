@@ -1106,3 +1106,26 @@ input, textarea, select { font-family: inherit; }
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ---------- Page loader + skeleton shimmer ---------- */
+@keyframes shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position: 600px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--border-1) 25%, var(--bg-section) 50%, var(--border-1) 75%);
+  background-size: 1200px 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: var(--r-3);
+}
+.skeleton-row  { height: 54px; margin-bottom: 8px; border-radius: var(--r-5); }
+.skeleton-card { height: 148px; border-radius: var(--r-5); }
+.page-loader { padding: 20px 0 8px; }
+.page-loader-spinner {
+  width: 26px; height: 26px;
+  border: 2.5px solid var(--border-2);
+  border-top-color: var(--notati-walnut);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 20px;
+}

@@ -464,7 +464,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
             </button>
           </div>
           <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {recentUploads.length === 0 ? (
+            {loading ? <PageLoader rows={3}/> : recentUploads.length === 0 ? (
               <EmptyState title="No uploads yet"
                           message="Drop a .pptx, .docx or .pdf and we'll turn it into a clean Note."
                           action={<button className="btn btn-primary" onClick={() => onNav('upload')}>
@@ -498,7 +498,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
             </button>
           </div>
           <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {featured.length === 0 ? (
+            {loading ? <PageLoader rows={3}/> : featured.length === 0 ? (
               <EmptyState title="No notes published yet"
                           message="The library is empty for now — check back soon."/>
             ) : featured.map(n => {
@@ -942,7 +942,7 @@ function MyUploads({ user, onNav, onOpenNote }) {
         </div>
 
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {filtered.length === 0 ? (
+          {loading ? <PageLoader rows={4}/> : filtered.length === 0 ? (
             uploads.length === 0
               ? <EmptyState title="No uploads yet"
                             message="Drop a .pptx, .docx or .pdf and we'll turn it into clean notes."
@@ -1216,7 +1216,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
         </div>
 
         <div className="panel-body">
-          {courses.length === 0 ? (
+          {loading ? <PageLoader rows={6} variant="cards"/> : courses.length === 0 ? (
             <EmptyState title="No courses yet"
                         message={notes.length === 0
                           ? "The library is empty — check back soon."
@@ -1894,11 +1894,7 @@ function MyNotesPage({ user, onOpenNote }) {
           </div>
         </div>
         <div className="panel-body">
-          {loading ? (
-            <div style={{ padding: '32px 0', textAlign: 'center', font: 'var(--type-body)', color: 'var(--fg-3)' }}>
-              Loading…
-            </div>
-          ) : courses.length === 0 ? (
+          {loading ? <PageLoader rows={6} variant="cards"/> : courses.length === 0 ? (
             <EmptyState
               title="No notes yet"
               message={notes.length === 0
