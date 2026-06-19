@@ -465,30 +465,34 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
               View all <Icons.ArrowRight size={14}/>
             </button>
           </div>
-          <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {loading ? <PageLoader rows={3}/> : recentUploads.length === 0 ? (
+          <div className="panel-body">
+            {loading ? <PageLoader variant="table" rows={3}/> : recentUploads.length === 0 ? (
               <EmptyState title="No uploads yet"
                           message="Drop a .pptx, .docx or .pdf and we'll turn it into a clean Note."
                           action={<button className="btn btn-primary" onClick={() => onNav('upload')}>
                                     <Icons.Upload size={16}/> Upload your first file
                                   </button>}/>
-            ) : recentUploads.map(up => (
-              <div key={up.id} className="filerow">
-                <FileTypeChip type={up.fileType}/>
-                <div className="body">
-                  <div className="ttl">{up.title}</div>
-                  <div className="meta">{up.fileName} · {fmtRelative(up.uploadedAt)} · {fmtSize(up.sizeKB)}</div>
-                </div>
-                <div className="acts">
-                  {up.status === 'approved' ? (
-                    <button className="btn btn-soft btn-sm"
-                            onClick={() => { const n = notes.find(x => x.id === up.noteId); if (n) onOpenNote(n); }}>
-                      Read note <Icons.ArrowRight size={14}/>
-                    </button>
-                  ) : <StatusBadge status="pending"/>}
-                </div>
+            ) : (
+              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {recentUploads.map(up => (
+                  <div key={up.id} className="filerow">
+                    <FileTypeChip type={up.fileType}/>
+                    <div className="body">
+                      <div className="ttl">{up.title}</div>
+                      <div className="meta">{up.fileName} · {fmtRelative(up.uploadedAt)} · {fmtSize(up.sizeKB)}</div>
+                    </div>
+                    <div className="acts">
+                      {up.status === 'approved' ? (
+                        <button className="btn btn-soft btn-sm"
+                                onClick={() => { const n = notes.find(x => x.id === up.noteId); if (n) onOpenNote(n); }}>
+                          Read note <Icons.ArrowRight size={14}/>
+                        </button>
+                      ) : <StatusBadge status="pending"/>}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         </section>
 
@@ -499,70 +503,74 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
               Library <Icons.ArrowRight size={14}/>
             </button>
           </div>
-          <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="panel-body">
             {loading ? <PageLoader rows={3}/> : featured.length === 0 ? (
               <EmptyState title="No notes published yet"
                           message="The library is empty for now — check back soon."/>
-            ) : featured.map(n => {
-              const canRead = NotatiStore.canReadNote(user.id, n);
-              const isFree  = !n.price || Number(n.price) === 0;
-              const inBag   = bag && bag.some(i => i.id === n.id);
-              return (
-                <div key={n.id} className={`notecard ${canRead ? '' : 'notecard-locked'}`}
-                     onClick={canRead ? () => onOpenNote(n) : undefined}
-                     style={{ position: 'relative', cursor: canRead ? 'pointer' : 'default' }}>
-                  {isFree && (
-                    <span style={{ position: 'absolute', top: 10, right: 10,
-                                   background: 'var(--notati-sage)', color: 'var(--notati-paper)',
-                                   font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
-                                   borderRadius: 'var(--r-pill)' }}>FREE</span>
-                  )}
-                  {canRead && !isFree && (
-                    <span style={{ position: 'absolute', top: 10, right: 10,
-                                   background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
-                                   font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
-                                   borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                      <Icons.Check size={9}/> For you
-                    </span>
-                  )}
-                  {inBag && !canRead && (
-                    <span style={{ position: 'absolute', top: 10, right: 10,
-                                   background: 'var(--notati-sage)', color: 'var(--notati-paper)',
-                                   font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
-                                   borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                      <Icons.Bag size={9}/> In bag
-                    </span>
-                  )}
-                  <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{n.college}</div>
-                  <span className="course">{n.courseName}</span>
-                  <div className="title">{n.title}</div>
-                  <div className="desc">{n.description}</div>
-                  <div className="tags">
-                    {(n.tags || []).slice(0, 2).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
-                  </div>
-                  <div className="foot">
-                    <span>{fmtDate(n.publishedAt)}</span>
-                    {canRead ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
-                        Read <Icons.ArrowRight size={13}/>
-                      </span>
-                    ) : !isFree ? (
-                      inBag ? (
-                        <button className="btn btn-sm btn-in-bag"
-                                onClick={(e) => { e.stopPropagation(); onRemoveFromBag && onRemoveFromBag(n.id); }}>
-                          <Icons.Check size={12}/> In bag
-                        </button>
-                      ) : (
-                        <button className="btn btn-primary btn-sm"
-                                onClick={(e) => { e.stopPropagation(); onAddToBag && onAddToBag(n); toast.success('Added to bag', n.title); }}>
-                          <Icons.Bag size={12}/> Add to bag
-                        </button>
-                      )
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
+            ) : (
+              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {featured.map(n => {
+                  const canRead = NotatiStore.canReadNote(user.id, n);
+                  const isFree  = !n.price || Number(n.price) === 0;
+                  const inBag   = bag && bag.some(i => i.id === n.id);
+                  return (
+                    <div key={n.id} className={`notecard ${canRead ? '' : 'notecard-locked'}`}
+                         onClick={canRead ? () => onOpenNote(n) : undefined}
+                         style={{ position: 'relative', cursor: canRead ? 'pointer' : 'default' }}>
+                      {isFree && (
+                        <span style={{ position: 'absolute', top: 10, right: 10,
+                                       background: 'var(--notati-sage)', color: 'var(--notati-paper)',
+                                       font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
+                                       borderRadius: 'var(--r-pill)' }}>FREE</span>
+                      )}
+                      {canRead && !isFree && (
+                        <span style={{ position: 'absolute', top: 10, right: 10,
+                                       background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
+                                       font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
+                                       borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <Icons.Check size={9}/> For you
+                        </span>
+                      )}
+                      {inBag && !canRead && (
+                        <span style={{ position: 'absolute', top: 10, right: 10,
+                                       background: 'var(--notati-sage)', color: 'var(--notati-paper)',
+                                       font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
+                                       borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <Icons.Bag size={9}/> In bag
+                        </span>
+                      )}
+                      <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{n.college}</div>
+                      <span className="course">{n.courseName}</span>
+                      <div className="title">{n.title}</div>
+                      <div className="desc">{n.description}</div>
+                      <div className="tags">
+                        {(n.tags || []).slice(0, 2).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
+                      </div>
+                      <div className="foot">
+                        <span>{fmtDate(n.publishedAt)}</span>
+                        {canRead ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
+                            Read <Icons.ArrowRight size={13}/>
+                          </span>
+                        ) : !isFree ? (
+                          inBag ? (
+                            <button className="btn btn-sm btn-in-bag"
+                                    onClick={(e) => { e.stopPropagation(); onRemoveFromBag && onRemoveFromBag(n.id); }}>
+                              <Icons.Check size={12}/> In bag
+                            </button>
+                          ) : (
+                            <button className="btn btn-primary btn-sm"
+                                    onClick={(e) => { e.stopPropagation(); onAddToBag && onAddToBag(n); toast.success('Added to bag', n.title); }}>
+                              <Icons.Bag size={12}/> Add to bag
+                            </button>
+                          )
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </section>
       </div>
@@ -943,8 +951,8 @@ function MyUploads({ user, onNav, onOpenNote }) {
           </div>
         </div>
 
-        <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {loading ? <PageLoader rows={4}/> : filtered.length === 0 ? (
+        <div className="panel-body">
+          {loading ? <PageLoader variant="table" rows={5}/> : filtered.length === 0 ? (
             uploads.length === 0
               ? <EmptyState title="No uploads yet"
                             message="Drop a .pptx, .docx or .pdf and we'll turn it into clean notes."
@@ -953,28 +961,32 @@ function MyUploads({ user, onNav, onOpenNote }) {
                                     </button>}/>
               : <EmptyState title="No matches"
                             message="Try a different filter or a broader search term."/>
-          ) : filtered.map(up => (
-            <div key={up.id} className="filerow">
-              <FileTypeChip type={up.fileType}/>
-              <div className="body">
-                <div className="ttl">{up.chapterTitle || up.title}</div>
-                <div className="meta">
-                  {up.college && <><span>{up.college}</span> · </>}
-                  {up.courseName && <><span>{up.courseName}</span>{up.chapterNumber ? ` Ch.${up.chapterNumber}` : ''} · </>}
-                  {up.fileName} · {fmtSize(up.sizeKB)} · Uploaded {fmtRelative(up.uploadedAt)}
-                  {up.description ? <> · <span style={{ fontStyle: 'italic' }}>"{up.description}"</span></> : null}
+          ) : (
+            <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {filtered.map(up => (
+                <div key={up.id} className="filerow">
+                  <FileTypeChip type={up.fileType}/>
+                  <div className="body">
+                    <div className="ttl">{up.chapterTitle || up.title}</div>
+                    <div className="meta">
+                      {up.college && <><span>{up.college}</span> · </>}
+                      {up.courseName && <><span>{up.courseName}</span>{up.chapterNumber ? ` Ch.${up.chapterNumber}` : ''} · </>}
+                      {up.fileName} · {fmtSize(up.sizeKB)} · Uploaded {fmtRelative(up.uploadedAt)}
+                      {up.description ? <> · <span style={{ fontStyle: 'italic' }}>"{up.description}"</span></> : null}
+                    </div>
+                  </div>
+                  <div className="acts">
+                    <StatusBadge status={up.status === 'approved' ? 'ready' : 'pending'}/>
+                    {up.status === 'approved'
+                      ? <button className="btn btn-primary btn-sm" onClick={() => openNote(up)}>
+                          Read note <Icons.ArrowRight size={14}/>
+                        </button>
+                      : null}
+                  </div>
                 </div>
-              </div>
-              <div className="acts">
-                <StatusBadge status={up.status === 'approved' ? 'ready' : 'pending'}/>
-                {up.status === 'approved'
-                  ? <button className="btn btn-primary btn-sm" onClick={() => openNote(up)}>
-                      Read note <Icons.ArrowRight size={14}/>
-                    </button>
-                  : null}
-              </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       </section>
     </div>
@@ -1095,7 +1107,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
     const paidCount = courseChapters.length - freeCount;
 
     return (
-      <div>
+      <div className="fade-in">
         <div className="page-head">
           <div className="ttl">
             <h1>{selectedCourse}</h1>
@@ -1224,7 +1236,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
                           ? "The library is empty — check back soon."
                           : "No courses match these filters. Try a broader search."}/>
           ) : (
-            <div className="grid-3">
+            <div className="grid-3 fade-in">
               {courses.map(({ courseName, college: coll, notes: cNotes }) => {
                 const freeCount = cNotes.filter(n => !n.price || Number(n.price) === 0).length;
                 const paidCount = cNotes.length - freeCount;
@@ -1486,7 +1498,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--bg-page)' }}>
         {Navbar}
-        <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px 80px' }}>
+        <div className="fade-in" style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px 80px' }}>
           <div className="page-head">
             <div className="ttl">
               <h1>{selectedCourse}</h1>
@@ -1666,7 +1678,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
             ) : courses.length === 0 ? (
               <EmptyState title="No courses yet" message="The library is empty — check back soon."/>
             ) : (
-              <div className="grid-3">
+              <div className="grid-3 fade-in">
                 {courses.map(({ courseName, college: coll, notes: cNotes }) => {
                   const free = cNotes.filter(n => !n.price || Number(n.price) === 0).length;
                   const paid = cNotes.length - free;
@@ -1831,7 +1843,7 @@ function MyNotesPage({ user, onOpenNote }) {
   if (selectedCourse) {
     const courseCollege = courseChapters[0]?.college || '';
     return (
-      <div>
+      <div className="fade-in">
         <div className="page-head">
           <div className="ttl">
             <h1>{selectedCourse}</h1>
@@ -1903,7 +1915,7 @@ function MyNotesPage({ user, onOpenNote }) {
                 ? "You don't have access to any notes yet. Browse the library and unlock chapters."
                 : "No courses match your search."}/>
           ) : (
-            <div className="grid-3">
+            <div className="grid-3 fade-in">
               {courses.map(({ courseName, college: coll, notes: cNotes }) => (
                 <div key={courseName} className="notecard" style={{ cursor: 'pointer' }}
                      onClick={() => setSelectedCourse(courseName)}>
