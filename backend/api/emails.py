@@ -2,8 +2,11 @@
 Notati — branded HTML email template for support messages.
 Used by the admin panel "Send email" feature.
 """
+import logging
 import threading
 from django.conf import settings
+
+log = logging.getLogger(__name__)
 
 # ── Brand colours ─────────────────────────────────────────────────────────────
 _BARK   = '#3D2B1F'
@@ -122,10 +125,12 @@ def _send_async(payload):
             import resend
             resend.api_key = getattr(settings, 'RESEND_API_KEY', '')
             if not resend.api_key:
+                log.error('RESEND_API_KEY is not set — email not sent.')
                 return
             resend.Emails.send(payload)
-        except Exception:
-            pass
+            log.info('Email sent to %s', payload.get('to'))
+        except Exception as exc:
+            log.exception('Failed to send email via Resend: %s', exc)
     threading.Thread(target=_worker, daemon=True).start()
 
 
