@@ -986,7 +986,7 @@ function SendEmailModal({ user, onClose }) {
             <div className="modal-title">Send email</div>
             <div className="modal-sub">To: <strong>{user.name}</strong> &middot; <span style={{ color: 'var(--fg-3)' }}>{user.email}</span></div>
           </div>
-          <button className="btn-close" onClick={onClose}><Icons.X size={18}/></button>
+          <button className="btn-close" onClick={onClose}><Icons.Close size={18}/></button>
         </div>
 
         <form className="modal-body" onSubmit={send} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
