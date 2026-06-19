@@ -46,10 +46,12 @@ function AdminDashboard({ user, onNav }) {
   const [users,   setUsers]   = useStateAd([]);
   const [uploads, setUploads] = useStateAd([]);
   const [notes,   setNotes]   = useStateAd([]);
+  const [loading, setLoading] = useStateAd(true);
 
   function loadAll() {
     return Promise.all([NotatiAPI.getUsers(), NotatiAPI.getUploads(), NotatiAPI.getNotes()])
-      .then(([u, up, n]) => { setUsers(u); setUploads(up); setNotes(n); });
+      .then(([u, up, n]) => { setUsers(u); setUploads(up); setNotes(n); setLoading(false); })
+      .catch(() => setLoading(false));
   }
 
   useEffectAd(() => { loadAll(); }, []);
@@ -82,25 +84,27 @@ function AdminDashboard({ user, onNav }) {
       </div>
 
       {/* Stats */}
-      <div className="stats">
-        <Stat hero label="Pending reviews"
-              num={pending.length}
-              delta={{ dir: pending.length > 0 ? 'up' : '', text: pending.length > 0 ? `${pending.length} need your eyes` : 'All clear · nice work' }}
-              icon="Clock"
-              onClick={() => onNav('inbox')} navLabel="Open inbox"/>
-        <Stat tone="walnut" label="Total uploads" num={uploads.length}
-              delta={{ text: `${reviewed.length} reviewed · ${pending.length} pending` }}
-              icon="Inbox"
-              onClick={() => onNav('inbox')} navLabel="View all uploads"/>
-        <Stat tone="sage" label="Published notes" num={notes.length}
-              delta={{ text: notes.length > 0 ? `${notes.length} in the library` : 'Nothing published yet' }}
-              icon="Notes"
-              onClick={() => onNav('notes')} navLabel="Manage notes"/>
-        <Stat tone="amber" label="Registered users" num={users.length}
-              delta={{ text: `${customers.length} students` }}
-              icon="Users"
-              onClick={() => onNav('users')} navLabel="View users"/>
-      </div>
+      {loading ? <PageLoader variant="stats" rows={4}/> : (
+        <div className="stats fade-in">
+          <Stat hero label="Pending reviews"
+                num={pending.length}
+                delta={{ dir: pending.length > 0 ? 'up' : '', text: pending.length > 0 ? `${pending.length} need your eyes` : 'All clear · nice work' }}
+                icon="Clock"
+                onClick={() => onNav('inbox')} navLabel="Open inbox"/>
+          <Stat tone="walnut" label="Total uploads" num={uploads.length}
+                delta={{ text: `${reviewed.length} reviewed · ${pending.length} pending` }}
+                icon="Inbox"
+                onClick={() => onNav('inbox')} navLabel="View all uploads"/>
+          <Stat tone="sage" label="Published notes" num={notes.length}
+                delta={{ text: notes.length > 0 ? `${notes.length} in the library` : 'Nothing published yet' }}
+                icon="Notes"
+                onClick={() => onNav('notes')} navLabel="Manage notes"/>
+          <Stat tone="amber" label="Registered users" num={users.length}
+                delta={{ text: `${customers.length} students` }}
+                icon="Users"
+                onClick={() => onNav('users')} navLabel="View users"/>
+        </div>
+      )}
 
       {/* Recent inbox + recent notes */}
       <div className="grid-2">
@@ -113,13 +117,13 @@ function AdminDashboard({ user, onNav }) {
             </button>
           </div>
           <div className="panel-body flush">
-            {recentInbox.length === 0 ? (
+            {loading ? <PageLoader variant="table" rows={4}/> : recentInbox.length === 0 ? (
               <div style={{ padding: 30 }}>
                 <EmptyState title="Nothing to review yet"
                             message="When students upload slides, decks, or scans, they land here."/>
               </div>
             ) : (
-              <div className="scroll-table">
+              <div className="scroll-table fade-in">
                 <table className="tbl">
                   <thead>
                     <tr>
@@ -172,10 +176,10 @@ function AdminDashboard({ user, onNav }) {
             </button>
           </div>
           <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {recentNotes.length === 0 ? (
+            {loading ? <PageLoader rows={3}/> : recentNotes.length === 0 ? (
               <EmptyState title="No notes yet" message="Publish your first Note from any pending submission."/>
             ) : recentNotes.map(n => (
-              <div key={n.id} className="note-list-card">
+              <div key={n.id} className="note-list-card fade-in">
                 <div className="nlc-head">
                   <span className="tag tag-walnut" style={{ fontSize: 11 }}>{n.courseName}</span>
                   {n.chapterNumber && <span className="tag tag-soft" style={{ fontSize: 11 }}>Ch.{n.chapterNumber}</span>}
@@ -206,6 +210,7 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
   const { toast } = useToast();
   const [users,   setUsers]   = useStateAd([]);
   const [uploads, setUploads] = useStateAd([]);
+  const [loading, setLoading] = useStateAd(true);
   const [q, setQ] = useStateAd('');
   const [filter, setFilter] = useStateAd('all');
 
@@ -217,7 +222,8 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
 
   function refresh() {
     Promise.all([NotatiAPI.getUploads(), NotatiAPI.getUsers()])
-      .then(([up, u]) => { setUploads(up); setUsers(u); });
+      .then(([up, u]) => { setUploads(up); setUsers(u); setLoading(false); })
+      .catch(() => setLoading(false));
   }
 
   useEffectAd(() => { refresh(); }, []);
@@ -299,13 +305,13 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
         </div>
 
         <div className="panel-body flush">
-          {filtered.length === 0 ? (
+          {loading ? <PageLoader variant="table" rows={5}/> : filtered.length === 0 ? (
             <div style={{ padding: 30 }}>
               <EmptyState title="No submissions match these filters"
                           message="Try clearing the search or switching to All to see everything."/>
             </div>
           ) : (
-            <div className="scroll-table">
+            <div className="scroll-table fade-in">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -769,6 +775,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
 function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
   const { toast } = useToast();
   const [notes, setNotes] = useStateAd([]);
+  const [loading, setLoading] = useStateAd(true);
   const [q, setQ] = useStateAd('');
   const [collegeFilter, setCollegeFilter] = useStateAd('all');
   const [priceFilter, setPriceFilter] = useStateAd('all');
@@ -776,7 +783,11 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
 
   useEffectAd(() => { setQ(topbarSearch || ''); }, [topbarSearch]);
 
-  function refresh() { NotatiAPI.getNotes().then(n => setNotes(n)).catch(() => {}); }
+  function refresh() {
+    NotatiAPI.getNotes()
+      .then(n => { setNotes(n); setLoading(false); })
+      .catch(() => setLoading(false));
+  }
   useEffectAd(() => { refresh(); }, []);
 
   const filtered = useMemoAd(() => {
@@ -844,7 +855,7 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
           </div>
         </div>
         <div className="panel-body flush">
-          {filtered.length === 0 ? (
+          {loading ? <PageLoader variant="table" rows={5}/> : filtered.length === 0 ? (
             <div style={{ padding: 30 }}>
               <EmptyState title="No notes match that search"
                           message="Try a broader term, or hit New note to publish something fresh."
@@ -853,7 +864,7 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
                                   </button>}/>
             </div>
           ) : (
-            <div className="scroll-table">
+            <div className="scroll-table fade-in">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -947,13 +958,15 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
 function UsersList({ topbarSearch }) {
   const [users,   setUsers]   = useStateAd([]);
   const [uploads, setUploads] = useStateAd([]);
+  const [loading, setLoading] = useStateAd(true);
   const [q, setQ] = useStateAd('');
   const [role, setRole] = useStateAd('all');
 
   useEffectAd(() => { setQ(topbarSearch || ''); }, [topbarSearch]);
   useEffectAd(() => {
     Promise.all([NotatiAPI.getUsers(), NotatiAPI.getUploads()])
-      .then(([u, up]) => { setUsers(u); setUploads(up); });
+      .then(([u, up]) => { setUsers(u); setUploads(up); setLoading(false); })
+      .catch(() => setLoading(false));
   }, []);
   const filtered = useMemoAd(() => {
     const ql = q.trim().toLowerCase();
@@ -994,12 +1007,12 @@ function UsersList({ topbarSearch }) {
         </div>
 
         <div className="panel-body flush">
-          {filtered.length === 0 ? (
+          {loading ? <PageLoader variant="table" rows={5}/> : filtered.length === 0 ? (
             <div style={{ padding: 30 }}>
               <EmptyState title="No matches" message="Try a different name or email."/>
             </div>
           ) : (
-            <div className="scroll-table">
+            <div className="scroll-table fade-in">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -1059,10 +1072,12 @@ function AccessManager() {
   const [accessFilter, setAccessFilter] = useStateAd('all');
   const [notes, setNotes]               = useStateAd([]);
   const [users, setUsers]               = useStateAd([]);
+  const [loadingNotes, setLoadingNotes] = useStateAd(true);
 
   useEffectAd(() => {
     Promise.all([NotatiAPI.getNotes(), NotatiAPI.getUsers()])
-      .then(([n, u]) => { setNotes(n); setUsers(u); });
+      .then(([n, u]) => { setNotes(n); setUsers(u); setLoadingNotes(false); })
+      .catch(() => setLoadingNotes(false));
   }, []);
 
   async function searchUser(e) {
@@ -1223,7 +1238,7 @@ function AccessManager() {
             </div>
 
             {/* Notes grouped by course */}
-            {notes.length === 0 ? (
+            {loadingNotes ? <PageLoader rows={4}/> : notes.length === 0 ? (
               <EmptyState title="No published notes" message="Publish some notes first."/>
             ) : groupedNotes.length === 0 ? (
               <EmptyState title="No matches" message="Try a different search term or filter."/>

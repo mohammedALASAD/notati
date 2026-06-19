@@ -433,27 +433,29 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
         </div>
       </div>
 
-      <div className="stats">
-        <Stat hero label="Notes I can read"
-              num={accessibleCount}
-              delta={{ dir: 'up', text: `${notes.length} notes in the library` }}
-              icon="Library"
-              onClick={() => onNav('mynotes')} navLabel="My notes"/>
-        <Stat tone="walnut" label="My uploads" num={uploads.length}
-              delta={{ text: `${ready} ready · ${pending} pending` }}
-              icon="Upload"
-              onClick={() => onNav('uploads')} navLabel="View uploads"/>
-        <Stat tone="amber" label="Awaiting review" num={pending}
-              delta={pending > 0
-                ? { text: 'Admin team usually replies within 48h' }
-                : { dir: 'up', text: 'Nothing pending — nice and tidy' }}
-              icon="Clock"
-              onClick={() => onNav('uploads')} navLabel="View uploads"/>
-        <Stat tone="sage" label="Notes ready for you" num={ready}
-              delta={{ dir: 'up', text: 'From files you submitted' }}
-              icon="Check"
-              onClick={() => onNav('mynotes')} navLabel="My notes"/>
-      </div>
+      {loading ? <PageLoader variant="stats" rows={4}/> : (
+        <div className="stats fade-in">
+          <Stat hero label="Notes I can read"
+                num={accessibleCount}
+                delta={{ dir: 'up', text: `${notes.length} notes in the library` }}
+                icon="Library"
+                onClick={() => onNav('mynotes')} navLabel="My notes"/>
+          <Stat tone="walnut" label="My uploads" num={uploads.length}
+                delta={{ text: `${ready} ready · ${pending} pending` }}
+                icon="Upload"
+                onClick={() => onNav('uploads')} navLabel="View uploads"/>
+          <Stat tone="amber" label="Awaiting review" num={pending}
+                delta={pending > 0
+                  ? { text: 'Admin team usually replies within 48h' }
+                  : { dir: 'up', text: 'Nothing pending — nice and tidy' }}
+                icon="Clock"
+                onClick={() => onNav('uploads')} navLabel="View uploads"/>
+          <Stat tone="sage" label="Notes ready for you" num={ready}
+                delta={{ dir: 'up', text: 'From files you submitted' }}
+                icon="Check"
+                onClick={() => onNav('mynotes')} navLabel="My notes"/>
+        </div>
+      )}
 
       <div className="grid-2">
         <section className="panel">

@@ -325,24 +325,82 @@ function fmtSize(kb) {
 }
 
 /* ============================================================
-   PageLoader — spinner + skeleton rows/cards
-   variant: 'rows' (default) or 'cards'
+   PageLoader — spinner + skeleton rows/cards/table/stats
+   variant: 'rows' | 'cards' | 'table' | 'stats'
    ============================================================ */
 function PageLoader({ rows = 4, variant = 'rows' }) {
-  return (
-    <div className="page-loader">
-      <div className="page-loader-spinner"/>
-      {variant === 'cards' ? (
+  /* Table variant — column-shaped blobs mimicking real table rows */
+  if (variant === 'table') {
+    const widths = [
+      [32, 32, '28%', '18%', 68, 52, 60],
+      [32, 32, '22%', '14%', 80, 56, 48],
+      [32, 32, '35%', '22%', 60, 44, 64],
+      [32, 32, '26%', '16%', 76, 60, 52],
+      [32, 32, '30%', '20%', 64, 52, 56],
+    ];
+    return (
+      <div>
+        <div className="loader-inline">
+          <div className="loader-inline-dot"/>
+          Loading…
+        </div>
+        {Array.from({ length: rows }).map((_, i) => {
+          const w = widths[i % widths.length];
+          return (
+            <div key={i} className="skeleton-table-row">
+              <div className="skeleton" style={{ width: w[0], height: w[1], borderRadius: 'var(--r-3)', flexShrink: 0 }}/>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div className="skeleton" style={{ width: w[2], height: 13 }}/>
+                <div className="skeleton" style={{ width: w[3], height: 10 }}/>
+              </div>
+              <div className="skeleton" style={{ width: w[4], height: 13, flexShrink: 0 }}/>
+              <div className="skeleton" style={{ width: w[5], height: 13, flexShrink: 0 }}/>
+              <div className="skeleton" style={{ width: w[6], height: 22, borderRadius: 'var(--r-pill)', flexShrink: 0 }}/>
+              <div className="skeleton" style={{ width: 60, height: 28, borderRadius: 'var(--r-3)', flexShrink: 0 }}/>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  /* Stats variant — skeleton cards matching the .stat grid */
+  if (variant === 'stats') {
+    return (
+      <div className="stats">
+        {Array.from({ length: rows }).map((_, i) => (
+          <div key={i} className="stat" style={{ position: 'relative', overflow: 'hidden', minHeight: 130 }}>
+            <div className="skeleton" style={{ position: 'absolute', top: 20, right: 20, width: 36, height: 36, borderRadius: 'var(--r-4)' }}/>
+            <div className="skeleton" style={{ width: '52%', height: 9, marginBottom: 18 }}/>
+            <div className="skeleton" style={{ width: '38%', height: 36 }}/>
+            <div className="skeleton" style={{ width: '68%', height: 9, marginTop: 16 }}/>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  /* Cards variant — shimmer cards in a 3-col grid */
+  if (variant === 'cards') {
+    return (
+      <div className="page-loader">
+        <div className="page-loader-spinner"/>
         <div className="grid-3">
           {Array.from({ length: rows }).map((_, i) => (
             <div key={i} className="skeleton skeleton-card"/>
           ))}
         </div>
-      ) : (
-        Array.from({ length: rows }).map((_, i) => (
-          <div key={i} className="skeleton skeleton-row"/>
-        ))
-      )}
+      </div>
+    );
+  }
+
+  /* Default: rows */
+  return (
+    <div className="page-loader">
+      <div className="page-loader-spinner"/>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="skeleton skeleton-row"/>
+      ))}
     </div>
   );
 }
