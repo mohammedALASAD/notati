@@ -339,6 +339,11 @@
     async deleteTestimonial(id) {
       return req('DELETE', `/admin/testimonials/${id}/`);
     },
+
+    async sendEmail(userId, subject, message) {
+      return req('POST', '/admin/send-email/', { user_id: userId, subject, message });
+    },
+
   };
 
   async function _proxyFetch(url) {

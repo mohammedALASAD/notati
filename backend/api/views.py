@@ -8,7 +8,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
-
 from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial
 from .serializers import (
     RegisterSerializer, UserSerializer, UserAdminSerializer,
@@ -435,3 +434,26 @@ class TestimonialAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class   = TestimonialAdminSerializer
     permission_classes = [IsAdmin]
     queryset           = Testimonial.objects.all()
+
+
+# ── Admin: Send support email ─────────────────────────────────────────────────
+
+class AdminSendEmailView(APIView):
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        user_id = request.data.get('user_id')
+        subject = (request.data.get('subject') or '').strip()
+        message = (request.data.get('message') or '').strip()
+
+        if not user_id or not subject or not message:
+            return Response({'detail': 'user_id, subject and message are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            recipient = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        from .emails import send_support_email
+        send_support_email(recipient.email, recipient.name, subject, message)
+        return Response({'detail': 'Email sent.'})

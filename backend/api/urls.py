@@ -4,10 +4,10 @@ from . import views
 
 urlpatterns = [
     # Auth
-    path('auth/register/',      views.RegisterView.as_view(),      name='register'),
-    path('auth/login/',         TokenObtainPairView.as_view(),     name='login'),
-    path('auth/token/refresh/', TokenRefreshView.as_view(),        name='token-refresh'),
-    path('auth/me/',            views.MeView.as_view(),            name='me'),
+    path('auth/register/',         views.RegisterView.as_view(),        name='register'),
+    path('auth/login/',            TokenObtainPairView.as_view(),       name='login'),
+    path('auth/token/refresh/',    TokenRefreshView.as_view(),          name='token-refresh'),
+    path('auth/me/',               views.MeView.as_view(),              name='me'),
 
     # Courses
     path('courses/',            views.CourseListCreateView.as_view(), name='course-list'),
@@ -49,4 +49,5 @@ urlpatterns = [
     path('testimonials/submit/',       views.TestimonialCreateView.as_view(),       name='testimonial-submit'),
     path('admin/testimonials/',        views.TestimonialAdminListView.as_view(),    name='admin-testimonial-list'),
     path('admin/testimonials/<int:pk>/', views.TestimonialAdminDetailView.as_view(), name='admin-testimonial-detail'),
+    path('admin/send-email/',            views.AdminSendEmailView.as_view(),          name='admin-send-email'),
 ]

@@ -955,12 +955,72 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
 /* ============================================================
    Users List
    ============================================================ */
+/* ── Send email modal ────────────────────────────────────────────────────────── */
+function SendEmailModal({ user, onClose }) {
+  const { toast } = useToast();
+  const [subject, setSubject] = useStateAd('');
+  const [message, setMessage] = useStateAd('');
+  const [busy,    setBusy]    = useStateAd(false);
+
+  if (!user) return null;
+
+  async function send(e) {
+    e.preventDefault();
+    if (!subject.trim() || !message.trim()) return;
+    setBusy(true);
+    try {
+      await NotatiAPI.sendEmail(user.id, subject.trim(), message.trim());
+      toast.success('Email sent.', `Message delivered to ${user.name}.`);
+      onClose();
+    } catch (err) {
+      toast.error('Could not send', err.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="modal-title">Send email</div>
+            <div className="modal-sub">To: <strong>{user.name}</strong> &middot; <span style={{ color: 'var(--fg-3)' }}>{user.email}</span></div>
+          </div>
+          <button className="btn-close" onClick={onClose}><Icons.X size={18}/></button>
+        </div>
+
+        <form className="modal-body" onSubmit={send} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="field">
+            <label>Subject</label>
+            <input autoFocus value={subject} onChange={e => setSubject(e.target.value)}
+                   placeholder="e.g. Your upload has been reviewed" required/>
+          </div>
+          <div className="field">
+            <label>Message</label>
+            <textarea value={message} onChange={e => setMessage(e.target.value)}
+                      placeholder="Write your message here…" required
+                      style={{ minHeight: 180, resize: 'vertical', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.7 }}/>
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={busy || !subject.trim() || !message.trim()}>
+              {busy ? 'Sending…' : 'Send email'}
+              {!busy && <Icons.ArrowRight size={15}/>}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function UsersList({ topbarSearch }) {
-  const [users,   setUsers]   = useStateAd([]);
-  const [uploads, setUploads] = useStateAd([]);
-  const [loading, setLoading] = useStateAd(true);
-  const [q, setQ] = useStateAd('');
-  const [role, setRole] = useStateAd('all');
+  const [users,       setUsers]       = useStateAd([]);
+  const [uploads,     setUploads]     = useStateAd([]);
+  const [loading,     setLoading]     = useStateAd(true);
+  const [q,           setQ]           = useStateAd('');
+  const [role,        setRole]        = useStateAd('all');
+  const [emailTarget, setEmailTarget] = useStateAd(null);
 
   useEffectAd(() => { setQ(topbarSearch || ''); }, [topbarSearch]);
   useEffectAd(() => {
@@ -1021,6 +1081,7 @@ function UsersList({ topbarSearch }) {
                     <th>Role</th>
                     <th>Joined</th>
                     <th className="r">Uploads</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1046,6 +1107,14 @@ function UsersList({ topbarSearch }) {
                         <td className="r" data-l="Uploads">
                           <span style={{ font: 'var(--type-body-bold)' }}>{ups}</span>
                         </td>
+                        <td>
+                          {u.role !== 'admin' && (
+                            <button className="btn-icon" title="Send email"
+                                    onClick={() => setEmailTarget(u)}>
+                              <Icons.Mail size={15}/>
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -1055,6 +1124,8 @@ function UsersList({ topbarSearch }) {
           )}
         </div>
       </section>
+
+      <SendEmailModal user={emailTarget} onClose={() => setEmailTarget(null)}/>
     </div>
   );
 }
