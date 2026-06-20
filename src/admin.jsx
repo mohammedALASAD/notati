@@ -967,14 +967,15 @@ function SendEmailModal({ user, onClose }) {
   async function send(e) {
     e.preventDefault();
     if (!subject.trim() || !message.trim()) return;
-    setBusy(true);
+    const targetUser = user;
+    const s = subject.trim();
+    const m = message.trim();
+    onClose();
     try {
-      await NotatiAPI.sendEmail(user.id, subject.trim(), message.trim());
-      toast.success('Email sent.', `Message delivered to ${user.name}.`);
-      onClose();
+      await NotatiAPI.sendEmail(targetUser.id, s, m);
+      toast.success('Email sent.', `Message delivered to ${targetUser.name}.`);
     } catch (err) {
       toast.error('Could not send', err.message);
-      setBusy(false);
     }
   }
 
