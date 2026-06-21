@@ -243,6 +243,17 @@
     async previewNoteFileById(id) {
       await _proxyOpen(BASE + `/note-files/${id}/download/`);
     },
+    async previewNoteFilesById(ids) {
+      // Open all tabs synchronously (still in user-gesture frame) before any await
+      const wins = ids.map(() => window.open('about:blank', '_blank'));
+      await Promise.all(ids.map(async (id, i) => {
+        const blob = await _proxyFetch(BASE + `/note-files/${id}/download/`);
+        const objectUrl = URL.createObjectURL(blob);
+        if (wins[i]) wins[i].location.href = objectUrl;
+        else window.open(objectUrl, '_blank');
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+      }));
+    },
 
     /* Upload files */
     async getUploadFiles(uploadId) {
