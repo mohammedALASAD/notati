@@ -1134,6 +1134,151 @@ function UsersList({ topbarSearch }) {
 /* ============================================================
    Access Manager — admin grants / revokes access after BenefitPay payment
    ============================================================ */
+function OrdersManager() {
+  const { toast } = useToast();
+  const [orders, setOrders]   = useStateAd([]);
+  const [filter, setFilter]   = useStateAd('pending');
+  const [loading, setLoading] = useStateAd(true);
+  const [busyId, setBusyId]   = useStateAd(null);
+
+  function load() {
+    setLoading(true);
+    NotatiAPI.getAdminOrders(filter === 'all' ? '' : filter)
+      .then(o => { setOrders(o); setLoading(false); })
+      .catch(e => { toast.error('Could not load orders', e.message); setLoading(false); });
+  }
+  useEffectAd(load, [filter]);
+
+  async function setStatus(order, newStatus) {
+    setBusyId(order.id);
+    try {
+      await NotatiAPI.updateOrder(order.id, { status: newStatus });
+      if (newStatus === 'paid') {
+        toast.success('Order marked paid', `Unlocked ${order.item_count} item${order.item_count !== 1 ? 's' : ''} for ${order.user_name}.`);
+      } else if (newStatus === 'cancelled') {
+        toast.info('Order cancelled', '');
+      }
+      load();
+    } catch (e) {
+      toast.error('Update failed', e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const FILTERS = [
+    { id: 'pending',   label: 'Pending' },
+    { id: 'paid',      label: 'Paid' },
+    { id: 'cancelled', label: 'Cancelled' },
+    { id: 'all',       label: 'All' },
+  ];
+  const STATUS_STYLE = {
+    pending:   { background: 'var(--notati-bark, #8a6d3b)', color: 'var(--notati-paper)' },
+    paid:      { background: 'var(--notati-forest)',        color: 'var(--notati-paper)' },
+    cancelled: { background: 'var(--bg-card-2)',            color: 'var(--fg-3)' },
+  };
+
+  return (
+    <div>
+      <div className="page-head">
+        <div className="ttl">
+          <h1>Orders</h1>
+          <p className="sub">
+            Students place orders from their bag and pay via BenefitPay. Once you receive payment,
+            mark the order paid — that unlocks every note in it for the student automatically.
+          </p>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        {FILTERS.map(f => (
+          <button key={f.id}
+                  className={`btn btn-sm ${filter === f.id ? 'btn-primary' : 'btn-soft'}`}
+                  onClick={() => setFilter(f.id)}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <PageLoader/>
+      ) : orders.length === 0 ? (
+        <EmptyState title="No orders here"
+                    message="Orders placed by students will appear in this list."/>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {orders.map(o => (
+            <section key={o.id} className="panel">
+              <div className="panel-body">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                              gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', fontWeight: 700 }}>
+                      Order #{o.id} · {o.user_name}
+                    </div>
+                    <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)', marginTop: 2 }}>
+                      {o.user_email} · {fmtDate(o.created_at)}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <span style={{ ...STATUS_STYLE[o.status], font: 'var(--type-label)', fontSize: 10,
+                                   padding: '3px 10px', borderRadius: 'var(--r-pill)', textTransform: 'uppercase' }}>
+                      {o.status}
+                    </span>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--notati-walnut)', marginTop: 6 }}>
+                      BD {Number(o.total).toFixed(3)}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6,
+                              borderTop: '1px solid var(--border-2)', paddingTop: 12 }}>
+                  {o.items.map(it => (
+                    <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13 }}>
+                      <span style={{ color: 'var(--fg-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {it.course_name} Ch.{it.chapter_number}: {it.chapter_title}
+                      </span>
+                      <span style={{ color: 'var(--fg-3)', whiteSpace: 'nowrap' }}>BD {Number(it.price).toFixed(3)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {o.status === 'pending' && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                    <button className="btn btn-primary btn-sm" disabled={busyId === o.id}
+                            onClick={() => setStatus(o, 'paid')}>
+                      <Icons.Check size={14}/> Mark paid &amp; unlock
+                    </button>
+                    <button className="btn btn-ghost btn-sm" disabled={busyId === o.id}
+                            onClick={() => setStatus(o, 'cancelled')}
+                            style={{ color: 'var(--notati-crimson)' }}>
+                      Cancel order
+                    </button>
+                  </div>
+                )}
+                {o.status === 'paid' && o.paid_at && (
+                  <div style={{ marginTop: 12, fontSize: 12, color: 'var(--notati-forest)',
+                                display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <Icons.Check size={13}/> Paid {fmtDate(o.paid_at)}
+                  </div>
+                )}
+                {o.status === 'cancelled' && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                    <button className="btn btn-soft btn-sm" disabled={busyId === o.id}
+                            onClick={() => setStatus(o, 'paid')}>
+                      <Icons.Check size={14}/> Mark paid &amp; unlock
+                    </button>
+                  </div>
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AccessManager() {
   const { toast } = useToast();
   const [email, setEmail]               = useStateAd('');
@@ -2157,4 +2302,4 @@ function ChapterInsights() {
   );
 }
 
-Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, AccessManager, TestimonialsManager, ChapterInsights });
+Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, OrdersManager, AccessManager, TestimonialsManager, ChapterInsights });

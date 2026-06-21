@@ -304,11 +304,14 @@ function BagDrawer({ open, items, user, onClose, onRemove, onClear }) {
 
   const total = items.reduce((s, i) => s + Number(i.price), 0);
 
-  function handleConfirm() {
+  async function handleConfirm() {
+    // Record a pending order from the server-side bag (also clears it) so the
+    // admin gets a tracked order they can mark paid + unlock in one click.
+    try { await NotatiAPI.createOrder(); } catch (e) { /* don't block the user */ }
     onClear();
     setCheckoutOpen(false);
     onClose();
-    toast.success('Payment sent', 'Your bag has been cleared. Your notes will be unlocked soon.');
+    toast.success('Order placed', 'We received your order. Your notes unlock once we confirm payment.');
   }
 
   return (

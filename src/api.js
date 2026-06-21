@@ -382,6 +382,15 @@
     async removeBagItem(noteNumId) { return req('DELETE', '/bag/',     { note_id: noteNumId }); },
     async clearBag()             { return req('DELETE', '/bag/clear/'); },
 
+    /* Orders */
+    async createOrder()    { return req('POST', '/orders/'); },
+    async getOrders()      { return list(await req('GET', '/orders/')); },
+    async getAdminOrders(orderStatus) {
+      const q = orderStatus ? `?status=${orderStatus}` : '';
+      return list(await req('GET', '/admin/orders/' + q));
+    },
+    async updateOrder(id, payload) { return req('PATCH', `/admin/orders/${id}/`, payload); },
+
   };
 
   async function _proxyFetch(url) {
