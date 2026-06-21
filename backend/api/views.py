@@ -8,10 +8,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
-from django.views.decorators.http import require_GET
-
-
-@require_GET
 def health(request):
     return JsonResponse({'status': 'ok'})
 from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial
