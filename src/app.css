@@ -351,23 +351,31 @@ input, textarea, select { font-family: inherit; }
   padding: 4px 10px; border-radius: var(--r-pill);
   background: var(--notati-cream); color: var(--notati-walnut);
 }
-.topbar .search-mini {
+.search-mini {
   display: flex; align-items: center; gap: 10px;
-  background: var(--notati-paper);
-  border: 1px solid var(--border-1);
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-1);
   border-radius: var(--r-pill);
-  padding: 7px 14px;
-  min-width: 280px;
-  margin-left: auto;
-  transition: border-color var(--dur-base) var(--ease-out);
+  padding: 9px 16px;
+  transition: border-color var(--dur-base) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out);
+  box-shadow: 0 1px 4px rgba(61,43,31,.06);
 }
-.topbar .search-mini:focus-within { border-color: var(--notati-walnut); }
-.topbar .search-mini input {
+.search-mini:focus-within {
+  border-color: var(--notati-walnut);
+  box-shadow: 0 0 0 3px rgba(107,87,68,.12), 0 1px 4px rgba(61,43,31,.06);
+}
+.search-mini input {
   border: 0; background: transparent; outline: none;
   font: var(--type-body); color: var(--fg-1);
   flex: 1; min-width: 0;
 }
-.topbar .search-mini input::placeholder { color: var(--fg-3); }
+.search-mini input::placeholder { color: var(--fg-3); }
+.topbar .search-mini {
+  background: var(--notati-paper);
+  min-width: 280px;
+  margin-left: auto;
+}
 
 .page {
   padding: 36px;
