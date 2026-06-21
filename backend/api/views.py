@@ -10,16 +10,21 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django.db import transaction
+from django.utils import timezone
 def health(request):
     return JsonResponse({'status': 'ok'})
-from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial, BagItem
+from .models import (
+    User, Course, Note, NoteFile, Access, Upload, UploadFile,
+    Testimonial, BagItem, Order, OrderItem,
+)
 from .serializers import (
     RegisterSerializer, UserSerializer, UserAdminSerializer,
     CourseSerializer, NoteSerializer, NoteAdminSerializer,
     NoteFileSerializer, UploadFileSerializer,
     AccessSerializer, UploadSerializer, UploadAdminSerializer,
     TestimonialSerializer, TestimonialAdminSerializer,
-    BagItemSerializer,
+    BagItemSerializer, OrderSerializer,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
 from . import pdfutils
@@ -544,6 +549,84 @@ class BagClearView(APIView):
     def delete(self, request):
         BagItem.objects.filter(user=request.user).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Orders ────────────────────────────────────────────────────────────────────
+
+class OrderListCreateView(generics.ListCreateAPIView):
+    """Students place an order from their bag and see their own order history."""
+    serializer_class = OrderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Order.objects.filter(user=self.request.user).prefetch_related('items')
+
+    def create(self, request, *args, **kwargs):
+        bag = list(BagItem.objects.filter(user=request.user).select_related('note__course'))
+        if not bag:
+            return Response({'detail': 'Your bag is empty.'}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            order = Order.objects.create(user=request.user, status='pending')
+            total = 0
+            for b in bag:
+                n = b.note
+                OrderItem.objects.create(
+                    order=order, note=n,
+                    course_name=n.course.name if n.course else '',
+                    chapter_number=str(n.chapter_number),
+                    chapter_title=n.chapter_title,
+                    price=n.price,
+                )
+                total += n.price
+            order.total = total
+            order.save(update_fields=['total'])
+            # The bag has become an order — clear it.
+            BagItem.objects.filter(user=request.user).delete()
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+
+class AdminOrderListView(generics.ListAPIView):
+    serializer_class = OrderSerializer
+    permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        qs = Order.objects.select_related('user').prefetch_related('items')
+        st = self.request.query_params.get('status')
+        if st:
+            qs = qs.filter(status=st)
+        return qs
+
+
+class AdminOrderDetailView(APIView):
+    """Admin updates an order's status. Marking it 'paid' grants access to every
+    note in the order in one step (idempotent)."""
+    permission_classes = [IsAdmin]
+
+    def patch(self, request, pk):
+        order = get_object_or_404(Order, pk=pk)
+        new_status = request.data.get('status')
+        ref = request.data.get('note')
+        if ref is not None:
+            order.note = ref
+
+        if new_status == 'paid' and order.status != 'paid':
+            with transaction.atomic():
+                for item in order.items.all():
+                    if item.note_id:
+                        Access.objects.get_or_create(
+                            user=order.user, note_id=item.note_id,
+                            defaults={'granted_by': request.user},
+                        )
+                order.status = 'paid'
+                order.paid_at = timezone.now()
+                order.save()
+        elif new_status in ('pending', 'cancelled'):
+            order.status = new_status
+            order.save()
+        else:
+            order.save()
+
+        return Response(OrderSerializer(order).data)
 
 
 # ── Admin: Send support email ─────────────────────────────────────────────────

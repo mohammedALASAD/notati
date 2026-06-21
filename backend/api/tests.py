@@ -8,7 +8,7 @@ from reportlab.pdfgen import canvas
 from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from . import pdfutils
-from .models import User, Course, Note, NoteFile, Access
+from .models import User, Course, Note, NoteFile, Access, BagItem, Order
 from .serializers import NoteSerializer, RegisterSerializer
 
 
@@ -141,3 +141,49 @@ class SampleAndWatermarkEndpointTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(PdfReader(BytesIO(resp.content)).pages), 6)
         self.assertIn('buyer@x.com', _page_text(resp.content))
+
+
+class OrderFlowTests(TestCase):
+    def setUp(self):
+        self.course = Course.objects.create(name='ITIS103')
+        self.n1 = Note.objects.create(course=self.course, chapter_number=1,
+                                      chapter_title='Ch1', price=Decimal('2.000'))
+        self.n2 = Note.objects.create(course=self.course, chapter_number=2,
+                                      chapter_title='Ch2', price=Decimal('3.000'))
+        self.student = User.objects.create_user('s@x.com', 'pw', name='S')
+        self.admin = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        BagItem.objects.create(user=self.student, note=self.n1)
+        BagItem.objects.create(user=self.student, note=self.n2)
+
+    def _client(self, user):
+        c = APIClient()
+        c.force_authenticate(user)
+        return c
+
+    def test_place_order_from_bag_clears_bag(self):
+        resp = self._client(self.student).post('/api/orders/')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data['status'], 'pending')
+        self.assertEqual(Decimal(resp.data['total']), Decimal('5.000'))
+        self.assertEqual(resp.data['item_count'], 2)
+        self.assertEqual(BagItem.objects.filter(user=self.student).count(), 0)
+
+    def test_empty_bag_is_rejected(self):
+        BagItem.objects.filter(user=self.student).delete()
+        resp = self._client(self.student).post('/api/orders/')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_admin_mark_paid_grants_access_to_all_items(self):
+        order_id = self._client(self.student).post('/api/orders/').data['id']
+        self.assertFalse(Access.objects.filter(user=self.student, note=self.n1).exists())
+        resp = self._client(self.admin).patch(
+            f'/api/admin/orders/{order_id}/', {'status': 'paid'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['status'], 'paid')
+        self.assertIsNotNone(resp.data['paid_at'])
+        self.assertTrue(Access.objects.filter(user=self.student, note=self.n1).exists())
+        self.assertTrue(Access.objects.filter(user=self.student, note=self.n2).exists())
+
+    def test_students_cannot_see_admin_orders(self):
+        resp = self._client(self.student).get('/api/admin/orders/')
+        self.assertEqual(resp.status_code, 403)

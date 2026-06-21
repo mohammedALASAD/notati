@@ -156,6 +156,40 @@ class BagItem(models.Model):
         return f'{self.user.email} bag: {self.note}'
 
 
+class Order(models.Model):
+    STATUS_CHOICES = [
+        ('pending',   'Pending payment'),
+        ('paid',      'Paid'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
+    status     = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    total      = models.DecimalField(max_digits=8, decimal_places=3, default=0)
+    note       = models.CharField(max_length=300, blank=True)   # admin/payment reference
+    created_at = models.DateTimeField(auto_now_add=True)
+    paid_at    = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Order #{self.pk} · {self.user.email} · {self.status}'
+
+
+class OrderItem(models.Model):
+    order          = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    # Keep the row even if the note is later deleted, so order history survives.
+    note           = models.ForeignKey(Note, on_delete=models.SET_NULL, null=True, related_name='order_items')
+    course_name    = models.CharField(max_length=200, blank=True)
+    chapter_number = models.CharField(max_length=20, blank=True)
+    chapter_title  = models.CharField(max_length=200, blank=True)
+    price          = models.DecimalField(max_digits=6, decimal_places=3, default=0)
+
+    def __str__(self):
+        return f'{self.chapter_title} ({self.price})'
+
+
 class Testimonial(models.Model):
     user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='testimonials')
     text       = models.TextField(max_length=300)

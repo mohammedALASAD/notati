@@ -53,6 +53,11 @@ urlpatterns = [
     path('bag/',       views.BagView.as_view(),      name='bag'),
     path('bag/clear/', views.BagClearView.as_view(), name='bag-clear'),
 
+    # Orders
+    path('orders/',                   views.OrderListCreateView.as_view(), name='order-list'),
+    path('admin/orders/',             views.AdminOrderListView.as_view(),  name='admin-order-list'),
+    path('admin/orders/<int:pk>/',    views.AdminOrderDetailView.as_view(), name='admin-order-detail'),
+
     # Testimonials
     path('testimonials/',              views.TestimonialPublicView.as_view(),       name='testimonial-list'),
     path('testimonials/submit/',       views.TestimonialCreateView.as_view(),       name='testimonial-submit'),

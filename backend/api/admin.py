@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Course, Note, Access, Upload
+from .models import User, Course, Note, Access, Upload, Order, OrderItem
 
 
 @admin.register(User)
@@ -44,3 +44,16 @@ class UploadAdmin(admin.ModelAdmin):
     list_display = ['user', 'title', 'status', 'created_at']
     list_filter = ['status']
     search_fields = ['user__email', 'title']
+
+
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    extra = 0
+
+
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display = ['id', 'user', 'status', 'total', 'created_at', 'paid_at']
+    list_filter = ['status']
+    search_fields = ['user__email']
+    inlines = [OrderItemInline]

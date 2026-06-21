@@ -2,7 +2,10 @@ import re
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial, BagItem
+from .models import (
+    User, Course, Note, NoteFile, Access, Upload, UploadFile,
+    Testimonial, BagItem, Order, OrderItem,
+)
 
 
 def _signed_url(url):
@@ -288,3 +291,29 @@ class BagItemSerializer(serializers.ModelSerializer):
         model  = BagItem
         fields = ['id', 'note_id', 'title', 'course_name', 'chapter_number', 'price', 'added_at']
         read_only_fields = ['id', 'added_at']
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    note_id = serializers.IntegerField(source='note.id', read_only=True, allow_null=True)
+
+    class Meta:
+        model  = OrderItem
+        fields = ['id', 'note_id', 'course_name', 'chapter_number', 'chapter_title', 'price']
+        read_only_fields = fields
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    items       = OrderItemSerializer(many=True, read_only=True)
+    user_email  = serializers.EmailField(source='user.email', read_only=True)
+    user_name   = serializers.CharField(source='user.name', read_only=True)
+    item_count  = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = Order
+        fields = ['id', 'user', 'user_email', 'user_name', 'status', 'total',
+                  'note', 'item_count', 'items', 'created_at', 'paid_at']
+        read_only_fields = ['id', 'user', 'user_email', 'user_name', 'total',
+                            'item_count', 'items', 'created_at', 'paid_at']
+
+    def get_item_count(self, obj):
+        return obj.items.count()
