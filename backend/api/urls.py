@@ -24,7 +24,8 @@ urlpatterns = [
     # Note files
     path('note-files/',                     views.NoteFileListCreateView.as_view(),  name='note-file-list'),
     path('note-files/<int:pk>/',            views.NoteFileDetailView.as_view(),      name='note-file-detail'),
-    path('note-files/<int:pk>/download/',   views.NoteFileDownloadView.as_view(),    name='note-file-download'),
+    path('note-files/<int:pk>/download/',    views.NoteFileDownloadView.as_view(),    name='note-file-download'),
+    path('note-files/<int:pk>/preview-url/', views.NoteFilePreviewUrlView.as_view(), name='note-file-preview-url'),
 
     # Upload files
     path('upload-files/',                   views.UploadFileListCreateView.as_view(),  name='upload-file-list'),

@@ -25,6 +25,27 @@ def _signed_url(url):
         return url
 
 
+def _preview_url(url):
+    """Return a Cloudinary signed URL for inline browser viewing (no fl_attachment)."""
+    if not url or 'res.cloudinary.com' not in url:
+        return url
+    try:
+        import cloudinary.utils
+        match = re.search(r'/raw/upload/(?:v\d+/)?(.+)$', url)
+        if not match:
+            return url
+        public_id = match.group(1)
+        signed, _ = cloudinary.utils.cloudinary_url(
+            public_id,
+            resource_type='raw',
+            sign_url=True,
+            secure=True,
+        )
+        return signed
+    except Exception:
+        return url
+
+
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6)
 

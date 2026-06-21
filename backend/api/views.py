@@ -214,6 +214,26 @@ class NoteFileDownloadView(APIView):
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class NoteFilePreviewUrlView(APIView):
+    """Return a short-lived Cloudinary signed URL for inline browser viewing.
+    The frontend opens this URL directly — no proxy, so it loads instantly."""
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        nf = get_object_or_404(NoteFile, pk=pk)
+        note = nf.note
+        if not note.is_free:
+            if not request.user.is_authenticated:
+                return Response({'detail': 'Login required.'}, status=status.HTTP_401_UNAUTHORIZED)
+            if request.user.role != 'admin':
+                if not note.access_grants.filter(user=request.user).exists():
+                    return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
+        if not nf.file:
+            return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
+        from .serializers import _preview_url
+        return Response({'url': _preview_url(nf.file.url)})
+
+
 # ── UploadFile ────────────────────────────────────────────────────────────────
 
 class UploadFileListCreateView(generics.ListCreateAPIView):
