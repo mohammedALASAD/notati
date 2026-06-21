@@ -42,14 +42,12 @@ function _buildNoteFilename(nf) {
 function _previewNote(n, openReader, toast) {
   const files = n.files || [];
   if (files.length === 0) { toast.info('No file', 'No PDF attached yet.'); return; }
-  const ids = files.map(f => f.id).filter(Boolean);
-  if (ids.length > 1) {
-    NotatiAPI.previewNoteFilesById(ids).catch(e => toast.error('Preview failed', e.message));
-  } else if (ids.length === 1) {
-    NotatiAPI.previewNoteFileById(ids[0]).catch(e => toast.error('Preview failed', e.message));
-  } else {
-    NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message));
+  const f = files[0];
+  if (files.length > 1) {
+    toast.info(`${files.length} files`, 'Opening file 1 — use Preview to access all files.');
   }
+  if (f.id) NotatiAPI.previewNoteFileById(f.id).catch(e => toast.error('Preview failed', e.message));
+  else NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message));
 }
 
 function _downloadNote(n, openReader, toast) {
