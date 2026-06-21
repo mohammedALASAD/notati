@@ -22,14 +22,15 @@ from .serializers import (
     BagItemSerializer,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
+from . import pdfutils
 
 
 # ── Cloudinary proxy helper ───────────────────────────────────────────────────
 
-def _proxy_file_response(file_field):
-    """Fetch a file via Cloudinary Admin API (bypasses CDN delivery blocks) and return as HttpResponse."""
+def _fetch_file_bytes(file_field):
+    """Fetch raw bytes for a file field (via Cloudinary Admin API, which bypasses
+    CDN delivery blocks, or from local storage). Returns (content, content_type)."""
     url = file_field.url
-    filename = file_field.name.split('/')[-1]
 
     if 'res.cloudinary.com' in url:
         import cloudinary
@@ -57,14 +58,42 @@ def _proxy_file_response(file_field):
         )
         req = urllib.request.Request(private_url, headers={'User-Agent': 'Notati/1.0'})
         with urllib.request.urlopen(req, timeout=30) as resp:
-            content = resp.read()
-            content_type = resp.headers.get('Content-Type', 'application/octet-stream')
-    else:
-        content = file_field.read()
-        content_type = 'application/octet-stream'
+            return resp.read(), resp.headers.get('Content-Type', 'application/octet-stream')
 
+    return file_field.read(), 'application/octet-stream'
+
+
+def _watermark_email(request):
+    """Email to stamp on a download, or None. Admins get clean (un-stamped) files."""
+    user = getattr(request, 'user', None)
+    if user and user.is_authenticated and user.role != 'admin':
+        return user.email
+    return None
+
+
+def _proxy_file_response(file_field, watermark_email=None):
+    """Return a file as a download response, optionally stamping each PDF page
+    with the buyer's email for traceability."""
+    content, content_type = _fetch_file_bytes(file_field)
+    filename = file_field.name.split('/')[-1]
+    if watermark_email and pdfutils.is_pdf(content):
+        content = pdfutils.watermark_for_user(content, watermark_email)
+        content_type = 'application/pdf'
     response = HttpResponse(content, content_type=content_type)
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _sample_response(file_field, pages=2):
+    """Return the first `pages` pages of a PDF, inline, stamped SAMPLE.
+    Non-PDF files are refused (we can't safely truncate them)."""
+    content, _ = _fetch_file_bytes(file_field)
+    if not pdfutils.is_pdf(content):
+        return Response({'detail': 'Preview not available for this file type.'},
+                        status=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
+    sample = pdfutils.sample_pdf(content, pages=pages)
+    response = HttpResponse(sample, content_type='application/pdf')
+    response['Content-Disposition'] = 'inline; filename="sample.pdf"'
     return response
 
 
@@ -159,7 +188,7 @@ class NoteDownloadView(APIView):
         if not note.pdf_file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            return _proxy_file_response(note.pdf_file)
+            return _proxy_file_response(note.pdf_file, watermark_email=_watermark_email(request))
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -224,7 +253,38 @@ class NoteFileDownloadView(APIView):
         if not nf.file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            return _proxy_file_response(nf.file)
+            return _proxy_file_response(nf.file, watermark_email=_watermark_email(request))
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class NoteFileSampleView(APIView):
+    """First couple of pages of a note file as a watermarked sample — open to all
+    so prospective buyers can judge quality before purchasing."""
+    permission_classes = [AllowAny]
+    throttle_scope = 'sample'
+
+    def get(self, request, pk):
+        nf = get_object_or_404(NoteFile, pk=pk)
+        if not nf.file:
+            return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            return _sample_response(nf.file)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class NoteSampleView(APIView):
+    """Sample preview for a legacy single-file note (note.pdf_file)."""
+    permission_classes = [AllowAny]
+    throttle_scope = 'sample'
+
+    def get(self, request, pk):
+        note = get_object_or_404(Note, pk=pk)
+        if not note.pdf_file:
+            return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            return _sample_response(note.pdf_file)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
