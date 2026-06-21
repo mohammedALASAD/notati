@@ -143,6 +143,19 @@ class UploadFile(models.Model):
         return f'{self.upload} – {self.label or "file"}'
 
 
+class BagItem(models.Model):
+    user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bag_items')
+    note       = models.ForeignKey(Note, on_delete=models.CASCADE, related_name='bag_items')
+    added_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('user', 'note')]
+        ordering = ['added_at']
+
+    def __str__(self):
+        return f'{self.user.email} bag: {self.note}'
+
+
 class Testimonial(models.Model):
     user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='testimonials')
     text       = models.TextField(max_length=300)

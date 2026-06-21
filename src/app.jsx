@@ -51,6 +51,7 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
   const [readingNote, setReadingNote]     = useStateApp(null);
   const [refreshKey, setRefreshKey]       = useStateApp(0);
   const [bagItems, setBagItems]           = useStateApp(() => NotatiStore.getBag());
+  useEffectApp(() => { window._notatiSetBagItems = setBagItems; return () => { delete window._notatiSetBagItems; }; }, [setBagItems]);
   const [bagOpen, setBagOpen]             = useStateApp(false);
 
   const isAdmin = role === 'admin';
@@ -230,6 +231,12 @@ function App() {
   const handleAuth = useCallbackApp((u) => {
     setUser(u);
     setHash(u.role, 'overview');
+    // Sync bag from server after login (merges any local items)
+    if (u.role !== 'admin') {
+      NotatiStore.syncBagFromServer().then(merged => {
+        window._notatiSetBagItems && window._notatiSetBagItems(merged);
+      }).catch(() => {});
+    }
   }, []);
 
   const handleLogout = useCallbackApp(() => {

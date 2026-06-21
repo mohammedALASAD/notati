@@ -1,10 +1,8 @@
 /* ============================================================
    Notati — Store
-   Auth, notes, uploads, and access live in the Django API.
-   This file only handles:
-     - Session (reads the user object stored by NotatiAPI.login)
-     - Bag (localStorage only, cleared after checkout)
-     - canReadNote (uses note.hasAccess from API)
+   Auth and access live in the Django API.
+   Bag is server-synced (BagItem table) with a localStorage
+   cache so the UI is instant while the request is in flight.
    ============================================================ */
 
 (function () {
@@ -21,48 +19,82 @@
   }
 
   /* ── Session (delegated to NotatiAPI) ─────────────────────── */
-  function getSession()       { return NotatiAPI.getStoredUser(); }
-  function clearSession()     { NotatiAPI.logout(); }
+  function getSession()   { return NotatiAPI.getStoredUser(); }
+  function clearSession() { NotatiAPI.logout(); }
 
   /* ── Access check ─────────────────────────────────────────── */
   function canReadNote(userId, note) {
     if (!note) return false;
-    // API sets hasAccess=true for free notes and admin-granted paid notes
     if (note.hasAccess !== undefined) return !!note.hasAccess;
-    // Fallback for any legacy note object without hasAccess
     return Number(note.price || 0) === 0;
   }
 
   /* ── Bag ──────────────────────────────────────────────────── */
-  function getBag()     { return read(BAG, []); }
-  function clearBag()   { write(BAG, []); return []; }
-  function getBagTotal(){ return getBag().reduce((s, i) => s + Number(i.price), 0); }
+  function getBag()      { return read(BAG, []); }
+  function getBagTotal() { return getBag().reduce((s, i) => s + Number(i.price), 0); }
 
-  function addToBag(note) {
-    const bag = getBag();
-    if (bag.find(i => i.id === note.id)) return bag;
-    const item = {
+  function _itemFromNote(note) {
+    return {
       id:            note.id,
+      _numId:        note._numId,
       title:         note.title || note.chapterTitle,
       courseName:    note.courseName,
       chapterNumber: note.chapterNumber,
       chapterTitle:  note.chapterTitle,
       price:         Number(note.price),
     };
-    const updated = [...bag, item];
+  }
+
+  /* Optimistic add: update cache instantly, sync to server */
+  function addToBag(note) {
+    const bag = getBag();
+    if (bag.find(i => i.id === note.id)) return bag;
+    const updated = [...bag, _itemFromNote(note)];
     write(BAG, updated);
+    if (note._numId) NotatiAPI.addBagItem(note._numId).catch(() => {});
     return updated;
   }
 
+  /* Optimistic remove */
   function removeFromBag(noteId) {
-    const updated = getBag().filter(i => i.id !== noteId);
+    const bag = getBag();
+    const item = bag.find(i => i.id === noteId);
+    const updated = bag.filter(i => i.id !== noteId);
     write(BAG, updated);
+    if (item && item._numId) NotatiAPI.removeBagItem(item._numId).catch(() => {});
     return updated;
+  }
+
+  /* Clear both locally and on server */
+  function clearBag() {
+    write(BAG, []);
+    NotatiAPI.clearBag().catch(() => {});
+    return [];
+  }
+
+  /* Called on login: fetch server bag and merge with any local items */
+  async function syncBagFromServer() {
+    try {
+      const serverItems = await NotatiAPI.getBag();
+      const local = getBag();
+      // Merge: server is source of truth, add any local-only items to server
+      const serverIds = new Set(serverItems.map(i => i.id));
+      const localOnly = local.filter(i => !serverIds.has(i.id));
+      for (const item of localOnly) {
+        if (item._numId) await NotatiAPI.addBagItem(item._numId).catch(() => {});
+      }
+      const merged = [...serverItems, ...localOnly];
+      write(BAG, merged);
+      return merged;
+    } catch {
+      return getBag();
+    }
   }
 
   window.NotatiStore = {
     getSession, clearSession,
     canReadNote,
     getBag, addToBag, removeFromBag, clearBag, getBagTotal,
+    syncBagFromServer,
   };
 })();

@@ -1,6 +1,6 @@
 import re
 from rest_framework import serializers
-from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial
+from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial, BagItem
 
 
 def _signed_url(url):
@@ -250,3 +250,16 @@ class TestimonialAdminSerializer(TestimonialSerializer):
     class Meta(TestimonialSerializer.Meta):
         fields = TestimonialSerializer.Meta.fields + ['user_email']
         read_only_fields = ['id', 'user_name', 'user_email', 'user_college', 'created_at']
+
+
+class BagItemSerializer(serializers.ModelSerializer):
+    note_id       = serializers.IntegerField(source='note.id', read_only=True)
+    title         = serializers.CharField(source='note.chapter_title', read_only=True)
+    course_name   = serializers.CharField(source='note.course.name', read_only=True)
+    chapter_number = serializers.IntegerField(source='note.chapter_number', read_only=True)
+    price         = serializers.DecimalField(source='note.price', max_digits=6, decimal_places=3, read_only=True)
+
+    class Meta:
+        model  = BagItem
+        fields = ['id', 'note_id', 'title', 'course_name', 'chapter_number', 'price', 'added_at']
+        read_only_fields = ['id', 'added_at']

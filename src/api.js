@@ -355,6 +355,23 @@
       return req('POST', '/admin/send-email/', { user_id: userId, subject, message });
     },
 
+    /* Bag (server-synced) */
+    async getBag() {
+      const data = await req('GET', '/bag/');
+      return (Array.isArray(data) ? data : (data.results || [])).map(i => ({
+        id:            String(i.note_id),
+        _numId:        i.note_id,
+        title:         i.title,
+        chapterTitle:  i.title,
+        courseName:    i.course_name,
+        chapterNumber: String(i.chapter_number),
+        price:         parseFloat(i.price),
+      }));
+    },
+    async addBagItem(noteNumId)  { return req('POST',   '/bag/',       { note_id: noteNumId }); },
+    async removeBagItem(noteNumId) { return req('DELETE', '/bag/',     { note_id: noteNumId }); },
+    async clearBag()             { return req('DELETE', '/bag/clear/'); },
+
   };
 
   async function _proxyFetch(url) {

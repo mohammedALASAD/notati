@@ -47,6 +47,10 @@ urlpatterns = [
     path('admin/chapter-rankings/', views.admin_chapter_rankings,  name='chapter-rankings'),
     path('admin/sales/',            views.admin_sales,             name='admin-sales'),
 
+    # Bag
+    path('bag/',       views.BagView.as_view(),      name='bag'),
+    path('bag/clear/', views.BagClearView.as_view(), name='bag-clear'),
+
     # Testimonials
     path('testimonials/',              views.TestimonialPublicView.as_view(),       name='testimonial-list'),
     path('testimonials/submit/',       views.TestimonialCreateView.as_view(),       name='testimonial-submit'),

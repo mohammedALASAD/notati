@@ -10,13 +10,14 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 def health(request):
     return JsonResponse({'status': 'ok'})
-from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial
+from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial, BagItem
 from .serializers import (
     RegisterSerializer, UserSerializer, UserAdminSerializer,
     CourseSerializer, NoteSerializer, NoteAdminSerializer,
     NoteFileSerializer, UploadFileSerializer,
     AccessSerializer, UploadSerializer, UploadAdminSerializer,
     TestimonialSerializer, TestimonialAdminSerializer,
+    BagItemSerializer,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
 
@@ -436,6 +437,39 @@ class TestimonialAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class   = TestimonialAdminSerializer
     permission_classes = [IsAdmin]
     queryset           = Testimonial.objects.all()
+
+
+# ── Bag ───────────────────────────────────────────────────────────────────────
+
+class BagView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        items = BagItem.objects.filter(user=request.user).select_related('note__course')
+        return Response(BagItemSerializer(items, many=True).data)
+
+    def post(self, request):
+        note_id = request.data.get('note_id')
+        if not note_id:
+            return Response({'detail': 'note_id required.'}, status=status.HTTP_400_BAD_REQUEST)
+        note = get_object_or_404(Note, pk=note_id)
+        item, _ = BagItem.objects.get_or_create(user=request.user, note=note)
+        return Response(BagItemSerializer(item).data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request):
+        note_id = request.data.get('note_id')
+        if not note_id:
+            return Response({'detail': 'note_id required.'}, status=status.HTTP_400_BAD_REQUEST)
+        BagItem.objects.filter(user=request.user, note_id=note_id).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class BagClearView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request):
+        BagItem.objects.filter(user=request.user).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ── Admin: Send support email ─────────────────────────────────────────────────
