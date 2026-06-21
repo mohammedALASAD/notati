@@ -1199,10 +1199,6 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
                                 onClick={(e) => { e.stopPropagation(); _downloadNote(n, onOpenNote, toast); }}>
                           <Icons.Download size={14}/>
                         </button>
-                        <button className="btn btn-ghost btn-sm"
-                                onClick={(e) => { e.stopPropagation(); _previewNote(n, onOpenNote, toast); }}>
-                          Quick look <Icons.ArrowRight size={13}/>
-                        </button>
                         <button className="btn btn-soft btn-sm"
                                 onClick={(e) => { e.stopPropagation(); onOpenNote(n); }}>
                           <Icons.Eye size={13}/> Preview
@@ -1456,6 +1452,12 @@ function NoteReader({ note, open, onClose }) {
               <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
                 {nf.label || nf.filename || `File ${i + 1}`}
               </span>
+              <button className="btn btn-ghost btn-sm"
+                      onClick={() => nf.id
+                        ? NotatiAPI.previewNoteFileById(nf.id).catch(e => toast.error('Preview failed', e.message))
+                        : NotatiAPI.previewNoteFile(note._numId).catch(e => toast.error('Preview failed', e.message))}>
+                Quick look <Icons.ArrowRight size={13}/>
+              </button>
               <button className="btn btn-soft btn-sm" onClick={() => downloadFile(nf)}>
                 <Icons.Download size={13}/> Download
               </button>
@@ -1643,9 +1645,6 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                           <button className="btn btn-ghost btn-sm" title="Download PDF"
                                   onClick={() => handleDownload(n)}>
                             <Icons.Download size={14}/>
-                          </button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => handleQuickLook(n)}>
-                            Quick look <Icons.ArrowRight size={13}/>
                           </button>
                           <button className="btn btn-soft btn-sm" onClick={() => setReadingNote(n)}>
                             <Icons.Eye size={13}/> Preview
