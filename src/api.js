@@ -243,6 +243,16 @@
     async previewNoteFileById(id) {
       await _proxyOpen(BASE + `/note-files/${id}/download/`);
     },
+    /* Public sample preview (first pages, watermarked) — no auth needed, so we
+       can open the URL directly in a new tab (no popup-blocker issues). */
+    openSample(note) {
+      const files = (note && note.files) || [];
+      const f = files[0];
+      const url = (f && f.id)
+        ? BASE + `/note-files/${f.id}/sample/`
+        : BASE + `/notes/${note._numId}/sample/`;
+      window.open(url, '_blank');
+    },
     async previewNoteFilesById(ids) {
       // Open all tabs synchronously (still in user-gesture frame) before any await
       const wins = ids.map(() => window.open('about:blank', '_blank'));

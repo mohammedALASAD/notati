@@ -1189,6 +1189,12 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
                         <Icons.Bag size={12}/> BD {Number(n.price).toFixed(3)}
                       </button>
                     )}
+                    {!canRead && !isFree && (
+                      <button className="btn btn-ghost btn-sm" title="Preview the first pages"
+                              onClick={(e) => { e.stopPropagation(); NotatiAPI.openSample(n); }}>
+                        <Icons.Eye size={13}/> Sample
+                      </button>
+                    )}
                     {canRead && (
                       <>
                         <button className="btn btn-ghost btn-sm" title="Download"
@@ -1641,6 +1647,10 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                           <span className="tag tag-bark" style={{ fontWeight: 700 }}>
                             BD {Number(n.price).toFixed(3)}
                           </span>
+                          <button className="btn btn-ghost btn-sm" title="Preview the first pages"
+                                  onClick={() => NotatiAPI.openSample(n)}>
+                            <Icons.Eye size={13}/> Sample
+                          </button>
                           <button className="btn btn-primary btn-sm" onClick={onSignup}>
                             <Icons.Lock size={12}/> Create account
                           </button>
