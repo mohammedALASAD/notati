@@ -42,7 +42,6 @@ function _buildNoteFilename(nf) {
 function _previewNote(n, openReader, toast) {
   const files = n.files || [];
   if (files.length === 0) { toast.info('No file', 'No PDF attached yet.'); return; }
-  if (files.length > 1) { openReader(n); return; }
   const f = files[0];
   if (f.id) NotatiAPI.previewNoteFileById(f.id).catch(e => toast.error('Preview failed', e.message));
   else NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message));

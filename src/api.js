@@ -369,9 +369,16 @@
   }
 
   async function _proxyOpen(url) {
+    // Open the tab synchronously (inside the user-gesture frame) so browsers
+    // don't block it. Then navigate it to the blob URL once the fetch is done.
+    const win = window.open('about:blank', '_blank');
     const blob = await _proxyFetch(url);
     const objectUrl = URL.createObjectURL(blob);
-    window.open(objectUrl, '_blank');
+    if (win) {
+      win.location.href = objectUrl;
+    } else {
+      window.open(objectUrl, '_blank');
+    }
     setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
   }
 
