@@ -43,5 +43,24 @@
   <script type="text/babel" src="src/admin.jsx"></script>
   <script type="text/babel" src="src/customer.jsx"></script>
   <script type="text/babel" src="src/app.jsx"></script>
+
+  <!-- Safety net: if the app never mounts (e.g. a script fails to load/parse
+       on an old browser), show a friendly message instead of a blank page. -->
+  <script>
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        var root = document.getElementById('root');
+        if (root && root.childElementCount === 0) {
+          root.innerHTML =
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,sans-serif;text-align:center">' +
+            '<div style="max-width:420px"><div style="font-size:40px">⚠️</div>' +
+            '<h2 style="margin:8px 0">Couldn\'t load the app</h2>' +
+            '<p style="color:#666;font-size:14px;margin:0 0 20px">Please update your browser or reload the page. If this keeps happening, contact support.</p>' +
+            '<button onclick="location.reload()" style="padding:10px 22px;border-radius:10px;border:0;background:#2f5d50;color:#fff;font-size:14px;cursor:pointer">Reload</button>' +
+            '</div></div>';
+        }
+      }, 8000);
+    });
+  </script>
 </body>
 </html>

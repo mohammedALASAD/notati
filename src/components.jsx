@@ -406,12 +406,52 @@ function PageLoader({ rows = 4, variant = 'rows' }) {
 }
 
 /* ============================================================
+   Error boundary — stops one broken component from white-screening
+   the whole app. Shows a fallback card with a reload button and
+   reports to Sentry if it's configured.
+   ============================================================ */
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[notati] render error:', error, info);
+    if (window.Sentry && window.Sentry.captureException) {
+      try { window.Sentry.captureException(error); } catch (e) {}
+    }
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', padding: 24 }}>
+        <div style={{ maxWidth: 420, textAlign: 'center', background: 'var(--bg-card, #fff)',
+                      border: '1px solid var(--border, #e5e3df)', borderRadius: 16, padding: 32 }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+          <h2 style={{ margin: '0 0 8px' }}>Something went wrong</h2>
+          <p style={{ margin: '0 0 20px', color: 'var(--fg-3, #6b6b6b)', fontSize: 14 }}>
+            The page hit an unexpected error. Reloading usually fixes it.
+          </p>
+          <button className="btn btn-primary" onClick={() => window.location.reload()}>
+            Reload page
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
+/* ============================================================
    Export to window so other Babel scripts can use these
    ============================================================ */
 Object.assign(window, {
   Icons, I,
   ToastProvider, useToast, ToastContext,
   Modal, EmptyState, FileTypeChip, StatusBadge, Avatar,
-  Sidebar, Topbar, Stat, PageLoader,
+  Sidebar, Topbar, Stat, PageLoader, ErrorBoundary,
   fmtDate, fmtRelative, fmtSize
 });

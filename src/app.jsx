@@ -272,7 +272,9 @@ function App() {
 /* ---------- Boot ---------- */
 const rootEl = document.getElementById('root');
 ReactDOM.createRoot(rootEl).render(
-  <ToastProvider>
-    <App/>
-  </ToastProvider>
+  <ErrorBoundary>
+    <ToastProvider>
+      <App/>
+    </ToastProvider>
+  </ErrorBoundary>
 );
