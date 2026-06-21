@@ -25,34 +25,6 @@ def _signed_url(url):
         return url
 
 
-def _preview_url(url):
-    """Return a time-limited Cloudinary private download URL for inline viewing."""
-    if not url or 'res.cloudinary.com' not in url:
-        return url
-    try:
-        import cloudinary
-        import cloudinary.utils
-        from django.conf import settings as _s
-        cs = getattr(_s, 'CLOUDINARY_STORAGE', {})
-        if cs:
-            cloudinary.config(
-                cloud_name=cs.get('CLOUD_NAME', ''),
-                api_key=cs.get('API_KEY', ''),
-                api_secret=cs.get('API_SECRET', ''),
-                secure=True,
-            )
-        match = re.search(r'/raw/upload/(?:v\d+/)?(.+)$', url)
-        if not match:
-            return url
-        public_id = match.group(1)
-        return cloudinary.utils.private_download_url(
-            public_id, '',
-            resource_type='raw',
-            type='upload',
-            expires_at=int(time.time()) + 600,
-        )
-    except Exception:
-        return url
 
 
 class RegisterSerializer(serializers.ModelSerializer):

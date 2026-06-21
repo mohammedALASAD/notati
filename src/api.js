@@ -241,17 +241,7 @@
       await _proxyDownload(BASE + `/note-files/${id}/download/`, filename);
     },
     async previewNoteFileById(id) {
-      // Open tab synchronously, then get a direct Cloudinary signed URL —
-      // no file proxy, so the PDF loads straight from CDN.
-      const win = window.open('about:blank', '_blank');
-      try {
-        const data = await req('GET', `/note-files/${id}/preview-url/`);
-        if (win) win.location.href = data.url;
-        else window.open(data.url, '_blank');
-      } catch {
-        if (win) win.close();
-        await _proxyOpen(BASE + `/note-files/${id}/download/`);
-      }
+      await _proxyOpen(BASE + `/note-files/${id}/download/`);
     },
     async previewNoteFilesById(ids) {
       // Open all tabs synchronously (still in user-gesture frame) before any await
