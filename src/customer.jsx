@@ -1443,24 +1443,22 @@ function NoteReader({ note, open, onClose }) {
             Files ({files.length})
           </div>
           {files.map((nf, i) => (
-            <div key={nf.id || i} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '8px 12px', marginBottom: 6, borderRadius: 'var(--r-5)',
-              border: '1px solid var(--border-1)', background: 'var(--bg-section)'
-            }}>
+            <div key={nf.id || i} className="note-file-row">
               <FileTypeChip type="pdf"/>
-              <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
+              <span className="note-file-name">
                 {nf.label || nf.filename || `File ${i + 1}`}
               </span>
-              <button className="btn btn-ghost btn-sm"
-                      onClick={() => nf.id
-                        ? NotatiAPI.previewNoteFileById(nf.id).catch(e => toast.error('Preview failed', e.message))
-                        : NotatiAPI.previewNoteFile(note._numId).catch(e => toast.error('Preview failed', e.message))}>
-                Quick look <Icons.ArrowRight size={13}/>
-              </button>
-              <button className="btn btn-soft btn-sm" onClick={() => downloadFile(nf)}>
-                <Icons.Download size={13}/> Download
-              </button>
+              <div className="note-file-actions">
+                <button className="btn btn-ghost btn-sm"
+                        onClick={() => nf.id
+                          ? NotatiAPI.previewNoteFileById(nf.id).catch(e => toast.error('Preview failed', e.message))
+                          : NotatiAPI.previewNoteFile(note._numId).catch(e => toast.error('Preview failed', e.message))}>
+                  Quick look <Icons.ArrowRight size={13}/>
+                </button>
+                <button className="btn btn-soft btn-sm" onClick={() => downloadFile(nf)}>
+                  <Icons.Download size={13}/> Download
+                </button>
+              </div>
             </div>
           ))}
         </div>
