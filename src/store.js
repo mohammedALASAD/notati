@@ -86,7 +86,7 @@
       const merged = [...serverItems, ...localOnly];
       write(BAG, merged);
       return merged;
-    } catch {
+    } catch(e) {
       return getBag();
     }
   }

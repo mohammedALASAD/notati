@@ -606,7 +606,7 @@ function TestimonialForm({ user }) {
       setText('');
       setCourse('');
       toast.success('Review submitted', 'Thanks! It will appear once approved.');
-    } catch {
+    } catch(e) {
       toast.error('Could not submit', 'Please try again.');
     } finally {
       setSending(false);

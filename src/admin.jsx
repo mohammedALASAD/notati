@@ -1429,7 +1429,7 @@ function TestimonialsManager() {
       await NotatiAPI.updateTestimonial(item.id, { approved: true });
       toast.success('Approved', item.user_name);
       load();
-    } catch { toast.error('Failed', 'Could not approve.'); }
+    } catch(e) { toast.error('Failed', 'Could not approve.'); }
   }
 
   async function reject(item) {
@@ -1437,7 +1437,7 @@ function TestimonialsManager() {
       await NotatiAPI.deleteTestimonial(item.id);
       toast.success('Removed', item.user_name);
       load();
-    } catch { toast.error('Failed', 'Could not remove.'); }
+    } catch(e) { toast.error('Failed', 'Could not remove.'); }
   }
 
   const pending  = items.filter(i => !i.approved);
