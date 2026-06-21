@@ -799,6 +799,21 @@ input, textarea, select { font-family: inherit; }
   background: var(--notati-cream);
 }
 
+/* ── Chapter list rows (Notes Library + Landing Page) ── */
+.chapter-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; border-radius: var(--r-5);
+  border: 1px solid var(--border-2); background: var(--bg-card);
+  margin-bottom: 0;
+}
+.chapter-bubble {
+  width: 42px; height: 42px; border-radius: var(--r-3); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700;
+}
+.chapter-row-meta { flex: 1; min-width: 0; }
+.chapter-row-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
 /* NoteReader per-file rows */
 .note-file-row {
   display: flex; align-items: center; gap: 10px;
@@ -1125,7 +1140,7 @@ input, textarea, select { font-family: inherit; }
   .filter-select { width: 100%; }
   .search-mini { min-width: 0 !important; width: 100%; }
 
-  /* Modal mobile */
+  /* Modal mobile — slide up from bottom */
   .modal-bg { padding: 0; align-items: flex-end; }
   .modal { border-radius: var(--r-5) var(--r-5) 0 0; max-height: 92vh; }
   .modal-head { padding: 18px 18px 10px; }
@@ -1140,6 +1155,15 @@ input, textarea, select { font-family: inherit; }
   /* PDF viewer — reduce padding on small screens */
   .pdfview { padding: 14px; }
   .pdfview .page { padding: 24px 20px; }
+
+  /* Chapter list rows — wrap actions to second line */
+  .chapter-row { flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+  .chapter-row-meta { flex: 1; }
+  .chapter-row-actions {
+    flex: 0 0 100%;
+    padding-left: 52px; /* align with title: 42px bubble + 10px gap */
+    flex-wrap: wrap; gap: 8px;
+  }
 }
 
 @keyframes spin {

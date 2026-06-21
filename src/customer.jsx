@@ -1147,22 +1147,18 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
               const isFree  = !n.price || Number(n.price) === 0;
               const inBag   = bag && bag.some(i => i.id === n.id);
               return (
-                <div key={n.id}
-                     style={{ cursor: canRead ? 'pointer' : 'default', padding: '14px 16px',
-                              borderRadius: 'var(--r-5)', border: '1px solid var(--border-2)',
-                              background: 'var(--bg-card)', display: 'flex', alignItems: 'center', gap: 14 }}
+                <div key={n.id} className="chapter-row"
+                     style={{ cursor: canRead ? 'pointer' : 'default' }}
                      onClick={canRead ? () => onOpenNote(n) : undefined}>
 
                   {/* Chapter number bubble */}
-                  <div style={{ width: 42, height: 42, borderRadius: 'var(--r-3)', flexShrink: 0,
-                                background: isFree ? 'var(--notati-sage)' : canRead ? 'var(--notati-walnut)' : inBag ? 'var(--notati-forest)' : 'var(--bg-card-2)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: (isFree || canRead || inBag) ? 'var(--notati-paper)' : 'var(--fg-3)',
-                                fontSize: 16, fontWeight: 700 }}>
+                  <div className="chapter-bubble"
+                       style={{ background: isFree ? 'var(--notati-sage)' : canRead ? 'var(--notati-walnut)' : inBag ? 'var(--notati-forest)' : 'var(--bg-card-2)',
+                                color: (isFree || canRead || inBag) ? 'var(--notati-paper)' : 'var(--fg-3)' }}>
                     {n.chapterNumber}
                   </div>
 
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="chapter-row-meta">
                     <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 2 }}>
                       Ch.{n.chapterNumber}: {n.chapterTitle}
                     </div>
@@ -1171,7 +1167,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <div className="chapter-row-actions">
                     {isFree ? (
                       <span style={{ background: 'var(--notati-sage)', color: 'var(--notati-paper)',
                                      font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
@@ -1612,21 +1608,13 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
               ) : courseChapters.map(n => {
                 const isFree = !n.price || Number(n.price) === 0;
                 return (
-                  <div key={n.id} style={{
-                    padding: '14px 16px', borderRadius: 'var(--r-5)',
-                    border: '1px solid var(--border-2)', background: 'var(--bg-card)',
-                    display: 'flex', alignItems: 'center', gap: 14
-                  }}>
-                    <div style={{
-                      width: 42, height: 42, borderRadius: 'var(--r-3)', flexShrink: 0,
-                      background: isFree ? 'var(--notati-sage)' : 'var(--bg-section)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      color: isFree ? 'var(--notati-paper)' : 'var(--fg-3)',
-                      fontSize: 16, fontWeight: 700
-                    }}>
+                  <div key={n.id} className="chapter-row">
+                    <div className="chapter-bubble"
+                         style={{ background: isFree ? 'var(--notati-sage)' : 'var(--bg-section)',
+                                  color: isFree ? 'var(--notati-paper)' : 'var(--fg-3)' }}>
                       {n.chapterNumber}
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="chapter-row-meta">
                       <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 2 }}>
                         Ch.{n.chapterNumber}: {n.chapterTitle}
                       </div>
@@ -1634,7 +1622,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                         {n.title}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    <div className="chapter-row-actions">
                       {isFree ? (
                         <>
                           <span style={{ background: 'var(--notati-sage)', color: 'var(--notati-paper)',
