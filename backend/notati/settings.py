@@ -66,7 +66,10 @@ DATABASES = {
 AUTH_USER_MODEL = 'api.User'
 
 AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 6}},
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 8}},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 LANGUAGE_CODE = 'en-us'
@@ -106,6 +109,15 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
     ),
+    # Only views that set `throttle_scope` are throttled (login, register).
+    # General API traffic is unaffected.
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.ScopedRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'login':    '10/min',
+        'register': '20/hour',
+    },
 }
 
 # ── JWT ────────────────────────────────────────────────────────────────────────

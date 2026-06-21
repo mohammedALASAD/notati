@@ -6,8 +6,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 def health(request):
     return JsonResponse({'status': 'ok'})
 from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial, BagItem
@@ -68,10 +70,16 @@ def _proxy_file_response(file_field):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
+class ThrottledLoginView(TokenObtainPairView):
+    """Login with per-IP rate limiting to slow brute-force / credential stuffing."""
+    throttle_scope = 'login'
+
+
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
+    throttle_scope = 'register'
 
 
 class MeView(generics.RetrieveUpdateAPIView):
@@ -182,10 +190,16 @@ class NoteFileListCreateView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_queryset(self):
+        user = self.request.user
         qs = NoteFile.objects.select_related('note__course').all()
         note_id = self.request.query_params.get('note')
         if note_id:
             qs = qs.filter(note_id=note_id)
+        # Students only see files for free notes or notes they've been granted.
+        if not (user.is_authenticated and user.role == 'admin'):
+            qs = qs.filter(
+                Q(note__price=0) | Q(note__access_grants__user=user)
+            ).distinct()
         return qs
 
 

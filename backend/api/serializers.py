@@ -1,5 +1,7 @@
 import re
 from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import User, Course, Note, NoteFile, Access, Upload, UploadFile, Testimonial, BagItem
 
 
@@ -28,11 +30,19 @@ def _signed_url(url):
 
 
 class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = User
         fields = ['email', 'name', 'password', 'college']
+
+    def validate_password(self, value):
+        # Run Django's configured password validators (length, common, numeric, …)
+        try:
+            validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
 
     def create(self, validated_data):
         return User.objects.create_user(**validated_data)
@@ -127,6 +137,17 @@ class NoteSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at']
 
+    def _can_access(self, obj):
+        """Whether the requesting user may receive direct file URLs for this note."""
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return obj.is_free
+        if request.user.role == 'admin':
+            return True
+        if obj.is_free:
+            return True
+        return obj.access_grants.filter(user=request.user).exists()
+
     def get_has_access(self, obj):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
@@ -136,19 +157,23 @@ class NoteSerializer(serializers.ModelSerializer):
         return obj.access_grants.filter(user=request.user).exists()
 
     def get_files(self, obj):
+        # Only hand out the direct (signed) download URL to users who have access.
+        # Everyone still gets id/label/filename so the UI can list the contents;
+        # the actual bytes are fetched through the access-checked download proxy.
+        can = self._can_access(obj)
         result = []
         for nf in obj.files.all():
             result.append({
                 'id': nf.id,
                 'label': nf.label or '',
-                'file_url': _file_url(nf.file, self.context.get('request')),
+                'file_url': _file_url(nf.file, self.context.get('request')) if can else None,
                 'filename': nf.file.name.split('/')[-1] if nf.file else '',
             })
         if not result and obj.pdf_file:
             result.append({
                 'id': None,
                 'label': '',
-                'file_url': _signed_url(obj.pdf_file.url),
+                'file_url': _signed_url(obj.pdf_file.url) if can else None,
                 'is_legacy': True,
             })
         return result
@@ -156,7 +181,7 @@ class NoteSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         if data.get('pdf_file'):
-            data['pdf_file'] = _signed_url(data['pdf_file'])
+            data['pdf_file'] = _signed_url(data['pdf_file']) if self._can_access(instance) else None
         return data
 
 
