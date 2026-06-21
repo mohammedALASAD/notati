@@ -68,35 +68,23 @@ def _fetch_file_bytes(file_field):
     return file_field.read(), 'application/octet-stream'
 
 
-def _watermark_email(request):
-    """Email to stamp on a download, or None. Admins get clean (un-stamped) files."""
-    user = getattr(request, 'user', None)
-    if user and user.is_authenticated and user.role != 'admin':
-        return user.email
-    return None
-
-
-def _proxy_file_response(file_field, watermark_email=None):
-    """Return a file as a download response, optionally stamping each PDF page
-    with the buyer's email for traceability."""
+def _proxy_file_response(file_field):
+    """Return a file as a download response."""
     content, content_type = _fetch_file_bytes(file_field)
     filename = file_field.name.split('/')[-1]
-    if watermark_email and pdfutils.is_pdf(content):
-        content = pdfutils.watermark_for_user(content, watermark_email)
-        content_type = 'application/pdf'
     response = HttpResponse(content, content_type=content_type)
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
 
-def _sample_response(file_field, pages=2):
-    """Return the first `pages` pages of a PDF, inline, stamped SAMPLE.
-    Non-PDF files are refused (we can't safely truncate them)."""
+def _sample_response(file_field):
+    """Return a teaser preview (first pages crisp, rest blurred), inline.
+    Non-PDF files are refused (we can't render/blur them)."""
     content, _ = _fetch_file_bytes(file_field)
     if not pdfutils.is_pdf(content):
         return Response({'detail': 'Preview not available for this file type.'},
                         status=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
-    sample = pdfutils.sample_pdf(content, pages=pages)
+    sample = pdfutils.sample_pdf(content)
     response = HttpResponse(sample, content_type='application/pdf')
     response['Content-Disposition'] = 'inline; filename="sample.pdf"'
     return response
@@ -193,7 +181,7 @@ class NoteDownloadView(APIView):
         if not note.pdf_file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            return _proxy_file_response(note.pdf_file, watermark_email=_watermark_email(request))
+            return _proxy_file_response(note.pdf_file)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -258,7 +246,7 @@ class NoteFileDownloadView(APIView):
         if not nf.file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            return _proxy_file_response(nf.file, watermark_email=_watermark_email(request))
+            return _proxy_file_response(nf.file)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

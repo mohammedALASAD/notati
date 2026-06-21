@@ -1,102 +1,75 @@
-"""PDF watermarking and sampling helpers.
+"""PDF sampling helpers.
 
-Watermarking is applied on-the-fly at download time so we never store
-per-buyer copies. All functions operate on raw PDF bytes.
-
-Design rule: watermarking is best-effort and *fails open* for full
-downloads (a broken stamp must never block a paid download). Sampling,
-however, truncates BEFORE stamping so a stamping failure can never leak
-the full document.
+Builds a teaser preview of a paid note: the first couple of pages are kept
+crisp, and the next few pages are rendered to images, blurred, and stamped
+'Purchase to unlock'. The real content of the hidden pages is never placed in
+the output (blurred pages are raster images), and a multi-page note never shows
+all of its pages — so a sample can't leak the document. Operates on raw bytes.
 """
 from io import BytesIO
 
+import pypdfium2 as pdfium
+from PIL import ImageFilter
 from pypdf import PdfReader, PdfWriter
-from reportlab.lib.colors import Color
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
+
+CLEAR_PAGES = 2     # opening pages shown in full
+BLUR_PAGES  = 6     # further pages shown blurred
+BLUR_RADIUS = 8
 
 
 def is_pdf(content):
     return bool(content) and content[:4] == b'%PDF'
 
 
-def _overlay_for_page(width, height, diagonal_text, footer_text):
-    """Build a single-page overlay PDF (as a pypdf page) matching the given size."""
-    buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=(width, height))
+def _blurred_page(pdfium_page, width_pt, height_pt):
+    """Render a page, blur it, and return a one-page pypdf page (sized to the
+    original) with a 'Purchase to unlock' overlay."""
+    bitmap = pdfium_page.render(scale=1.0)
+    img = bitmap.to_pil().convert('RGB').filter(ImageFilter.GaussianBlur(BLUR_RADIUS))
+    img_buf = BytesIO()
+    img.save(img_buf, format='JPEG', quality=50)
+    img_buf.seek(0)
 
-    if diagonal_text:
-        c.saveState()
-        c.translate(width / 2.0, height / 2.0)
-        c.rotate(45)
-        c.setFont('Helvetica-Bold', 26)
-        c.setFillColor(Color(0.5, 0.5, 0.5, alpha=0.13))
-        span = int(max(width, height))
-        for y in range(-span, span, 90):
-            c.drawCentredString(0, y, diagonal_text)
-        c.restoreState()
-
-    if footer_text:
-        c.setFont('Helvetica', 8)
-        c.setFillColor(Color(0.35, 0.35, 0.35, alpha=0.7))
-        c.drawCentredString(width / 2.0, 12, footer_text)
-
+    out = BytesIO()
+    c = canvas.Canvas(out, pagesize=(width_pt, height_pt))
+    c.drawImage(ImageReader(img_buf), 0, 0, width=width_pt, height=height_pt)
+    c.setFont('Helvetica-Bold', 20)
+    c.setFillColorRGB(0.15, 0.15, 0.15)
+    c.drawCentredString(width_pt / 2.0, height_pt / 2.0, 'Purchase to unlock')
     c.save()
-    buf.seek(0)
-    return PdfReader(buf).pages[0]
+    out.seek(0)
+    return PdfReader(out).pages[0]
 
 
-def _stamp_pages(content, diagonal_text='', footer_text=''):
-    """Overlay watermark + footer on every page. Returns new bytes. May raise."""
+def sample_pdf(content):
+    """Return a teaser PDF: first CLEAR_PAGES crisp, then up to BLUR_PAGES
+    blurred. Never shows every page of a multi-page note. May raise — the caller
+    returns an error rather than ever serving the full document."""
     reader = PdfReader(BytesIO(content))
+    n = len(reader.pages)
+    # Never show every page in full — for short notes hide at least the last page.
+    clear = min(CLEAR_PAGES, max(1, n - 1))
+    last = min(n, clear + BLUR_PAGES)
+
+    pdf = pdfium.PdfDocument(content)
     writer = PdfWriter()
-    for page in reader.pages:
-        overlay = _overlay_for_page(
-            float(page.mediabox.width), float(page.mediabox.height),
-            diagonal_text, footer_text,
-        )
-        page.merge_page(overlay)
-        writer.add_page(page)
+    try:
+        for i in range(last):
+            if i < clear:
+                writer.add_page(reader.pages[i])
+            else:
+                w = float(reader.pages[i].mediabox.width)
+                h = float(reader.pages[i].mediabox.height)
+                try:
+                    writer.add_page(_blurred_page(pdf[i], w, h))
+                except Exception:
+                    # Skip a page we couldn't render rather than risk leaking it.
+                    continue
+    finally:
+        pdf.close()
+
     out = BytesIO()
     writer.write(out)
     return out.getvalue()
-
-
-def truncate_pdf(content, max_pages):
-    """Return a PDF containing only the first `max_pages` pages. May raise."""
-    reader = PdfReader(BytesIO(content))
-    writer = PdfWriter()
-    for page in reader.pages[:max_pages]:
-        writer.add_page(page)
-    out = BytesIO()
-    writer.write(out)
-    return out.getvalue()
-
-
-def watermark_for_user(content, email):
-    """Full document stamped with the buyer's email. Fails open to the original."""
-    if not is_pdf(content):
-        return content
-    try:
-        return _stamp_pages(
-            content,
-            diagonal_text=email,
-            footer_text=f'Licensed to {email}  ·  Notati',
-        )
-    except Exception:
-        return content
-
-
-def sample_pdf(content, pages=2):
-    """First `pages` pages, stamped SAMPLE. Truncates first so a stamping
-    failure can never leak the full document. Raises only if truncation fails."""
-    if not is_pdf(content):
-        return content
-    truncated = truncate_pdf(content, pages)
-    try:
-        return _stamp_pages(
-            truncated,
-            diagonal_text='SAMPLE',
-            footer_text='Sample preview  ·  Purchase the full notes on Notati',
-        )
-    except Exception:
-        return truncated

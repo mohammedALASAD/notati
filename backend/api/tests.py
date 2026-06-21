@@ -8,7 +8,7 @@ from reportlab.pdfgen import canvas
 from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from . import pdfutils
-from .models import User, Course, Note, NoteFile, Access, BagItem, Order
+from .models import User, Course, Note, NoteFile, Access, BagItem
 from .serializers import NoteSerializer, RegisterSerializer
 
 
@@ -100,22 +100,32 @@ class PasswordPolicyTests(TestCase):
         self.assertTrue(s.is_valid(), s.errors)
 
 
-class PdfUtilsTests(TestCase):
-    def test_watermark_preserves_pages_and_stamps_email(self):
-        out = pdfutils.watermark_for_user(_make_pdf(3), 'buyer@x.com')
-        self.assertEqual(len(PdfReader(BytesIO(out)).pages), 3)
-        self.assertIn('buyer@x.com', _page_text(out))
+class PdfSampleTests(TestCase):
+    def test_sample_keeps_clear_pages_and_blurs_the_rest(self):
+        out = pdfutils.sample_pdf(_make_pdf(6))
+        text = _page_text(out)
+        # 2 clear + up to 6 blurred → all 6 pages present
+        self.assertEqual(len(PdfReader(BytesIO(out)).pages), 6)
+        # opening pages stay readable
+        self.assertIn('Page 1 body text', text)
+        # a hidden page's real text is gone (it's now a blurred image)
+        self.assertNotIn('Page 4 body text', text)
+        # blurred pages carry the upsell
+        self.assertIn('Purchase to unlock', text)
 
-    def test_sample_truncates_and_stamps(self):
-        out = pdfutils.sample_pdf(_make_pdf(10), pages=2)
-        self.assertEqual(len(PdfReader(BytesIO(out)).pages), 2)
-        self.assertIn('SAMPLE', _page_text(out))
+    def test_sample_caps_total_pages(self):
+        # 2 clear + 6 blurred max = 8, even for a long note
+        out = pdfutils.sample_pdf(_make_pdf(40))
+        self.assertEqual(len(PdfReader(BytesIO(out)).pages), 8)
 
-    def test_non_pdf_passes_through_untouched(self):
-        self.assertEqual(pdfutils.watermark_for_user(b'not a pdf', 'x@y.com'), b'not a pdf')
+    def test_short_note_never_shows_every_page(self):
+        out = pdfutils.sample_pdf(_make_pdf(2))
+        text = _page_text(out)
+        self.assertNotIn('Page 2 body text', text)   # last page hidden
+        self.assertIn('Purchase to unlock', text)
 
 
-class SampleAndWatermarkEndpointTests(TestCase):
+class SampleEndpointTests(TestCase):
     def setUp(self):
         self.course = Course.objects.create(name='ITIS103')
         self.note = Note.objects.create(
@@ -125,22 +135,14 @@ class SampleAndWatermarkEndpointTests(TestCase):
         self.nf = NoteFile.objects.create(
             note=self.note, file=SimpleUploadedFile('f.pdf', _make_pdf(6)),
         )
-        self.buyer = User.objects.create_user('buyer@x.com', 'pw', name='Buyer')
-        Access.objects.create(user=self.buyer, note=self.note)
 
-    def test_sample_is_public_and_truncated(self):
+    def test_sample_is_public(self):
         resp = APIClient().get(f'/api/note-files/{self.nf.id}/sample/')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp['Content-Type'], 'application/pdf')
-        self.assertEqual(len(PdfReader(BytesIO(resp.content)).pages), 2)
-
-    def test_buyer_download_is_watermarked_with_email(self):
-        client = APIClient()
-        client.force_authenticate(self.buyer)
-        resp = client.get(f'/api/note-files/{self.nf.id}/download/')
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(len(PdfReader(BytesIO(resp.content)).pages), 6)
-        self.assertIn('buyer@x.com', _page_text(resp.content))
+        text = _page_text(resp.content)
+        self.assertIn('Page 1 body text', text)
+        self.assertNotIn('Page 4 body text', text)
 
 
 class OrderFlowTests(TestCase):
