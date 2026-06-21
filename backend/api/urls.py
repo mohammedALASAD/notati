@@ -3,6 +3,9 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from . import views
 
 urlpatterns = [
+    # Health check (no DB query — used by UptimeRobot to keep Render awake)
+    path('health/', views.health, name='health'),
+
     # Auth
     path('auth/register/',         views.RegisterView.as_view(),        name='register'),
     path('auth/login/',            TokenObtainPairView.as_view(),       name='login'),
