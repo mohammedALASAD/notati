@@ -7,11 +7,14 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.db import transaction
 from django.utils import timezone
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 def health(request):
     return JsonResponse({'status': 'ok'})
 from .models import (
@@ -27,7 +30,7 @@ from .serializers import (
     BagItemSerializer, OrderSerializer,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
-from . import pdfutils
+from . import pdfutils, verification, emails
 
 
 # ── Cloudinary proxy helper ───────────────────────────────────────────────────
@@ -92,16 +95,108 @@ def _sample_response(file_field):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
+def _tokens_for(user):
+    refresh = RefreshToken.for_user(user)
+    return {'access': str(refresh.access_token), 'refresh': str(refresh)}
+
+
 class ThrottledLoginView(TokenObtainPairView):
     """Login with per-IP rate limiting to slow brute-force / credential stuffing."""
     throttle_scope = 'login'
 
 
-class RegisterView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    serializer_class = RegisterSerializer
+class RegisterView(APIView):
+    """Create an INACTIVE account and email a 6-digit activation code.
+    The account is unusable until verified, and is cleaned up if never activated."""
     permission_classes = [AllowAny]
     throttle_scope = 'register'
+
+    def post(self, request):
+        verification.cleanup_unverified()
+        email = (request.data.get('email') or '').strip().lower()
+        # Clear any prior unverified signup for this email so the user can retry.
+        User.objects.filter(email__iexact=email, is_active=False).delete()
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        code = verification.issue_code(user, 'activate')
+        emails.send_code_email(user, code, 'activate')
+        return Response({'detail': 'Verification code sent.', 'email': user.email},
+                        status=status.HTTP_201_CREATED)
+
+
+class VerifyEmailView(APIView):
+    """Activate an account with the emailed code, then log the user in."""
+    permission_classes = [AllowAny]
+    throttle_scope = 'verify'
+
+    def post(self, request):
+        email = (request.data.get('email') or '').strip().lower()
+        code = (request.data.get('code') or '').strip()
+        user = User.objects.filter(email__iexact=email, is_active=False).first()
+        if not user:
+            return Response(
+                {'detail': 'No pending account for this email. It may have expired — please sign up again.'},
+                status=status.HTTP_400_BAD_REQUEST)
+        ok, msg = verification.check_code(user, 'activate', code)
+        if not ok:
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        user.is_active = True
+        user.save(update_fields=['is_active'])
+        return Response(_tokens_for(user))
+
+
+class ResendCodeView(APIView):
+    """Re-issue an activation code for a pending account."""
+    permission_classes = [AllowAny]
+    throttle_scope = 'verify'
+
+    def post(self, request):
+        email = (request.data.get('email') or '').strip().lower()
+        user = User.objects.filter(email__iexact=email, is_active=False).first()
+        if user:
+            code = verification.issue_code(user, 'activate')
+            emails.send_code_email(user, code, 'activate')
+        return Response({'detail': 'If the account is pending, a new code was sent.'})
+
+
+class PasswordForgotView(APIView):
+    """Email a password-reset code to an existing active account."""
+    permission_classes = [AllowAny]
+    throttle_scope = 'verify'
+
+    def post(self, request):
+        email = (request.data.get('email') or '').strip().lower()
+        user = User.objects.filter(email__iexact=email, is_active=True).first()
+        if user:
+            code = verification.issue_code(user, 'reset')
+            emails.send_code_email(user, code, 'reset')
+        # Don't reveal whether the email exists.
+        return Response({'detail': 'If an account exists, a reset code was sent.'})
+
+
+class PasswordResetView(APIView):
+    """Verify a reset code and set a new password, then log the user in."""
+    permission_classes = [AllowAny]
+    throttle_scope = 'verify'
+
+    def post(self, request):
+        email = (request.data.get('email') or '').strip().lower()
+        code = (request.data.get('code') or '').strip()
+        new_password = request.data.get('new_password') or ''
+        user = User.objects.filter(email__iexact=email, is_active=True).first()
+        if not user:
+            return Response({'detail': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
+        ok, msg = verification.check_code(user, 'reset', code)
+        if not ok:
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            validate_password(new_password, user)
+        except DjangoValidationError as exc:
+            return Response({'detail': ' '.join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
+        return Response(_tokens_for(user))
 
 
 class MeView(generics.RetrieveUpdateAPIView):

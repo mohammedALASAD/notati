@@ -146,6 +146,12 @@ function LoginView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
                  value={password} onChange={(e) => setPassword(e.target.value)}
                  placeholder="••••••••" required/>
           {err ? <div className="err">{err}</div> : null}
+          <div style={{ marginTop: 8, textAlign: 'right' }}>
+            <a href="#" onClick={(e) => { e.preventDefault(); switchTo('forgot'); }}
+               style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 13 }}>
+              Forgot password?
+            </a>
+          </div>
         </div>
 
         <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
@@ -191,94 +197,279 @@ function LoginView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
   );
 }
 
-/* ---------- Sign up ---------- */
+/* ---------- Code entry (shared by signup-verify and password reset) ---------- */
+function CountdownResend({ secsLeft, onResend }) {
+  return (
+    <div style={{ marginTop: 14, textAlign: 'center', font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 13, color: 'var(--fg-3)' }}>
+      {secsLeft > 0
+        ? <>Code expires in {Math.floor(secsLeft / 60)}:{String(secsLeft % 60).padStart(2, '0')} · </>
+        : <>Code expired. </>}
+      <a href="#" onClick={(e) => { e.preventDefault(); onResend(); }}>Resend code</a>
+    </div>
+  );
+}
+
+/* ---------- Sign up (form → email verification) ---------- */
 function SignupView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
   const { toast } = useToast();
+  const [step,     setStep]     = useStateA('form'); // 'form' | 'verify'
   const [name,     setName]     = useStateA('');
   const [email,    setEmail]    = useStateA('');
+  const [phone,    setPhone]    = useStateA('');
   const [password, setPassword] = useStateA('');
   const [confirm,  setConfirm]  = useStateA('');
+  const [code,     setCode]     = useStateA('');
   const [err,      setErr]      = useStateA('');
   const [busy,     setBusy]     = useStateA(false);
+  const [secsLeft, setSecsLeft] = useStateA(0);
 
-  async function submit(e) {
+  useEffectA(() => {
+    if (secsLeft <= 0) return;
+    const t = setInterval(() => setSecsLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [secsLeft]);
+
+  async function submitForm(e) {
+    e.preventDefault();
+    setErr('');
+    if (password !== confirm) { setErr("Passwords don't match."); return; }
+    setBusy(true);
+    try {
+      await NotatiAPI.register(name, email, password, phone);
+      setStep('verify');
+      setSecsLeft(300);
+      toast.success('Check your email', `We sent a 6-digit code to ${email}.`);
+    } catch (e2) {
+      setErr(e2.message);
+      toast.error("Couldn't create your account", e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitCode(e) {
     e.preventDefault();
     setErr(''); setBusy(true);
-    if (password !== confirm) { setErr("Passwords don't match."); setBusy(false); return; }
     try {
-      const user = await NotatiAPI.register(name, email, password);
-      toast.success('Welcome to Notati.', "You're in. Upload your first file whenever you're ready.");
-      setTimeout(() => onAuth(user), 300);
+      const user = await NotatiAPI.verifyEmail(email, code.trim());
+      toast.success('Welcome to Notati.', "You're verified and in.");
+      setTimeout(() => onAuth(user), 250);
     } catch (e2) {
-      if (e2.message.includes('Cannot reach server')) {
-        setErr('Server is starting up — retrying in 15 seconds...');
-        setTimeout(() => submit(e), 15000);
-      } else {
-        setErr(e2.message);
-        toast.error("Couldn't create your account", e2.message);
-        setBusy(false);
-      }
+      setErr(e2.message);
+      toast.error('Verification failed', e2.message);
+      setBusy(false);
+    }
+  }
+
+  async function resend() {
+    setErr('');
+    try {
+      await NotatiAPI.resendCode(email);
+      setSecsLeft(300);
+      setCode('');
+      toast.success('Code sent', `A new code is on its way to ${email}.`);
+    } catch (e2) {
+      toast.error('Could not resend', e2.message);
     }
   }
 
   return (
     <AuthShell mode="signup" switchTo={switchTo} onGuest={onGuest} darkMode={darkMode} onThemeToggle={onThemeToggle}>
-      <form className="auth-card" onSubmit={submit} noValidate>
-        <h2>Join Notati.</h2>
-        <p className="sub">Get clear, student-written notes — and contribute your own.</p>
-
-        <div className="field">
-          <label htmlFor="name">Full name</label>
-          <input id="name" autoFocus value={name}
-                 onChange={(e) => setName(e.target.value)}
-                 placeholder="Mariam Al-Khalifa" required/>
-        </div>
-        <div className="field">
-          <label htmlFor="email2">Email</label>
-          <input id="email2" type="email" autoComplete="email"
-                 value={email} onChange={(e) => setEmail(e.target.value)}
-                 placeholder="Example@gmail.com" required/>
-        </div>
-        <div className="field-row">
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label htmlFor="pw">Password</label>
-            <input id="pw" type="password" autoComplete="new-password"
-                   value={password} onChange={(e) => setPassword(e.target.value)}
-                   placeholder="At least 6 characters" required/>
+      {step === 'verify' ? (
+        <form className="auth-card" onSubmit={submitCode} noValidate>
+          <h2>Verify your email.</h2>
+          <p className="sub">Enter the 6-digit code we sent to <strong>{email}</strong>.</p>
+          <div className="field">
+            <label htmlFor="code">Verification code</label>
+            <input id="code" inputMode="numeric" autoComplete="one-time-code" autoFocus maxLength={6}
+                   value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                   placeholder="123456"
+                   style={{ letterSpacing: '0.4em', fontSize: 20, textAlign: 'center' }} required/>
+            {err ? <div className="err">{err}</div> : null}
           </div>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label htmlFor="pw2">Confirm</label>
-            <input id="pw2" type="password" autoComplete="new-password"
-                   value={confirm} onChange={(e) => setConfirm(e.target.value)}
-                   placeholder="Repeat password" required/>
+          <button className="btn btn-primary btn-block" type="submit" disabled={busy || code.length < 6}>
+            {busy ? 'Verifying…' : 'Verify & continue'}
+            {!busy && <Icons.ArrowRight size={16}/>}
+          </button>
+          <CountdownResend secsLeft={secsLeft} onResend={resend}/>
+          <div style={{ marginTop: 8, textAlign: 'center' }}>
+            <a href="#" onClick={(e) => { e.preventDefault(); setStep('form'); setErr(''); }}>← Use a different email</a>
           </div>
-        </div>
-        {err ? <div className="err" style={{ marginTop: 8, marginBottom: 12 }}>{err}</div> : null}
+        </form>
+      ) : (
+        <form className="auth-card" onSubmit={submitForm} noValidate>
+          <h2>Join Notati.</h2>
+          <p className="sub">Get clear, student-written notes — and contribute your own.</p>
 
-        <button className="btn btn-primary btn-block" type="submit" disabled={busy} style={{ marginTop: 8 }}>
-          {busy ? 'Creating your account...' : 'Create account'}
-          {!busy && <Icons.ArrowRight size={16}/>}
-        </button>
-
-        {onGuest && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
-              <div style={{ flex: 1, height: 1, background: 'var(--border-1)' }}/>
-              <span style={{ font: 'var(--type-label)', fontSize: 11, color: 'var(--fg-3)' }}>OR</span>
-              <div style={{ flex: 1, height: 1, background: 'var(--border-1)' }}/>
+          <div className="field">
+            <label htmlFor="name">Full name</label>
+            <input id="name" autoFocus value={name}
+                   onChange={(e) => setName(e.target.value)}
+                   placeholder="Mariam Al-Khalifa" required/>
+          </div>
+          <div className="field">
+            <label htmlFor="email2">Email</label>
+            <input id="email2" type="email" autoComplete="email"
+                   value={email} onChange={(e) => setEmail(e.target.value)}
+                   placeholder="Example@gmail.com" required/>
+          </div>
+          <div className="field">
+            <label htmlFor="phone">Phone number</label>
+            <input id="phone" type="tel" autoComplete="tel"
+                   value={phone} onChange={(e) => setPhone(e.target.value)}
+                   placeholder="e.g. 3300 0000" required/>
+          </div>
+          <div className="field-row">
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label htmlFor="pw">Password</label>
+              <input id="pw" type="password" autoComplete="new-password"
+                     value={password} onChange={(e) => setPassword(e.target.value)}
+                     placeholder="At least 8 characters" required/>
             </div>
-            <button type="button" className="btn btn-outline btn-block" onClick={onGuest}>
-              Browse free notes as guest
-            </button>
-          </>
-        )}
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label htmlFor="pw2">Confirm</label>
+              <input id="pw2" type="password" autoComplete="new-password"
+                     value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                     placeholder="Repeat password" required/>
+            </div>
+          </div>
+          {err ? <div className="err" style={{ marginTop: 8, marginBottom: 12 }}>{err}</div> : null}
 
-        <p style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)', marginTop: 14 }}>
-          By signing up you agree to our friendly terms — be kind, share fairly, no plagiarism.
-        </p>
-      </form>
+          <button className="btn btn-primary btn-block" type="submit" disabled={busy} style={{ marginTop: 8 }}>
+            {busy ? 'Creating your account...' : 'Create account'}
+            {!busy && <Icons.ArrowRight size={16}/>}
+          </button>
+
+          {onGuest && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--border-1)' }}/>
+                <span style={{ font: 'var(--type-label)', fontSize: 11, color: 'var(--fg-3)' }}>OR</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--border-1)' }}/>
+              </div>
+              <button type="button" className="btn btn-outline btn-block" onClick={onGuest}>
+                Browse free notes as guest
+              </button>
+            </>
+          )}
+
+          <p style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)', marginTop: 14 }}>
+            By signing up you agree to our friendly terms — be kind, share fairly, no plagiarism.
+          </p>
+        </form>
+      )}
     </AuthShell>
   );
 }
 
-Object.assign(window, { LoginView, SignupView });
+/* ---------- Forgot / reset password (email → code + new password) ---------- */
+function ForgotPasswordView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
+  const { toast } = useToast();
+  const [step,     setStep]     = useStateA('email'); // 'email' | 'reset'
+  const [email,    setEmail]    = useStateA('');
+  const [code,     setCode]     = useStateA('');
+  const [password, setPassword] = useStateA('');
+  const [confirm,  setConfirm]  = useStateA('');
+  const [err,      setErr]      = useStateA('');
+  const [busy,     setBusy]     = useStateA(false);
+  const [secsLeft, setSecsLeft] = useStateA(0);
+
+  useEffectA(() => {
+    if (secsLeft <= 0) return;
+    const t = setInterval(() => setSecsLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [secsLeft]);
+
+  async function sendCode(e) {
+    if (e) e.preventDefault();
+    setErr(''); setBusy(true);
+    try {
+      await NotatiAPI.forgotPassword(email);
+      setStep('reset');
+      setSecsLeft(300);
+      toast.success('Check your email', `If an account exists, a code was sent to ${email}.`);
+    } catch (e2) {
+      setErr(e2.message);
+      toast.error('Could not send code', e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitReset(e) {
+    e.preventDefault();
+    setErr('');
+    if (password !== confirm) { setErr("Passwords don't match."); return; }
+    setBusy(true);
+    try {
+      const user = await NotatiAPI.resetPassword(email, code.trim(), password);
+      toast.success('Password updated', "You're signed in with your new password.");
+      setTimeout(() => onAuth(user), 250);
+    } catch (e2) {
+      setErr(e2.message);
+      toast.error('Reset failed', e2.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <AuthShell mode="login" switchTo={switchTo} onGuest={onGuest} darkMode={darkMode} onThemeToggle={onThemeToggle}>
+      {step === 'reset' ? (
+        <form className="auth-card" onSubmit={submitReset} noValidate>
+          <h2>Reset password.</h2>
+          <p className="sub">Enter the code sent to <strong>{email}</strong> and your new password.</p>
+          <div className="field">
+            <label htmlFor="rcode">Verification code</label>
+            <input id="rcode" inputMode="numeric" autoComplete="one-time-code" autoFocus maxLength={6}
+                   value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                   placeholder="123456"
+                   style={{ letterSpacing: '0.4em', fontSize: 20, textAlign: 'center' }} required/>
+          </div>
+          <div className="field-row">
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label htmlFor="np">New password</label>
+              <input id="np" type="password" autoComplete="new-password"
+                     value={password} onChange={(e) => setPassword(e.target.value)}
+                     placeholder="At least 8 characters" required/>
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label htmlFor="np2">Confirm</label>
+              <input id="np2" type="password" autoComplete="new-password"
+                     value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                     placeholder="Repeat password" required/>
+            </div>
+          </div>
+          {err ? <div className="err" style={{ marginTop: 8, marginBottom: 12 }}>{err}</div> : null}
+          <button className="btn btn-primary btn-block" type="submit" disabled={busy || code.length < 6} style={{ marginTop: 8 }}>
+            {busy ? 'Updating…' : 'Update password'}
+          </button>
+          <CountdownResend secsLeft={secsLeft} onResend={() => sendCode()}/>
+          <div style={{ marginTop: 8, textAlign: 'center' }}>
+            <a href="#" onClick={(e) => { e.preventDefault(); switchTo('login'); }}>← Back to sign in</a>
+          </div>
+        </form>
+      ) : (
+        <form className="auth-card" onSubmit={sendCode} noValidate>
+          <h2>Forgot password?</h2>
+          <p className="sub">Enter your email and we'll send you a code to reset it.</p>
+          <div className="field">
+            <label htmlFor="femail">Email</label>
+            <input id="femail" type="email" autoComplete="email" autoFocus
+                   value={email} onChange={(e) => setEmail(e.target.value)}
+                   placeholder="Example@gmail.com" required/>
+            {err ? <div className="err">{err}</div> : null}
+          </div>
+          <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
+            {busy ? 'Sending…' : 'Send reset code'}
+            {!busy && <Icons.ArrowRight size={16}/>}
+          </button>
+          <div style={{ marginTop: 14, textAlign: 'center' }}>
+            <a href="#" onClick={(e) => { e.preventDefault(); switchTo('login'); }}>← Back to sign in</a>
+          </div>
+        </form>
+      )}
+    </AuthShell>
+  );
+}
+
+Object.assign(window, { LoginView, SignupView, ForgotPasswordView });

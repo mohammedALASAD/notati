@@ -1,14 +1,18 @@
+from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO
+from unittest.mock import patch
 
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
 from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
-from . import pdfutils
-from .models import User, Course, Note, NoteFile, Access, BagItem
+from . import pdfutils, verification
+from .models import User, Course, Note, NoteFile, Access, BagItem, VerificationCode
 from .serializers import NoteSerializer, RegisterSerializer
 
 
@@ -96,7 +100,8 @@ class PasswordPolicyTests(TestCase):
         self.assertIn('password', s.errors)
 
     def test_strong_password_accepted(self):
-        s = RegisterSerializer(data={'email': 'a@b.com', 'name': 'A', 'password': 'Tr0ub4dour!'})
+        s = RegisterSerializer(data={'email': 'a@b.com', 'name': 'A',
+                                     'password': 'Tr0ub4dour!', 'phone': '33112233'})
         self.assertTrue(s.is_valid(), s.errors)
 
 
@@ -198,3 +203,80 @@ class OrderFlowTests(TestCase):
     def test_students_cannot_see_admin_orders(self):
         resp = self._client(self.student).get('/api/admin/orders/')
         self.assertEqual(resp.status_code, 403)
+
+
+class EmailVerificationTests(TestCase):
+    def setUp(self):
+        cache.clear()  # reset throttle counters between tests
+
+    def _register(self, email='new@x.com', extra=None):
+        captured = {}
+        def fake_send(user, code, purpose):
+            captured['code'] = code
+            captured['purpose'] = purpose
+        payload = {'name': 'New', 'email': email, 'password': 'Tr0ub4dour!', 'phone': '33112233'}
+        if extra:
+            payload.update(extra)
+        with patch('api.views.emails.send_code_email', side_effect=fake_send):
+            resp = APIClient().post('/api/auth/register/', payload, format='json')
+        return resp, captured
+
+    def test_register_creates_inactive_account(self):
+        resp, _ = self._register()
+        self.assertEqual(resp.status_code, 201)
+        self.assertNotIn('access', resp.data)
+        u = User.objects.get(email='new@x.com')
+        self.assertFalse(u.is_active)
+        self.assertEqual(u.phone, '33112233')
+
+    def test_inactive_account_cannot_login(self):
+        self._register()
+        login = APIClient().post('/api/auth/login/',
+                                 {'email': 'new@x.com', 'password': 'Tr0ub4dour!'}, format='json')
+        self.assertNotEqual(login.status_code, 200)
+
+    def test_verify_activates_and_returns_tokens(self):
+        _, cap = self._register()
+        v = APIClient().post('/api/auth/verify/',
+                             {'email': 'new@x.com', 'code': cap['code']}, format='json')
+        self.assertEqual(v.status_code, 200)
+        self.assertIn('access', v.data)
+        self.assertTrue(User.objects.get(email='new@x.com').is_active)
+
+    def test_verify_wrong_code_fails(self):
+        self._register()
+        v = APIClient().post('/api/auth/verify/',
+                             {'email': 'new@x.com', 'code': '000000'}, format='json')
+        self.assertEqual(v.status_code, 400)
+        self.assertFalse(User.objects.get(email='new@x.com').is_active)
+
+    def test_phone_is_required(self):
+        resp = APIClient().post('/api/auth/register/',
+                                {'name': 'X', 'email': 'np@x.com', 'password': 'Tr0ub4dour!'}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_cleanup_removes_expired_unverified(self):
+        u = User.objects.create_user('old@x.com', 'pw', name='Old', is_active=False)
+        VerificationCode.objects.create(user=u, purpose='activate', code_hash='x',
+                                        expires_at=timezone.now() - timedelta(minutes=1))
+        verification.cleanup_unverified()
+        self.assertFalse(User.objects.filter(email='old@x.com').exists())
+
+    def test_cleanup_keeps_valid_pending(self):
+        self._register()  # fresh code valid for 5 min
+        verification.cleanup_unverified()
+        self.assertTrue(User.objects.filter(email='new@x.com').exists())
+
+    def test_password_reset_flow(self):
+        User.objects.create_user('r@x.com', 'OldPass123!', name='R')  # active
+        captured = {}
+        with patch('api.views.emails.send_code_email',
+                   side_effect=lambda user, code, purpose: captured.update(code=code)):
+            APIClient().post('/api/auth/password/forgot/', {'email': 'r@x.com'}, format='json')
+        resp = APIClient().post('/api/auth/password/reset/', {
+            'email': 'r@x.com', 'code': captured['code'], 'new_password': 'Br4ndNew!!'
+        }, format='json')
+        self.assertEqual(resp.status_code, 200)
+        login = APIClient().post('/api/auth/login/',
+                                 {'email': 'r@x.com', 'password': 'Br4ndNew!!'}, format='json')
+        self.assertEqual(login.status_code, 200)

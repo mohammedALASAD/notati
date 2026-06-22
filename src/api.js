@@ -70,6 +70,7 @@
       email:    u.email,
       role:     u.role === 'admin' ? 'admin' : 'customer',
       college:  u.college || '',
+      phone:    u.phone || '',
       joinedAt: u.created_at || '',
     };
   }
@@ -144,9 +145,36 @@
       return user;
     },
 
-    async register(name, email, password) {
-      await req('POST', '/auth/register/', { name, email, password });
-      return NotatiAPI.login(email, password);
+    // Registration no longer logs in — it creates an inactive account and
+    // emails a code. The user verifies (or resets) to receive tokens.
+    async register(name, email, password, phone) {
+      return req('POST', '/auth/register/', { name, email, password, phone });
+    },
+
+    async _loginWithTokens(tokens) {
+      setToken(tokens.access);
+      try { localStorage.setItem(KEYS.refresh, tokens.refresh); } catch(e) {}
+      const me = await req('GET', '/auth/me/');
+      const user = toUser(me);
+      setStoredUser(user);
+      return user;
+    },
+
+    async verifyEmail(email, code) {
+      return NotatiAPI._loginWithTokens(await req('POST', '/auth/verify/', { email, code }));
+    },
+
+    async resendCode(email) {
+      return req('POST', '/auth/resend/', { email });
+    },
+
+    async forgotPassword(email) {
+      return req('POST', '/auth/password/forgot/', { email });
+    },
+
+    async resetPassword(email, code, newPassword) {
+      return NotatiAPI._loginWithTokens(
+        await req('POST', '/auth/password/reset/', { email, code, new_password: newPassword }));
     },
 
     async me() {

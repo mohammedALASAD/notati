@@ -8,6 +8,10 @@ urlpatterns = [
 
     # Auth
     path('auth/register/',         views.RegisterView.as_view(),        name='register'),
+    path('auth/verify/',           views.VerifyEmailView.as_view(),     name='verify'),
+    path('auth/resend/',           views.ResendCodeView.as_view(),      name='resend'),
+    path('auth/password/forgot/',  views.PasswordForgotView.as_view(),  name='password-forgot'),
+    path('auth/password/reset/',   views.PasswordResetView.as_view(),   name='password-reset'),
     path('auth/login/',            views.ThrottledLoginView.as_view(),  name='login'),
     path('auth/token/refresh/',    TokenRefreshView.as_view(),          name='token-refresh'),
     path('auth/me/',               views.MeView.as_view(),              name='me'),

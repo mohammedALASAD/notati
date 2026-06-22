@@ -26,6 +26,7 @@ class User(AbstractUser):
     name       = models.CharField(max_length=120)
     role       = models.CharField(max_length=10, choices=ROLE_CHOICES, default='student')
     college    = models.CharField(max_length=120, blank=True)
+    phone      = models.CharField(max_length=20, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     USERNAME_FIELD  = 'email'
@@ -188,6 +189,24 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f'{self.chapter_title} ({self.price})'
+
+
+class VerificationCode(models.Model):
+    """One-time code for email activation or password reset (5-minute TTL)."""
+    PURPOSE_CHOICES = [('activate', 'Activate'), ('reset', 'Reset password')]
+
+    user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='codes')
+    purpose    = models.CharField(max_length=10, choices=PURPOSE_CHOICES)
+    code_hash  = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    attempts   = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user.email} · {self.purpose}'
 
 
 class Testimonial(models.Model):

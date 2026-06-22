@@ -34,10 +34,11 @@ def _signed_url(url):
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
+    phone    = serializers.CharField(max_length=20, min_length=6)
 
     class Meta:
         model = User
-        fields = ['email', 'name', 'password', 'college']
+        fields = ['email', 'name', 'password', 'college', 'phone']
 
     def validate_password(self, value):
         # Run Django's configured password validators (length, common, numeric, …)
@@ -48,13 +49,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        return User.objects.create_user(**validated_data)
+        # New signups start INACTIVE until they verify their email.
+        return User.objects.create_user(is_active=False, **validated_data)
 
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'name', 'role', 'college', 'created_at']
+        fields = ['id', 'email', 'name', 'role', 'college', 'phone', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 
@@ -64,7 +66,7 @@ class UserAdminSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'name', 'role', 'college', 'created_at',
+        fields = ['id', 'email', 'name', 'role', 'college', 'phone', 'created_at',
                   'uploads_count', 'access_count']
         read_only_fields = ['id', 'email', 'created_at']
 

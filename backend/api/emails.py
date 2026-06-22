@@ -141,3 +141,28 @@ def send_support_email(to_email, to_name, subject, message):
         'subject': subject,
         'html': _build_html(to_name, subject, message),
     })
+
+
+def send_code_email(to_user, code, purpose):
+    """Send a one-time verification / reset code to the user."""
+    if purpose == 'activate':
+        subject = 'Your Notati verification code'
+        message = (f'Your verification code is:\n\n{code}\n\n'
+                   'Enter it on the site to activate your account. '
+                   'This code expires in 5 minutes.')
+    else:
+        subject = 'Your Notati password reset code'
+        message = (f'Use this code to reset your Notati password:\n\n{code}\n\n'
+                   "It expires in 5 minutes. If you didn't request this, ignore this email.")
+
+    # In environments without Resend configured (e.g. local dev), log the code
+    # so the flow can still be tested. In production (key set) the code is never logged.
+    if not getattr(settings, 'RESEND_API_KEY', ''):
+        log.warning('No RESEND_API_KEY — %s code for %s: %s', purpose, to_user.email, code)
+
+    _send_async({
+        'from': 'Notati <support@notati.app>',
+        'to': [to_user.email],
+        'subject': subject,
+        'html': _build_html(to_user.name, subject, message),
+    })
