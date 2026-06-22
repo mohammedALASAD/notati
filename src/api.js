@@ -243,15 +243,18 @@
     async previewNoteFileById(id) {
       await _proxyOpen(BASE + `/note-files/${id}/download/`);
     },
-    /* Public sample preview (first pages, watermarked) — no auth needed, so we
-       can open the URL directly in a new tab (no popup-blocker issues). */
+    /* Public sample preview (first pages clear, rest blurred) — no auth needed,
+       so we open the URL directly in a new tab. Returns false if there's nothing
+       to preview or the browser blocked the pop-up, so the caller can react. */
     openSample(note) {
       const files = (note && note.files) || [];
       const f = files[0];
       const url = (f && f.id)
         ? BASE + `/note-files/${f.id}/sample/`
-        : BASE + `/notes/${note._numId}/sample/`;
-      window.open(url, '_blank');
+        : (note && note._numId) ? BASE + `/notes/${note._numId}/sample/` : null;
+      if (!url) return false;
+      const w = window.open(url, '_blank');
+      return !!w;
     },
     async previewNoteFilesById(ids) {
       // Open all tabs synchronously (still in user-gesture frame) before any await
@@ -383,7 +386,9 @@
     async clearBag()             { return req('DELETE', '/bag/clear/'); },
 
     /* Orders */
-    async createOrder()    { return req('POST', '/orders/'); },
+    async createOrder(noteIds) {
+      return req('POST', '/orders/', (noteIds && noteIds.length) ? { note_ids: noteIds } : {});
+    },
     async getOrders()      { return list(await req('GET', '/orders/')); },
     async getAdminOrders(orderStatus) {
       const q = orderStatus ? `?status=${orderStatus}` : '';

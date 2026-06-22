@@ -11,8 +11,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Overlock:ital,wght@0,400;0,700;0,900;1,400;1,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="ds/colors_and_type.css" />
-  <link rel="stylesheet" href="src/app.css" />
+  <!-- Bump ?v= on every deploy so browsers fetch fresh files instead of cached ones -->
+  <link rel="stylesheet" href="ds/colors_and_type.css?v=20260622a" />
+  <link rel="stylesheet" href="src/app.css?v=20260622a" />
 
   <!-- React + Babel (pinned versions) -->
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
@@ -32,17 +33,17 @@
   <script>window.NOTATI_API_URL = 'https://api.notati.app/api';</script>
 
   <!-- API client (plain JS, must be before store.js) -->
-  <script src="src/api.js"></script>
+  <script src="src/api.js?v=20260622a"></script>
 
   <!-- Storage layer (plain JS) -->
-  <script src="src/store.js"></script>
+  <script src="src/store.js?v=20260622a"></script>
 
   <!-- React components (JSX, must be ordered: shared components first) -->
-  <script type="text/babel" src="src/components.jsx"></script>
-  <script type="text/babel" src="src/auth.jsx"></script>
-  <script type="text/babel" src="src/admin.jsx"></script>
-  <script type="text/babel" src="src/customer.jsx"></script>
-  <script type="text/babel" src="src/app.jsx"></script>
+  <script type="text/babel" src="src/components.jsx?v=20260622a"></script>
+  <script type="text/babel" src="src/auth.jsx?v=20260622a"></script>
+  <script type="text/babel" src="src/admin.jsx?v=20260622a"></script>
+  <script type="text/babel" src="src/customer.jsx?v=20260622a"></script>
+  <script type="text/babel" src="src/app.jsx?v=20260622a"></script>
 
   <!-- Safety net: if the app never mounts (e.g. a script fails to load/parse
        on an old browser), show a friendly message instead of a blank page. -->

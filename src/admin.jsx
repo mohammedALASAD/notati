@@ -1152,13 +1152,15 @@ function OrdersManager() {
   async function setStatus(order, newStatus) {
     setBusyId(order.id);
     try {
-      await NotatiAPI.updateOrder(order.id, { status: newStatus });
+      const updated = await NotatiAPI.updateOrder(order.id, { status: newStatus });
       if (newStatus === 'paid') {
         toast.success('Order marked paid', `Unlocked ${order.item_count} item${order.item_count !== 1 ? 's' : ''} for ${order.user_name}.`);
       } else if (newStatus === 'cancelled') {
         toast.info('Order cancelled', '');
       }
-      load();
+      // Update the card in place so the result is visible (instead of the order
+      // vanishing out of the current filter).
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...updated } : o));
     } catch (e) {
       toast.error('Update failed', e.message);
     } finally {
@@ -1233,7 +1235,7 @@ function OrdersManager() {
 
                 <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6,
                               borderTop: '1px solid var(--border-2)', paddingTop: 12 }}>
-                  {o.items.map(it => (
+                  {(o.items || []).map(it => (
                     <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13 }}>
                       <span style={{ color: 'var(--fg-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {it.course_name} Ch.{it.chapter_number}: {it.chapter_title}

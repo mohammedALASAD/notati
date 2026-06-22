@@ -550,14 +550,21 @@ class OrderListCreateView(generics.ListCreateAPIView):
         return Order.objects.filter(user=self.request.user).prefetch_related('items')
 
     def create(self, request, *args, **kwargs):
-        bag = list(BagItem.objects.filter(user=request.user).select_related('note__course'))
-        if not bag:
-            return Response({'detail': 'Your bag is empty.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Prefer note_ids sent by the client (the bag the user actually sees);
+        # fall back to the server-side bag. This avoids depending on perfect
+        # bag sync to record an order.
+        note_ids = request.data.get('note_ids')
+        if note_ids:
+            notes = list(Note.objects.filter(pk__in=note_ids).select_related('course'))
+        else:
+            notes = [b.note for b in
+                     BagItem.objects.filter(user=request.user).select_related('note__course')]
+        if not notes:
+            return Response({'detail': 'No items to order.'}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
             order = Order.objects.create(user=request.user, status='pending')
             total = 0
-            for b in bag:
-                n = b.note
+            for n in notes:
                 OrderItem.objects.create(
                     order=order, note=n,
                     course_name=n.course.name if n.course else '',

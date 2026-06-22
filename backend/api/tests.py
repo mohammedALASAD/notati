@@ -175,6 +175,15 @@ class OrderFlowTests(TestCase):
         resp = self._client(self.student).post('/api/orders/')
         self.assertEqual(resp.status_code, 400)
 
+    def test_order_from_explicit_note_ids(self):
+        # Even with an empty server bag, an order can be placed from note_ids.
+        BagItem.objects.filter(user=self.student).delete()
+        resp = self._client(self.student).post(
+            '/api/orders/', {'note_ids': [self.n1.id, self.n2.id]}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data['item_count'], 2)
+        self.assertEqual(Decimal(resp.data['total']), Decimal('5.000'))
+
     def test_admin_mark_paid_grants_access_to_all_items(self):
         order_id = self._client(self.student).post('/api/orders/').data['id']
         self.assertFalse(Access.objects.filter(user=self.student, note=self.n1).exists())

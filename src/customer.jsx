@@ -305,9 +305,15 @@ function BagDrawer({ open, items, user, onClose, onRemove, onClear }) {
   const total = items.reduce((s, i) => s + Number(i.price), 0);
 
   async function handleConfirm() {
-    // Record a pending order from the server-side bag (also clears it) so the
-    // admin gets a tracked order they can mark paid + unlock in one click.
-    try { await NotatiAPI.createOrder(); } catch (e) { /* don't block the user */ }
+    // Record a pending order so the admin gets a tracked order they can mark
+    // paid + unlock in one click. Send the note ids from the bag the user sees.
+    try {
+      const noteIds = items.map(i => i._numId).filter(Boolean);
+      await NotatiAPI.createOrder(noteIds);
+    } catch (e) {
+      toast.error('Could not place order', e.message || 'Please try again.');
+      return; // keep the bag and modal so the user can retry
+    }
     onClear();
     setCheckoutOpen(false);
     onClose();
@@ -1194,7 +1200,7 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
                     )}
                     {!canRead && !isFree && (
                       <button className="btn btn-ghost btn-sm" title="Preview the first pages"
-                              onClick={(e) => { e.stopPropagation(); NotatiAPI.openSample(n); }}>
+                              onClick={(e) => { e.stopPropagation(); if (!NotatiAPI.openSample(n)) toast.error('Preview blocked', 'Please allow pop-ups for this site, then try again.'); }}>
                         <Icons.Eye size={13}/> Sample
                       </button>
                     )}
@@ -1651,7 +1657,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                             BD {Number(n.price).toFixed(3)}
                           </span>
                           <button className="btn btn-ghost btn-sm" title="Preview the first pages"
-                                  onClick={() => NotatiAPI.openSample(n)}>
+                                  onClick={() => { if (!NotatiAPI.openSample(n)) toast.error('Preview blocked', 'Please allow pop-ups for this site, then try again.'); }}>
                             <Icons.Eye size={13}/> Sample
                           </button>
                           <button className="btn btn-primary btn-sm" onClick={onSignup}>
