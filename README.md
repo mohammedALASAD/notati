@@ -43,7 +43,7 @@ A student-to-student notes marketplace for university students in Bahrain. Stude
 |-------|-----------|
 | Frontend | React 18 via CDN · Babel Standalone (in-browser JSX) · Pure CSS |
 | Backend | Django 4 · Django REST Framework · SimpleJWT |
-| Database | PostgreSQL (Render managed) |
+| Database | PostgreSQL (Neon, serverless) |
 | File storage | Cloudinary |
 | Hosting | Render (backend web service + static site) |
 
@@ -112,9 +112,8 @@ Notati 1/
 
 ## Deployment
 
-Both services are hosted on Render's free tier.
+The backend and frontend are hosted on Render's free tier; the database is on Neon's free tier.
 
-- **Backend** — Django web service. Auto-runs `python manage.py migrate` on each deploy. Sleeps after 15 min of inactivity (free tier); the frontend warms it up silently on page load.
-- **Frontend** — Static site. Must be deployed manually via Render dashboard → Manual Deploy → Deploy latest commit (Render does not auto-deploy static sites on push).
-
-> **Note:** The free PostgreSQL instance expires on **July 4, 2026**. Upgrade to a paid instance or migrate before that date to avoid data loss.
+- **Backend** — Django web service on Render. Auto-runs `python manage.py migrate` on each deploy. Sleeps after 15 min of inactivity (free tier); the frontend warms it up silently on page load.
+- **Frontend** — Static site on Render. Must be deployed manually via Render dashboard → Manual Deploy → Deploy latest commit (Render does not auto-deploy static sites on push). Bump the `?v=` query strings in `index.html` on each frontend change so browsers fetch fresh files instead of cached ones.
+- **Database** — PostgreSQL on Neon (serverless; auto-suspends when idle). Free tier: 100 CU-hrs compute + 0.5 GB storage per month. Keep the `/api/health/` endpoint DB-free so UptimeRobot pings don't wake Neon.
