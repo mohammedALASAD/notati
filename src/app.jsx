@@ -50,6 +50,7 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
   const [publishUpload, setPublishUpload] = useStateApp(null);
   const [editingNote, setEditingNote]     = useStateApp(null);
   const [readingNote, setReadingNote]     = useStateApp(null);
+  const [detailsNote, setDetailsNote]     = useStateApp(null);
   const [refreshKey, setRefreshKey]       = useStateApp(0);
   const [bagItems, setBagItems]           = useStateApp(() => NotatiStore.getBag());
   const [bagOpen, setBagOpen]             = useStateApp(false);
@@ -156,7 +157,7 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
 
           {/* ----- CUSTOMER PAGES ----- */}
           {!isAdmin && current === 'overview' && (
-            <CustomerDashboard user={user} onNav={navWithClear} onOpenNote={setReadingNote}
+            <CustomerDashboard user={user} onNav={navWithClear} onOpenNote={setReadingNote} onShowDetails={setDetailsNote}
                                bag={bagItems} onAddToBag={handleAddToBag} onRemoveFromBag={handleRemoveFromBag}/>
           )}
           {!isAdmin && current === 'upload' && (
@@ -166,7 +167,7 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
             <MyUploads user={user} onNav={navWithClear} onOpenNote={setReadingNote}/>
           )}
           {!isAdmin && current === 'library' && (
-            <NotesLibrary user={user} onOpenNote={setReadingNote}
+            <NotesLibrary user={user} onOpenNote={setReadingNote} onShowDetails={setDetailsNote}
                           bag={bagItems} onAddToBag={handleAddToBag} onRemoveFromBag={handleRemoveFromBag}
                           topbarSearch={search}/>
           )}
@@ -187,6 +188,17 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
 
       {/* ----- CUSTOMER: read note ----- */}
       <NoteReader open={!!readingNote} note={readingNote} onClose={() => setReadingNote(null)}/>
+
+      {/* ----- CUSTOMER: locked-note details (description + file count) ----- */}
+      {!isAdmin && (
+        <NoteDetailsModal
+          open={!!detailsNote}
+          note={detailsNote}
+          bag={bagItems}
+          onAddToBag={handleAddToBag}
+          onRemoveFromBag={handleRemoveFromBag}
+          onClose={() => setDetailsNote(null)}/>
+      )}
 
       {/* ----- CUSTOMER: bag drawer ----- */}
       {!isAdmin && (

@@ -60,99 +60,84 @@ function _downloadNote(n, openReader, toast) {
 }
 
 /* ============================================================
-   Get Access Modal — shown when a student taps a locked note
+   Note Details Modal — lets a student preview a locked note before
+   buying: its description + how many files it includes, plus quick
+   Sample / Add to bag actions.
    ============================================================ */
-function GetAccessModal({ open, note, onClose }) {
-  const [copied, setCopied] = useStateC(false);
-
-  useEffectC(() => { if (!open) setCopied(false); }, [open]);
+function NoteDetailsModal({ open, note, bag, onAddToBag, onRemoveFromBag, onClose }) {
+  const { toast } = useToast();
   if (!open || !note) return null;
 
-  function copyNumber() {
-    navigator.clipboard.writeText(CONTACT.benefitpay).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
+  const files     = note.files || [];
+  const fileCount = files.length;
+  const inBag     = bag && bag.some(i => i.id === note.id);
+  const isFree    = !note.price || Number(note.price) === 0;
 
-  const waMsg = encodeURIComponent(
-    `Hi, I'd like to purchase "${note.title}" (${note.courseName} Ch.${note.chapterNumber}). My Notati email: `
-  );
+  function openSample() {
+    if (!NotatiAPI.openSample(note)) {
+      toast.error('Preview blocked', 'Please allow pop-ups for this site, then try again.');
+    }
+  }
 
   return (
     <Modal open={open} onClose={onClose} size="md"
-           title="Get access to this note"
-           subtitle={`${note.courseName} · Ch.${note.chapterNumber}: ${note.chapterTitle} · BD ${Number(note.price).toFixed(3)}`}
-           footer={<button className="btn btn-ghost" onClick={onClose}>Close</button>}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+           title={`Ch.${note.chapterNumber}: ${note.chapterTitle}`}
+           subtitle={`${note.courseName}${note.college ? ' · ' + note.college : ''}`}
+           footer={<>
+             <button className="btn btn-ghost" onClick={onClose}>Close</button>
+             <button className="btn btn-soft" onClick={openSample}>
+               <Icons.Eye size={15}/> Sample
+             </button>
+             {!isFree && (inBag ? (
+               <button className="btn btn-in-bag" onClick={() => onRemoveFromBag && onRemoveFromBag(note.id)}>
+                 <Icons.Check size={15}/> In bag
+               </button>
+             ) : (
+               <button className="btn btn-primary"
+                       onClick={() => { onAddToBag && onAddToBag(note); toast.success('Added to bag', `${note.courseName} Ch.${note.chapterNumber}`); }}>
+                 <Icons.Bag size={15}/> Add · BD {Number(note.price).toFixed(3)}
+               </button>
+             ))}
+           </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-        {/* Note preview */}
-        <div style={{ background: 'var(--bg-section)', borderRadius: 'var(--r-5)',
-                      padding: '12px 14px', border: '1px solid var(--border-2)' }}>
-          <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 2 }}>{note.college}</div>
-          <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 4 }}>{note.title}</div>
-          {note.description && (
-            <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 13,
-                          color: 'var(--fg-2)', lineHeight: 1.5 }}>
-              {note.description}
+        {/* Description */}
+        <div>
+          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 8, letterSpacing: '.08em' }}>
+            DESCRIPTION
+          </div>
+          <div style={{ font: 'var(--type-body)', fontSize: 14, lineHeight: 1.6,
+                        color: note.description ? 'var(--fg-1)' : 'var(--fg-3)' }}>
+            {note.description || 'No description provided for this chapter.'}
+          </div>
+        </div>
+
+        {/* What's inside */}
+        <div>
+          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 8, letterSpacing: '.08em' }}>
+            WHAT'S INSIDE
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+                        font: 'var(--type-body)', fontSize: 14, fontWeight: 600, color: 'var(--fg-1)',
+                        marginBottom: fileCount ? 10 : 0 }}>
+            <Icons.Folder size={16}/>
+            {fileCount > 0
+              ? `Includes ${fileCount} file${fileCount !== 1 ? 's' : ''}`
+              : 'No files attached yet'}
+          </div>
+          {fileCount > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {files.map((f, i) => (
+                <div key={f.id || i}
+                     style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                              background: 'var(--bg-section)', border: '1px solid var(--border-2)',
+                              borderRadius: 'var(--r-4)', fontSize: 13, color: 'var(--fg-2)' }}>
+                  <FileTypeChip type="pdf"/>
+                  {f.label || `File ${i + 1}`}
+                </div>
+              ))}
             </div>
           )}
-        </div>
-
-        {/* Steps */}
-        <div>
-          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 10, letterSpacing: '.08em' }}>
-            HOW TO GET ACCESS
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {[
-              ['1', `Send BD ${Number(note.price).toFixed(3)} via BenefitPay to the number below.`],
-              ['2', 'Message us on WhatsApp or Instagram with your email and a payment screenshot.'],
-              ['3', "We'll unlock the note for you — usually within a few hours."]
-            ].map(([num, text]) => (
-              <div key={num} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--notati-walnut)',
-                               color: 'var(--notati-paper)', display: 'flex', alignItems: 'center',
-                               justifyContent: 'center', font: 'var(--type-label)', fontSize: 11, flexShrink: 0 }}>
-                  {num}
-                </span>
-                <span style={{ font: 'var(--type-body)', color: 'var(--fg-1)', paddingTop: 3 }}>{text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* BenefitPay */}
-        <div style={{ background: 'var(--bg-section)', border: '1px solid var(--border-1)',
-                      borderRadius: 'var(--r-5)', padding: '14px 16px' }}>
-          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 8, letterSpacing: '.08em' }}>
-            BENEFITPAY NUMBER
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', fontSize: 20, letterSpacing: '.02em' }}>
-              {CONTACT.benefitpay}
-            </span>
-            <button className="btn btn-soft btn-sm" onClick={copyNumber}>
-              {copied ? <><Icons.Check size={13}/> Copied!</> : 'Copy number'}
-            </button>
-          </div>
-        </div>
-
-        {/* Contact buttons */}
-        <div style={{ display: 'flex', gap: 10 }}>
-          <a href={`https://wa.me/${CONTACT.whatsapp}?text=${waMsg}`}
-             target="_blank" rel="noopener noreferrer"
-             className="btn btn-primary"
-             style={{ flex: 1, textDecoration: 'none', justifyContent: 'center',
-                      display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Icons.Mail size={15}/> WhatsApp us
-          </a>
-          <a href={`https://instagram.com/${CONTACT.instagram}`}
-             target="_blank" rel="noopener noreferrer"
-             className="btn btn-outline"
-             style={{ flex: 1, textDecoration: 'none', justifyContent: 'center',
-                      display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Icons.User size={15}/> Instagram
-          </a>
         </div>
       </div>
     </Modal>
@@ -406,7 +391,7 @@ function BagDrawer({ open, items, user, onClose, onRemove, onClear }) {
 /* ============================================================
    Customer Dashboard
    ============================================================ */
-function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveFromBag }) {
+function CustomerDashboard({ user, onNav, onOpenNote, onShowDetails, bag, onAddToBag, onRemoveFromBag }) {
   const { toast } = useToast();
   const [notes,   setNotes]   = useStateC([]);
   const [uploads, setUploads] = useStateC([]);
@@ -530,8 +515,8 @@ function CustomerDashboard({ user, onNav, onOpenNote, bag, onAddToBag, onRemoveF
                   const inBag   = bag && bag.some(i => i.id === n.id);
                   return (
                     <div key={n.id} className={`notecard ${canRead ? '' : 'notecard-locked'}`}
-                         onClick={canRead ? () => onOpenNote(n) : undefined}
-                         style={{ position: 'relative', cursor: canRead ? 'pointer' : 'default' }}>
+                         onClick={canRead ? () => onOpenNote(n) : () => onShowDetails && onShowDetails(n)}
+                         style={{ position: 'relative', cursor: 'pointer' }}>
                       {isFree && (
                         <span style={{ position: 'absolute', top: 10, right: 10,
                                        background: 'var(--notati-sage)', color: 'var(--notati-paper)',
@@ -1070,7 +1055,7 @@ function FilterDropdown({ value, onChange, options, placeholder, icon }) {
 /* ============================================================
    Notes Library — two-level browse: course grid → chapter list
    ============================================================ */
-function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topbarSearch }) {
+function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemoveFromBag, topbarSearch }) {
   const { toast } = useToast();
   const [notes,   setNotes]   = useStateC([]);
   const [loading, setLoading] = useStateC(true);
@@ -1157,8 +1142,8 @@ function NotesLibrary({ user, onOpenNote, bag, onAddToBag, onRemoveFromBag, topb
               const inBag   = bag && bag.some(i => i.id === n.id);
               return (
                 <div key={n.id} className="chapter-row"
-                     style={{ cursor: canRead ? 'pointer' : 'default' }}
-                     onClick={canRead ? () => onOpenNote(n) : undefined}>
+                     style={{ cursor: 'pointer' }}
+                     onClick={canRead ? () => onOpenNote(n) : () => onShowDetails && onShowDetails(n)}>
 
                   {/* Chapter number bubble */}
                   <div className="chapter-bubble"
@@ -2109,4 +2094,4 @@ function MyNotesPage({ user, onOpenNote }) {
   );
 }
 
-Object.assign(window, { CustomerDashboard, UploadContent, MyUploads, NotesLibrary, NoteReader, BagDrawer, BagCheckoutModal, LandingPage, MyNotesPage });
+Object.assign(window, { CustomerDashboard, UploadContent, MyUploads, NotesLibrary, NoteReader, NoteDetailsModal, BagDrawer, BagCheckoutModal, LandingPage, MyNotesPage });
