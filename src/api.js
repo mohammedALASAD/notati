@@ -256,6 +256,12 @@
       const w = window.open(url, '_blank');
       return !!w;
     },
+    /* Sample a specific file by id. Returns false if blocked / no id. */
+    openSampleFile(fileId) {
+      if (!fileId) return false;
+      const w = window.open(BASE + `/note-files/${fileId}/sample/`, '_blank');
+      return !!w;
+    },
     async previewNoteFilesById(ids) {
       // Open all tabs synchronously (still in user-gesture frame) before any await
       const wins = ids.map(() => window.open('about:blank', '_blank'));

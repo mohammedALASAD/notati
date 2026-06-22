@@ -73,10 +73,9 @@ function NoteDetailsModal({ open, note, bag, onAddToBag, onRemoveFromBag, onClos
   const inBag     = bag && bag.some(i => i.id === note.id);
   const isFree    = !note.price || Number(note.price) === 0;
 
-  function openSample() {
-    if (!NotatiAPI.openSample(note)) {
-      toast.error('Preview blocked', 'Please allow pop-ups for this site, then try again.');
-    }
+  function sampleFile(f) {
+    const ok = (f && f.id) ? NotatiAPI.openSampleFile(f.id) : NotatiAPI.openSample(note);
+    if (!ok) toast.error('Preview blocked', 'Please allow pop-ups for this site, then try again.');
   }
 
   return (
@@ -85,9 +84,6 @@ function NoteDetailsModal({ open, note, bag, onAddToBag, onRemoveFromBag, onClos
            subtitle={`${note.courseName}${note.college ? ' · ' + note.college : ''}`}
            footer={<>
              <button className="btn btn-ghost" onClick={onClose}>Close</button>
-             <button className="btn btn-soft" onClick={openSample}>
-               <Icons.Eye size={15}/> Sample
-             </button>
              {!isFree && (inBag ? (
                <button className="btn btn-in-bag" onClick={() => onRemoveFromBag && onRemoveFromBag(note.id)}>
                  <Icons.Check size={15}/> In bag
@@ -133,7 +129,13 @@ function NoteDetailsModal({ open, note, bag, onAddToBag, onRemoveFromBag, onClos
                               background: 'var(--bg-section)', border: '1px solid var(--border-2)',
                               borderRadius: 'var(--r-4)', fontSize: 13, color: 'var(--fg-2)' }}>
                   <FileTypeChip type="pdf"/>
-                  {f.label || `File ${i + 1}`}
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {f.filename || f.label || `File ${i + 1}`}
+                  </span>
+                  <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}
+                          onClick={() => sampleFile(f)}>
+                    <Icons.Eye size={13}/> Sample
+                  </button>
                 </div>
               ))}
             </div>
