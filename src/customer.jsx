@@ -7,6 +7,18 @@
    - NoteReader:          simulated in-app PDF reader
    ============================================================ */
 
+import React from 'react';
+import { NotatiAPI } from './api.js';
+import { NotatiStore } from './store.js';
+import {
+  Icons, I, ToastProvider, useToast, ToastContext,
+  Modal, EmptyState, FileTypeChip, StatusBadge, Avatar,
+  Sidebar, Topbar, Stat, PageLoader, ErrorBoundary,
+  fmtDate, fmtRelative, fmtSize,
+} from './components.jsx';
+import logoMark from '../ds/assets/notati-mark.svg';
+import logoOnDark from '../ds/assets/notati-mark-on-dark.svg';
+
 const { useState: useStateC, useMemo: useMemoC, useEffect: useEffectC, useRef: useRefC } = React;
 
 const COLLEGES = [
@@ -1546,7 +1558,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
       background: 'var(--bg-page)', position: 'sticky', top: 0, zIndex: 10
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <img src="ds/assets/notati-mark.svg" alt="Notati" style={{ height: 28 }}/>
+        <img src={logoMark} alt="Notati" style={{ height: 28 }}/>
         <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>Notati</span>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1867,7 +1879,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 48, marginBottom: 56 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                <img src="ds/assets/notati-mark-on-dark.svg" style={{ width: 28, height: 28 }}/>
+                <img src={logoOnDark} style={{ width: 28, height: 28 }}/>
                 <span style={{ fontFamily: "'Overlock', serif", fontWeight: 900, fontSize: 20, letterSpacing: '-.02em' }}>Notati</span>
               </div>
               <p style={{ color: 'rgba(251,247,243,.55)', fontSize: 14, lineHeight: 1.7, maxWidth: 260, marginBottom: 28 }}>
@@ -2096,4 +2108,4 @@ function MyNotesPage({ user, onOpenNote }) {
   );
 }
 
-Object.assign(window, { CustomerDashboard, UploadContent, MyUploads, NotesLibrary, NoteReader, NoteDetailsModal, BagDrawer, BagCheckoutModal, LandingPage, MyNotesPage });
+export { CustomerDashboard, UploadContent, MyUploads, NotesLibrary, NoteReader, NoteDetailsModal, BagDrawer, BagCheckoutModal, LandingPage, MyNotesPage };

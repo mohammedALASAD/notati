@@ -4,8 +4,7 @@
    Base URL: window.NOTATI_API_URL (set in index.html for prod)
              or http://localhost:8000/api (default for dev)
    ============================================================ */
-(function () {
-  const BASE = (window.NOTATI_API_URL || 'http://localhost:8000/api').replace(/\/$/, '');
+const BASE = (window.NOTATI_API_URL || 'http://localhost:8000/api').replace(/\/$/, '');
   const NS   = 'notati:v6';
   const KEYS = {
     token:   NS + ':token',
@@ -468,5 +467,5 @@
     setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
   }
 
-  window.NotatiAPI = NotatiAPI;
-})();
+  export { NotatiAPI };
+  if (typeof window !== 'undefined') window.NotatiAPI = NotatiAPI;

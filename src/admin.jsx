@@ -8,6 +8,15 @@
    All persist via NotatiStore.
    ============================================================ */
 
+import React from 'react';
+import { NotatiAPI } from './api.js';
+import {
+  Icons, I, ToastProvider, useToast, ToastContext,
+  Modal, EmptyState, FileTypeChip, StatusBadge, Avatar,
+  Sidebar, Topbar, Stat, PageLoader, ErrorBoundary,
+  fmtDate, fmtRelative, fmtSize,
+} from './components.jsx';
+
 const { useState: useStateAd, useMemo: useMemoAd, useEffect: useEffectAd } = React;
 
 const COLLEGES_AD = [
@@ -2304,4 +2313,4 @@ function ChapterInsights() {
   );
 }
 
-Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, OrdersManager, AccessManager, TestimonialsManager, ChapterInsights });
+export { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, OrdersManager, AccessManager, TestimonialsManager, ChapterInsights };

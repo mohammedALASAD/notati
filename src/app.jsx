@@ -6,6 +6,20 @@
    - Simple hash-based routing (/admin/inbox, /customer/library, etc.)
    ============================================================ */
 
+import React from 'react';
+import { NotatiAPI } from './api.js';
+import { NotatiStore } from './store.js';
+import { Sidebar, Topbar, Icons } from './components.jsx';
+import { LoginView, SignupView, ForgotPasswordView } from './auth.jsx';
+import {
+  AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList,
+  OrdersManager, AccessManager, ChapterInsights, TestimonialsManager,
+} from './admin.jsx';
+import {
+  CustomerDashboard, UploadContent, MyUploads, NotesLibrary, MyNotesPage,
+  NoteReader, NoteDetailsModal, BagDrawer, LandingPage,
+} from './customer.jsx';
+
 const { useState: useStateApp, useEffect: useEffectApp, useCallback: useCallbackApp } = React;
 
 /* ---------- Nav definitions ---------- */
@@ -284,12 +298,4 @@ function App() {
   );
 }
 
-/* ---------- Boot ---------- */
-const rootEl = document.getElementById('root');
-ReactDOM.createRoot(rootEl).render(
-  <ErrorBoundary>
-    <ToastProvider>
-      <App/>
-    </ToastProvider>
-  </ErrorBoundary>
-);
+export { App };

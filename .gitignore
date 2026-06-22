@@ -15,3 +15,7 @@ backend/media/
 
 # macOS
 .DS_Store
+
+# Node / Vite frontend
+node_modules/
+dist/

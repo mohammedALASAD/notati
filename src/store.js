@@ -4,10 +4,10 @@
    Bag is server-synced (BagItem table) with a localStorage
    cache so the UI is instant while the request is in flight.
    ============================================================ */
+import { NotatiAPI } from './api.js';
 
-(function () {
-  const NS  = 'notati:v6';
-  const BAG = NS + ':bag';
+const NS  = 'notati:v6';
+const BAG = NS + ':bag';
 
   function read(key, fallback) {
     try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fallback; }
@@ -91,10 +91,12 @@
     }
   }
 
-  window.NotatiStore = {
+  const NotatiStore = {
     getSession, clearSession,
     canReadNote,
     getBag, addToBag, removeFromBag, clearBag, getBagTotal,
     syncBagFromServer,
   };
-})();
+
+  export { NotatiStore };
+  if (typeof window !== 'undefined') window.NotatiStore = NotatiStore;
