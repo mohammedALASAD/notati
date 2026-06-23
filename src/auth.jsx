@@ -4,11 +4,6 @@
    Calls props.onAuth(user) on success.
    ============================================================ */
 
-import React from 'react';
-import { NotatiAPI } from './api.js';
-import { useToast, Icons } from './components.jsx';
-import logoOnDark from '../ds/assets/notati-mark-on-dark.svg';
-
 const { useState: useStateA, useEffect: useEffectA } = React;
 
 const FALLBACK_QUOTE = {
@@ -40,7 +35,7 @@ function AuthShell({ children, switchTo, mode, onGuest, darkMode, onThemeToggle 
     <div className="auth-page">
       <aside className="auth-aside">
         <a className="logo-row" href="#" onClick={(e) => e.preventDefault()}>
-          <img src={logoOnDark} alt="Notati"/>
+          <img src="ds/assets/notati-mark-on-dark.svg" alt="Notati"/>
           <span className="name">Notati</span>
         </a>
 
@@ -477,4 +472,4 @@ function ForgotPasswordView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle
   );
 }
 
-export { LoginView, SignupView, ForgotPasswordView };
+Object.assign(window, { LoginView, SignupView, ForgotPasswordView });
