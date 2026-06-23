@@ -61,6 +61,9 @@ urlpatterns = [
     path('orders/',                   views.OrderListCreateView.as_view(), name='order-list'),
     path('admin/orders/',             views.AdminOrderListView.as_view(),  name='admin-order-list'),
     path('admin/orders/<int:pk>/',    views.AdminOrderDetailView.as_view(), name='admin-order-detail'),
+    path('discount/validate/',        views.DiscountValidateView.as_view(),        name='discount-validate'),
+    path('admin/discounts/',          views.AdminDiscountListCreateView.as_view(), name='admin-discount-list'),
+    path('admin/discounts/<int:pk>/', views.AdminDiscountDetailView.as_view(),     name='admin-discount-detail'),
 
     # Testimonials
     path('testimonials/',              views.TestimonialPublicView.as_view(),       name='testimonial-list'),

@@ -424,8 +424,11 @@
     async clearBag()             { return req('DELETE', '/bag/clear/'); },
 
     /* Orders */
-    async createOrder(noteIds) {
-      return req('POST', '/orders/', (noteIds && noteIds.length) ? { note_ids: noteIds } : {});
+    async createOrder(noteIds, discountCode) {
+      const body = {};
+      if (noteIds && noteIds.length) body.note_ids = noteIds;
+      if (discountCode) body.discount_code = discountCode;
+      return req('POST', '/orders/', body);
     },
     async getOrders()      { return list(await req('GET', '/orders/')); },
     async getAdminOrders(orderStatus) {
@@ -433,6 +436,16 @@
       return list(await req('GET', '/admin/orders/' + q));
     },
     async updateOrder(id, payload) { return req('PATCH', `/admin/orders/${id}/`, payload); },
+
+    /* Discount codes */
+    async validateDiscount(code) {
+      // Throws (with a human message) if the code is not usable.
+      return req('POST', '/discount/validate/', { code });
+    },
+    async getDiscounts()           { return list(await req('GET', '/admin/discounts/')); },
+    async createDiscount(payload)  { return req('POST', '/admin/discounts/', payload); },
+    async updateDiscount(id, payload) { return req('PATCH', `/admin/discounts/${id}/`, payload); },
+    async deleteDiscount(id)       { return req('DELETE', `/admin/discounts/${id}/`); },
 
   };
 

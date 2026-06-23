@@ -119,6 +119,7 @@ REST_FRAMEWORK = {
         'register': '20/hour',
         'sample':   '30/min',
         'verify':   '20/hour',
+        'discount': '30/min',
     },
 }
 

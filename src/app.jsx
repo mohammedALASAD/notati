@@ -15,6 +15,7 @@ const ADMIN_NAV = [
   { id: 'notes',        label: 'Notes manager', icon: 'Notes' },
   { id: 'users',        label: 'Users',         icon: 'Users' },
   { id: 'orders',       label: 'Orders',        icon: 'Bag'      },
+  { id: 'discounts',    label: 'Discounts',     icon: 'Tag'      },
   { id: 'access',       label: 'Unlock access', icon: 'Lock'     },
   { id: 'insights',    label: 'Insights',      icon: 'BarChart' },
   { id: 'testimonials', label: 'Testimonials',  icon: 'Star'    },
@@ -151,6 +152,7 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
           )}
           {isAdmin && current === 'users' && <UsersList topbarSearch={search}/>}
           {isAdmin && current === 'orders' && <OrdersManager/>}
+          {isAdmin && current === 'discounts' && <DiscountsManager/>}
           {isAdmin && current === 'access' && <AccessManager/>}
           {isAdmin && current === 'insights' && <ChapterInsights/>}
           {isAdmin && current === 'testimonials' && <TestimonialsManager/>}

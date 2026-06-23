@@ -12,7 +12,8 @@ from reportlab.pdfgen import canvas
 from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from . import pdfutils, verification
-from .models import User, Course, Note, NoteFile, Access, BagItem, VerificationCode
+from .models import (User, Course, Note, NoteFile, Access, BagItem, VerificationCode,
+                     Order, DiscountCode, DiscountRedemption)
 from .serializers import NoteSerializer, RegisterSerializer
 
 
@@ -314,3 +315,117 @@ class BroadcastEmailTests(TestCase):
         r = resp.post('/api/admin/broadcast-email/',
                       {'subject': 'Hi', 'message': 'x'}, format='json')
         self.assertEqual(r.status_code, 403)
+
+
+class DiscountCodeTests(TestCase):
+    def setUp(self):
+        cache.clear()  # reset throttle counters
+        self.course = Course.objects.create(name='ITIS103')
+        self.n1 = Note.objects.create(course=self.course, chapter_number=1,
+                                      chapter_title='Ch1', price=Decimal('2.000'))
+        self.n2 = Note.objects.create(course=self.course, chapter_number=2,
+                                      chapter_title='Ch2', price=Decimal('3.000'))
+        self.student = User.objects.create_user('s@x.com', 'pw', name='S')
+        self.other   = User.objects.create_user('o@x.com', 'pw', name='O')
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.code = DiscountCode.objects.create(code='SAVE20', percent=20, active=True)
+
+    def _c(self, user):
+        c = APIClient()
+        c.force_authenticate(user)
+        return c
+
+    def _order(self, user, code='SAVE20', ids=None):
+        body = {'note_ids': ids if ids is not None else [self.n1.id, self.n2.id]}
+        if code is not None:
+            body['discount_code'] = code
+        return self._c(user).post('/api/orders/', body, format='json')
+
+    def test_valid_code_discounts_total_and_records(self):
+        resp = self._order(self.student)
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(Decimal(resp.data['subtotal']), Decimal('5.000'))
+        self.assertEqual(resp.data['discount_percent'], 20)
+        self.assertEqual(resp.data['discount_code'], 'SAVE20')
+        self.assertEqual(Decimal(resp.data['total']), Decimal('4.000'))  # 5 - 20%
+        self.assertTrue(DiscountRedemption.objects.filter(code=self.code, user=self.student).exists())
+
+    def test_case_insensitive_code(self):
+        resp = self._order(self.student, code='save20')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data['discount_code'], 'SAVE20')
+
+    def test_unknown_code_rejected(self):
+        resp = self._order(self.student, code='NOPE')
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(Order.objects.filter(user=self.student).exists())
+
+    def test_once_per_student(self):
+        self.assertEqual(self._order(self.student).status_code, 201)
+        # Second order with the same code is blocked for the same student.
+        second = self._order(self.student)
+        self.assertEqual(second.status_code, 400)
+        # A different student can still use it.
+        self.assertEqual(self._order(self.other).status_code, 201)
+
+    def test_cancel_frees_the_code(self):
+        order_id = self._order(self.student).data['id']
+        self.assertEqual(self._order(self.student).status_code, 400)  # locked
+        # Admin cancels -> redemption released.
+        self._c(self.admin).patch(f'/api/admin/orders/{order_id}/',
+                                  {'status': 'cancelled'}, format='json')
+        self.assertFalse(DiscountRedemption.objects.filter(user=self.student).exists())
+        self.assertEqual(self._order(self.student).status_code, 201)
+
+    def test_expired_code_rejected(self):
+        self.code.valid_until = timezone.now() - timedelta(minutes=1)
+        self.code.save()
+        self.assertEqual(self._order(self.student).status_code, 400)
+
+    def test_not_yet_active_code_rejected(self):
+        self.code.valid_from = timezone.now() + timedelta(days=1)
+        self.code.save()
+        self.assertEqual(self._order(self.student).status_code, 400)
+
+    def test_inactive_code_rejected(self):
+        self.code.active = False
+        self.code.save()
+        self.assertEqual(self._order(self.student).status_code, 400)
+
+    def test_max_uses_cap(self):
+        self.code.max_uses = 1
+        self.code.save()
+        self.assertEqual(self._order(self.student).status_code, 201)
+        self.assertEqual(self._order(self.other).status_code, 400)  # cap reached
+
+    def test_order_without_code_is_full_price(self):
+        resp = self._order(self.student, code=None)
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data['discount_percent'], 0)
+        self.assertEqual(Decimal(resp.data['total']), Decimal('5.000'))
+
+    def test_validate_endpoint(self):
+        resp = self._c(self.student).post('/api/discount/validate/', {'code': 'SAVE20'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data['valid'])
+        self.assertEqual(resp.data['percent'], 20)
+
+    def test_validate_rejects_used_code(self):
+        self._order(self.student)
+        resp = self._c(self.student).post('/api/discount/validate/', {'code': 'SAVE20'}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.data['valid'])
+
+    def test_admin_can_create_student_cannot(self):
+        ok = self._c(self.admin).post('/api/admin/discounts/',
+                                      {'code': 'new10', 'percent': 10}, format='json')
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(ok.data['code'], 'NEW10')  # uppercased
+        forbidden = self._c(self.student).post('/api/admin/discounts/',
+                                               {'code': 'X20', 'percent': 20}, format='json')
+        self.assertEqual(forbidden.status_code, 403)
+
+    def test_admin_rejects_bad_percent(self):
+        resp = self._c(self.admin).post('/api/admin/discounts/',
+                                        {'code': 'BAD', 'percent': 150}, format='json')
+        self.assertEqual(resp.status_code, 400)

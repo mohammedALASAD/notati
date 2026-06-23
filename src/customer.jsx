@@ -150,11 +150,37 @@ function NoteDetailsModal({ open, note, bag, onAddToBag, onRemoveFromBag, onClos
    Bag Checkout Modal — shows all bag items + BenefitPay + WhatsApp
    ============================================================ */
 function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
-  const [copied, setCopied] = useStateC(false);
-  useEffectC(() => { if (!open) setCopied(false); }, [open]);
+  const [copied,   setCopied]   = useStateC(false);
+  const [code,     setCode]     = useStateC('');
+  const [applied,  setApplied]  = useStateC(null);   // { code, percent }
+  const [checking, setChecking] = useStateC(false);
+  const [codeErr,  setCodeErr]  = useStateC('');
+  useEffectC(() => {
+    if (!open) { setCopied(false); setCode(''); setApplied(null); setCodeErr(''); setChecking(false); }
+  }, [open]);
   if (!open || !items || items.length === 0) return null;
 
-  const total = items.reduce((s, i) => s + Number(i.price), 0);
+  const subtotal = items.reduce((s, i) => s + Number(i.price), 0);
+  // Round to 3 dp the same way the backend does, so the displayed and charged totals agree.
+  const discountAmount = applied ? Math.round((subtotal * applied.percent / 100) * 1000) / 1000 : 0;
+  const total = subtotal - discountAmount;
+
+  async function applyCode() {
+    const c = code.trim();
+    if (!c) return;
+    setChecking(true); setCodeErr('');
+    try {
+      const res = await NotatiAPI.validateDiscount(c);
+      setApplied({ code: res.code, percent: res.percent });
+      setCodeErr('');
+    } catch (e) {
+      setApplied(null);
+      setCodeErr(e.message || 'This code is not valid.');
+    } finally {
+      setChecking(false);
+    }
+  }
+  function removeCode() { setApplied(null); setCode(''); setCodeErr(''); }
 
   function copyNumber() {
     navigator.clipboard.writeText(CONTACT.benefitpay).catch(() => {});
@@ -165,8 +191,11 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
   const itemLines = items.map(i =>
     `- ${i.courseName} Ch.${i.chapterNumber}: ${i.chapterTitle} (BD ${Number(i.price).toFixed(3)})`
   ).join('\n');
+  const discountLines = applied
+    ? `\nSubtotal: BD ${subtotal.toFixed(3)}\nDiscount code ${applied.code} (${applied.percent}% off): -BD ${discountAmount.toFixed(3)}`
+    : '';
   const waMsg = encodeURIComponent(
-    `Hi, I would like to purchase the following notes:\n${itemLines}\nTotal: BD ${total.toFixed(3)}\nMy Notati email: ${user.email}`
+    `Hi, I would like to purchase the following notes:\n${itemLines}${discountLines}\nTotal: BD ${total.toFixed(3)}\nMy Notati email: ${user.email}`
   );
 
   return (
@@ -175,7 +204,7 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
            subtitle={`${items.length} item${items.length !== 1 ? 's' : ''} · Total BD ${total.toFixed(3)}`}
            footer={<>
              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-             <button className="btn btn-primary" onClick={onConfirm}>
+             <button className="btn btn-primary" onClick={() => onConfirm(applied ? applied.code : null)}>
                <Icons.Check size={16}/> Done, I have paid
              </button>
            </>}>
@@ -204,6 +233,19 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
                 </span>
               </div>
             ))}
+            {applied && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 14px 0',
+                              font: 'var(--type-body)', fontSize: 13, color: 'var(--fg-2)' }}>
+                  <span>Subtotal</span><span>BD {subtotal.toFixed(3)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 14px 0',
+                              font: 'var(--type-body)', fontSize: 13, color: 'var(--notati-forest)' }}>
+                  <span>Discount · {applied.code} ({applied.percent}%)</span>
+                  <span>−BD {discountAmount.toFixed(3)}</span>
+                </div>
+              </>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                           padding: '10px 14px', borderTop: '2px solid var(--border-1)', marginTop: 2 }}>
               <span style={{ font: 'var(--type-label)', letterSpacing: '.08em', color: 'var(--fg-2)' }}>TOTAL</span>
@@ -212,6 +254,43 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
               </span>
             </div>
           </div>
+        </div>
+
+        {/* Discount code */}
+        <div>
+          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 10, letterSpacing: '.08em' }}>
+            DISCOUNT CODE
+          </div>
+          {applied ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                          padding: '12px 14px', background: 'rgba(122, 155, 107, .12)',
+                          border: '1px solid var(--notati-sage)', borderRadius: 'var(--r-5)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--notati-forest)', fontWeight: 700 }}>
+                <Icons.Check size={15}/> {applied.code} applied · {applied.percent}% off
+              </span>
+              <button className="btn btn-ghost btn-sm" onClick={removeCode}>Remove</button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={code}
+                       onChange={e => { setCode(e.target.value.toUpperCase()); setCodeErr(''); }}
+                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyCode(); } }}
+                       placeholder="Enter a code"
+                       style={{ flex: 1, padding: '10px 14px', borderRadius: 'var(--r-5)',
+                                border: '1px solid var(--border-1)', background: 'var(--bg-section)',
+                                color: 'var(--fg-1)', font: 'var(--type-body)', letterSpacing: '.05em',
+                                textTransform: 'uppercase' }}/>
+                <button className="btn btn-soft" onClick={applyCode} disabled={checking || !code.trim()}>
+                  {checking ? 'Checking…' : 'Apply'}
+                </button>
+              </div>
+              {codeErr && (
+                <div style={{ marginTop: 8, font: 'var(--type-caption)', fontStyle: 'normal',
+                              fontSize: 12, color: 'var(--notati-crimson)' }}>{codeErr}</div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Steps */}
@@ -291,12 +370,12 @@ function BagDrawer({ open, items, user, onClose, onRemove, onClear }) {
 
   const total = items.reduce((s, i) => s + Number(i.price), 0);
 
-  async function handleConfirm() {
+  async function handleConfirm(discountCode) {
     // Record a pending order so the admin gets a tracked order they can mark
     // paid + unlock in one click. Send the note ids from the bag the user sees.
     try {
       const noteIds = items.map(i => i._numId).filter(Boolean);
-      await NotatiAPI.createOrder(noteIds);
+      await NotatiAPI.createOrder(noteIds, discountCode);
     } catch (e) {
       toast.error('Could not place order', e.message || 'Please try again.');
       return; // keep the bag and modal so the user can retry

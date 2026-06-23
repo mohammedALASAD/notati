@@ -1318,6 +1318,16 @@ function OrdersManager() {
                       <span style={{ color: 'var(--fg-3)', whiteSpace: 'nowrap' }}>BD {Number(it.price).toFixed(3)}</span>
                     </div>
                   ))}
+                  {o.discount_code && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13,
+                                  marginTop: 4, paddingTop: 8, borderTop: '1px dashed var(--border-2)',
+                                  color: 'var(--notati-forest)', fontWeight: 600 }}>
+                      <span>Discount code <strong>{o.discount_code}</strong> ({o.discount_percent}% off)
+                        {o.subtotal != null && <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}> · subtotal BD {Number(o.subtotal).toFixed(3)}</span>}
+                      </span>
+                      <span style={{ whiteSpace: 'nowrap' }}>−BD {(Number(o.subtotal) - Number(o.total)).toFixed(3)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {o.status === 'pending' && (
@@ -2379,4 +2389,209 @@ function ChapterInsights() {
   );
 }
 
-Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, OrdersManager, AccessManager, TestimonialsManager, ChapterInsights });
+/* ============================================================
+   Discounts manager — create % codes, set validity window + caps
+   ============================================================ */
+function _discountStatus(d) {
+  const now = Date.now();
+  if (!d.active) return { label: 'Inactive', tone: 'var(--fg-3)' };
+  if (d.valid_from && now < new Date(d.valid_from).getTime())
+    return { label: 'Scheduled', tone: 'var(--notati-amber)' };
+  if (d.valid_until && now > new Date(d.valid_until).getTime())
+    return { label: 'Expired', tone: 'var(--notati-crimson)' };
+  if (d.max_uses != null && d.uses_count >= d.max_uses)
+    return { label: 'Used up', tone: 'var(--notati-crimson)' };
+  return { label: 'Active', tone: 'var(--notati-forest)' };
+}
+
+function DiscountsManager() {
+  const { toast } = useToast();
+  const [codes,   setCodes]   = useStateAd([]);
+  const [loading, setLoading] = useStateAd(true);
+  const [busyId,  setBusyId]  = useStateAd(null);
+
+  // Create form
+  const [code,    setCode]    = useStateAd('');
+  const [percent, setPercent] = useStateAd('');
+  const [from,    setFrom]    = useStateAd('');
+  const [until,   setUntil]   = useStateAd('');
+  const [maxUses, setMaxUses] = useStateAd('');
+  const [saving,  setSaving]  = useStateAd(false);
+
+  function load() {
+    setLoading(true);
+    NotatiAPI.getDiscounts()
+      .then(c => { setCodes(c); setLoading(false); })
+      .catch(e => { toast.error('Could not load codes', e.message); setLoading(false); });
+  }
+  useEffectAd(load, []);
+
+  async function create(e) {
+    e.preventDefault();
+    const c = code.trim().toUpperCase();
+    const p = parseInt(percent, 10);
+    if (!c) { toast.error('Code required', 'Type a code first.'); return; }
+    if (!(p >= 1 && p <= 100)) { toast.error('Bad percent', 'Percent must be 1–100.'); return; }
+    setSaving(true);
+    try {
+      const created = await NotatiAPI.createDiscount({
+        code: c,
+        percent: p,
+        active: true,
+        valid_from:  from  ? new Date(from).toISOString()  : null,
+        valid_until: until ? new Date(until).toISOString() : null,
+        max_uses:    maxUses ? parseInt(maxUses, 10) : null,
+      });
+      setCodes(prev => [created, ...prev]);
+      setCode(''); setPercent(''); setFrom(''); setUntil(''); setMaxUses('');
+      toast.success('Code created', `${created.code} · ${created.percent}% off`);
+    } catch (err) {
+      toast.error('Could not create', err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleActive(d) {
+    setBusyId(d.id);
+    try {
+      const updated = await NotatiAPI.updateDiscount(d.id, { active: !d.active });
+      setCodes(prev => prev.map(x => x.id === d.id ? { ...x, ...updated } : x));
+    } catch (err) {
+      toast.error('Update failed', err.message);
+    } finally { setBusyId(null); }
+  }
+
+  async function remove(d) {
+    if (!window.confirm(`Delete code ${d.code}? Students who already used it keep their discount; the code just stops working.`)) return;
+    setBusyId(d.id);
+    try {
+      await NotatiAPI.deleteDiscount(d.id);
+      setCodes(prev => prev.filter(x => x.id !== d.id));
+      toast.info('Code deleted', d.code);
+    } catch (err) {
+      toast.error('Delete failed', err.message);
+    } finally { setBusyId(null); }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '10px 12px', borderRadius: 'var(--r-5)',
+    border: '1px solid var(--border-1)', background: 'var(--bg-section)',
+    color: 'var(--fg-1)', font: 'var(--type-body)', fontSize: 14,
+  };
+
+  return (
+    <div>
+      <div className="page-head">
+        <div className="ttl">
+          <h1>Discount codes</h1>
+          <p className="sub">
+            Create a percentage code, set when it's valid and an optional total-uses cap.
+            Each student can use a code only once. The code a student used shows on their order and in their WhatsApp message.
+          </p>
+        </div>
+      </div>
+
+      <section className="panel" style={{ marginBottom: 20 }}>
+        <div className="panel-head"><h3>New code</h3></div>
+        <form className="panel-body" onSubmit={create}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
+            <div className="field">
+              <label>Code</label>
+              <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
+                     placeholder="WELCOME10" style={{ ...inputStyle, letterSpacing: '.05em' }}/>
+            </div>
+            <div className="field">
+              <label>Discount %</label>
+              <input type="number" min="1" max="100" value={percent}
+                     onChange={e => setPercent(e.target.value)} placeholder="10" style={inputStyle}/>
+            </div>
+            <div className="field">
+              <label>Valid from <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
+              <input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} style={inputStyle}/>
+            </div>
+            <div className="field">
+              <label>Valid until <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
+              <input type="datetime-local" value={until} onChange={e => setUntil(e.target.value)} style={inputStyle}/>
+            </div>
+            <div className="field">
+              <label>Max total uses <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
+              <input type="number" min="1" value={maxUses} onChange={e => setMaxUses(e.target.value)}
+                     placeholder="Unlimited" style={inputStyle}/>
+            </div>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              <Icons.Plus size={16}/> {saving ? 'Creating…' : 'Create code'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {loading ? (
+        <PageLoader/>
+      ) : codes.length === 0 ? (
+        <EmptyState title="No codes yet" message="Create your first discount code above."/>
+      ) : (
+        <section className="panel">
+          <div className="panel-body flush">
+            <div className="scroll-table">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Off</th>
+                    <th>Status</th>
+                    <th>Window</th>
+                    <th className="r">Uses</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {codes.map(d => {
+                    const st = _discountStatus(d);
+                    return (
+                      <tr key={d.id}>
+                        <td data-l="Code"><span style={{ font: 'var(--type-body-bold)', letterSpacing: '.04em' }}>{d.code}</span></td>
+                        <td data-l="Off">{d.percent}%</td>
+                        <td data-l="Status">
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: st.tone, fontWeight: 600, fontSize: 13 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.tone }}/>
+                            {st.label}
+                          </span>
+                        </td>
+                        <td data-l="Window" style={{ fontSize: 12, color: 'var(--fg-2)' }}>
+                          {d.valid_from || d.valid_until
+                            ? `${d.valid_from ? fmtDate(d.valid_from) : '—'} → ${d.valid_until ? fmtDate(d.valid_until) : '—'}`
+                            : 'Always'}
+                        </td>
+                        <td className="r" data-l="Uses">
+                          <span style={{ font: 'var(--type-body-bold)' }}>{d.uses_count}</span>
+                          <span style={{ color: 'var(--fg-3)' }}>{d.max_uses != null ? ` / ${d.max_uses}` : ''}</span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                            <button className="btn btn-soft btn-sm" disabled={busyId === d.id}
+                                    onClick={() => toggleActive(d)}>
+                              {d.active ? 'Disable' : 'Enable'}
+                            </button>
+                            <button className="btn-icon" title="Delete" disabled={busyId === d.id}
+                                    onClick={() => remove(d)}>
+                              <Icons.Trash size={15}/>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { AdminDashboard, ContentInbox, UploadNoteModal, NotesManager, UsersList, OrdersManager, DiscountsManager, AccessManager, TestimonialsManager, ChapterInsights });

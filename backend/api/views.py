@@ -1,6 +1,7 @@
 import re
 import time
 import urllib.request
+from decimal import Decimal, ROUND_HALF_UP
 from rest_framework import generics, status, filters
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -19,7 +20,7 @@ def health(request):
     return JsonResponse({'status': 'ok'})
 from .models import (
     User, Course, Note, NoteFile, Access, Upload, UploadFile,
-    Testimonial, BagItem, Order, OrderItem,
+    Testimonial, BagItem, Order, OrderItem, DiscountCode, DiscountRedemption,
 )
 from .serializers import (
     RegisterSerializer, UserSerializer, UserAdminSerializer,
@@ -27,7 +28,7 @@ from .serializers import (
     NoteFileSerializer, UploadFileSerializer,
     AccessSerializer, UploadSerializer, UploadAdminSerializer,
     TestimonialSerializer, TestimonialAdminSerializer,
-    BagItemSerializer, OrderSerializer,
+    BagItemSerializer, OrderSerializer, DiscountCodeSerializer,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
 from . import pdfutils, verification, emails
@@ -636,6 +637,24 @@ class BagClearView(APIView):
 
 # ── Orders ────────────────────────────────────────────────────────────────────
 
+def _resolve_discount(code_str, user):
+    """Look up a discount code and check it's usable by this user right now.
+    Returns (DiscountCode | None, error_message | None)."""
+    code_str = (code_str or '').strip().upper()
+    if not code_str:
+        return None, 'Enter a code.'
+    try:
+        code = DiscountCode.objects.get(code=code_str)
+    except DiscountCode.DoesNotExist:
+        return None, 'This code is not valid.'
+    reason = code.reason_invalid(timezone.now())
+    if reason:
+        return None, reason
+    if DiscountRedemption.objects.filter(code=code, user=user).exists():
+        return None, 'You have already used this code.'
+    return code, None
+
+
 class OrderListCreateView(generics.ListCreateAPIView):
     """Students place an order from their bag and see their own order history."""
     serializer_class = OrderSerializer
@@ -656,9 +675,18 @@ class OrderListCreateView(generics.ListCreateAPIView):
                      BagItem.objects.filter(user=request.user).select_related('note__course')]
         if not notes:
             return Response({'detail': 'No items to order.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Optional discount code — always re-validate server-side so it can't be forged.
+        raw_code = request.data.get('discount_code')
+        code_obj = None
+        if raw_code and str(raw_code).strip():
+            code_obj, err = _resolve_discount(raw_code, request.user)
+            if err:
+                return Response({'detail': err}, status=status.HTTP_400_BAD_REQUEST)
+
         with transaction.atomic():
             order = Order.objects.create(user=request.user, status='pending')
-            total = 0
+            subtotal = Decimal('0')
             for n in notes:
                 OrderItem.objects.create(
                     order=order, note=n,
@@ -667,9 +695,22 @@ class OrderListCreateView(generics.ListCreateAPIView):
                     chapter_title=n.chapter_title,
                     price=n.price,
                 )
-                total += n.price
-            order.total = total
-            order.save(update_fields=['total'])
+                subtotal += n.price
+
+            percent = code_obj.percent if code_obj else 0
+            discount_amount = (subtotal * Decimal(percent) / Decimal(100)).quantize(
+                Decimal('0.001'), rounding=ROUND_HALF_UP) if code_obj else Decimal('0')
+
+            order.subtotal = subtotal
+            order.discount_percent = percent
+            order.discount_code = code_obj.code if code_obj else ''
+            order.total = subtotal - discount_amount
+            order.save(update_fields=['subtotal', 'discount_percent', 'discount_code', 'total'])
+
+            # Lock the code to this student (released if the order is cancelled).
+            if code_obj:
+                DiscountRedemption.objects.create(code=code_obj, user=request.user, order=order)
+
             # The bag has become an order — clear it.
             BagItem.objects.filter(user=request.user).delete()
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
@@ -712,6 +753,9 @@ class AdminOrderDetailView(APIView):
                 order.save()
         elif new_status in ('pending', 'cancelled'):
             order.status = new_status
+            # Cancelling frees up any discount code so the student can use it again.
+            if new_status == 'cancelled':
+                DiscountRedemption.objects.filter(order=order).delete()
             order.save()
         else:
             order.save()
@@ -760,3 +804,29 @@ class AdminBroadcastEmailView(APIView):
             send_support_email(s.email, s.name, subject, message)
             sent += 1
         return Response({'detail': f'Broadcast queued to {sent} student{"" if sent == 1 else "s"}.', 'count': sent})
+
+
+# ── Discount codes ────────────────────────────────────────────────────────────
+
+class DiscountValidateView(APIView):
+    """A student checks a code before checkout. Returns the percent if usable."""
+    permission_classes = [IsAuthenticated]
+    throttle_scope = 'discount'
+
+    def post(self, request):
+        code_obj, err = _resolve_discount(request.data.get('code'), request.user)
+        if err:
+            return Response({'valid': False, 'detail': err}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'valid': True, 'code': code_obj.code, 'percent': code_obj.percent})
+
+
+class AdminDiscountListCreateView(generics.ListCreateAPIView):
+    queryset = DiscountCode.objects.all()
+    serializer_class = DiscountCodeSerializer
+    permission_classes = [IsAdmin]
+
+
+class AdminDiscountDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = DiscountCode.objects.all()
+    serializer_class = DiscountCodeSerializer
+    permission_classes = [IsAdmin]

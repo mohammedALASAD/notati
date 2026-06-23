@@ -164,12 +164,15 @@ class Order(models.Model):
         ('cancelled', 'Cancelled'),
     ]
 
-    user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
-    status     = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
-    total      = models.DecimalField(max_digits=8, decimal_places=3, default=0)
-    note       = models.CharField(max_length=300, blank=True)   # admin/payment reference
-    created_at = models.DateTimeField(auto_now_add=True)
-    paid_at    = models.DateTimeField(null=True, blank=True)
+    user             = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
+    status           = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    subtotal         = models.DecimalField(max_digits=8, decimal_places=3, default=0)  # before discount
+    discount_code    = models.CharField(max_length=40, blank=True)
+    discount_percent = models.PositiveIntegerField(default=0)
+    total            = models.DecimalField(max_digits=8, decimal_places=3, default=0)  # after discount
+    note             = models.CharField(max_length=300, blank=True)   # admin/payment reference
+    created_at       = models.DateTimeField(auto_now_add=True)
+    paid_at          = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -221,3 +224,52 @@ class Testimonial(models.Model):
 
     def __str__(self):
         return f'{self.user.name}: {self.text[:50]}'
+
+
+class DiscountCode(models.Model):
+    """A percentage discount an admin can hand out. Usable once per student,
+    optionally bounded by a date window and a total-redemptions cap."""
+    code        = models.CharField(max_length=40, unique=True)   # stored UPPERCASE
+    percent     = models.PositiveIntegerField()                  # 1..100
+    active      = models.BooleanField(default=True)
+    valid_from  = models.DateTimeField(null=True, blank=True)    # null = no start bound
+    valid_until = models.DateTimeField(null=True, blank=True)    # null = no end bound
+    max_uses    = models.PositiveIntegerField(null=True, blank=True)  # null = unlimited
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.code} ({self.percent}%)'
+
+    def uses_count(self):
+        return self.redemptions.count()
+
+    def reason_invalid(self, now):
+        """Return None if usable right now, else a short human reason."""
+        if not self.active:
+            return 'This code is no longer active.'
+        if self.valid_from and now < self.valid_from:
+            return 'This code is not active yet.'
+        if self.valid_until and now > self.valid_until:
+            return 'This code has expired.'
+        if self.max_uses is not None and self.uses_count() >= self.max_uses:
+            return 'This code has reached its usage limit.'
+        return None
+
+
+class DiscountRedemption(models.Model):
+    """Records that a student has used a code. One row per (code, user) enforces
+    'once per student'. Tied to the order so it can be released if cancelled."""
+    code       = models.ForeignKey(DiscountCode, on_delete=models.CASCADE, related_name='redemptions')
+    user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='redemptions')
+    order      = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='redemptions')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('code', 'user')
+
+    def __str__(self):
+        return f'{self.user.email} used {self.code.code}'

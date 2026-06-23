@@ -4,7 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import (
     User, Course, Note, NoteFile, Access, Upload, UploadFile,
-    Testimonial, BagItem, Order, OrderItem,
+    Testimonial, BagItem, Order, OrderItem, DiscountCode,
 )
 
 
@@ -312,10 +312,50 @@ class OrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Order
-        fields = ['id', 'user', 'user_email', 'user_name', 'status', 'total',
+        fields = ['id', 'user', 'user_email', 'user_name', 'status',
+                  'subtotal', 'discount_code', 'discount_percent', 'total',
                   'note', 'item_count', 'items', 'created_at', 'paid_at']
-        read_only_fields = ['id', 'user', 'user_email', 'user_name', 'total',
+        read_only_fields = ['id', 'user', 'user_email', 'user_name',
+                            'subtotal', 'discount_code', 'discount_percent', 'total',
                             'item_count', 'items', 'created_at', 'paid_at']
 
     def get_item_count(self, obj):
         return obj.items.count()
+
+
+class DiscountCodeSerializer(serializers.ModelSerializer):
+    uses_count = serializers.SerializerMethodField()
+
+    def get_uses_count(self, obj):
+        return obj.uses_count()
+
+    class Meta:
+        model  = DiscountCode
+        fields = ['id', 'code', 'percent', 'active', 'valid_from', 'valid_until',
+                  'max_uses', 'uses_count', 'created_at']
+        read_only_fields = ['id', 'uses_count', 'created_at']
+
+    def validate_percent(self, value):
+        if not 1 <= value <= 100:
+            raise serializers.ValidationError('Percent must be between 1 and 100.')
+        return value
+
+    def validate_code(self, value):
+        value = (value or '').strip().upper()
+        if not value:
+            raise serializers.ValidationError('Code is required.')
+        if not re.match(r'^[A-Z0-9_-]{3,40}$', value):
+            raise serializers.ValidationError('Use 3–40 letters, numbers, hyphens or underscores.')
+        qs = DiscountCode.objects.filter(code=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('That code already exists.')
+        return value
+
+    def validate(self, attrs):
+        vf = attrs.get('valid_from')
+        vu = attrs.get('valid_until')
+        if vf and vu and vu < vf:
+            raise serializers.ValidationError('“Valid until” must be after “valid from”.')
+        return attrs
