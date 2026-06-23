@@ -541,21 +541,52 @@ def admin_chapter_rankings(request):
 @api_view(['GET'])
 @permission_classes([IsAdmin])
 def admin_sales(request):
-    from django.db.models import Count
+    from collections import defaultdict
+
+    # What each student actually paid per note, from PAID orders (net of any
+    # order-level discount). Lets revenue reflect discounts instead of list price.
+    paid_map = {}
+    for it in (OrderItem.objects
+               .filter(order__status='paid', note__isnull=False)
+               .select_related('order')):
+        pct = it.order.discount_percent or 0
+        unit = float(it.price) * (100 - pct) / 100.0
+        paid_map[(it.order.user_id, it.note_id)] = (unit, pct > 0)
+
     notes = (
         Note.objects.select_related('course')
         .filter(price__gt=0)
-        .annotate(sales=Count('access_grants'))
-        .filter(sales__gt=0)
         .order_by('course__college', 'course__name', 'chapter_number')
     )
+    note_ids = [n.id for n in notes]
+    grants_by_note = defaultdict(list)
+    for note_id, user_id in (Access.objects
+                             .filter(note_id__in=note_ids)
+                             .values_list('note_id', 'user_id')):
+        grants_by_note[note_id].append(user_id)
+
     rows = []
-    total_revenue = 0.0
+    total_revenue = 0.0       # after discounts
+    total_gross = 0.0         # at list price
     total_sales = 0
+    total_discounted = 0
     for n in notes:
-        revenue = float(n.price) * n.sales
+        uids = grants_by_note.get(n.id, [])
+        if not uids:
+            continue
+        list_price = float(n.price)
+        sales = revenue = gross = discounted = 0
+        for uid in uids:
+            sales += 1
+            unit, had = paid_map.get((uid, n.id), (list_price, False))
+            revenue += unit
+            gross += list_price
+            if had:
+                discounted += 1
         total_revenue += revenue
-        total_sales += n.sales
+        total_gross += gross
+        total_sales += sales
+        total_discounted += discounted
         rows.append({
             'id': n.id,
             'college': n.course.college,
@@ -563,12 +594,16 @@ def admin_sales(request):
             'chapter_number': n.chapter_number,
             'chapter_title': n.chapter_title,
             'price': str(n.price),
-            'sales': n.sales,
-            'revenue': f'{revenue:.3f}',
+            'sales': sales,
+            'discounted_sales': discounted,
+            'revenue': f'{revenue:.3f}',           # net of discounts
+            'gross_revenue': f'{gross:.3f}',
         })
     return Response({
-        'total_revenue': f'{total_revenue:.3f}',
+        'total_revenue': f'{total_revenue:.3f}',          # net of discounts
+        'total_gross_revenue': f'{total_gross:.3f}',
         'total_sales': total_sales,
+        'total_discounted_sales': total_discounted,
         'rows': rows,
     })
 

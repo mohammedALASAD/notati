@@ -1755,28 +1755,34 @@ function SalesView({ salesData, loading }) {
     return Array.from(new Set(salesData.rows.map(r => r.college))).sort();
   }, [salesData]);
 
-  const { filteredRows, filteredRevenue, filteredSales } = useMemoAd(() => {
-    if (!salesData) return { filteredRows: [], filteredRevenue: 0, filteredSales: 0 };
+  const { filteredRows, filteredRevenue, filteredSales, filteredDiscounted, filteredSaved } = useMemoAd(() => {
+    if (!salesData) return { filteredRows: [], filteredRevenue: 0, filteredSales: 0, filteredDiscounted: 0, filteredSaved: 0 };
     const rows = collegeFilter === 'all'
       ? salesData.rows
       : salesData.rows.filter(r => r.college === collegeFilter);
+    const revenue = rows.reduce((s, r) => s + Number(r.revenue), 0);
+    const gross   = rows.reduce((s, r) => s + Number(r.gross_revenue != null ? r.gross_revenue : r.revenue), 0);
     return {
       filteredRows: rows,
-      filteredRevenue: rows.reduce((s, r) => s + Number(r.revenue), 0),
+      filteredRevenue: revenue,
       filteredSales:   rows.reduce((s, r) => s + r.sales, 0),
+      filteredDiscounted: rows.reduce((s, r) => s + (r.discounted_sales || 0), 0),
+      filteredSaved: gross - revenue,
     };
   }, [salesData, collegeFilter]);
 
   const grouped = useMemoAd(() => {
     const map = {};
     filteredRows.forEach(r => {
-      if (!map[r.college]) map[r.college] = { revenue: 0, sales: 0, courses: {} };
-      map[r.college].revenue += Number(r.revenue);
-      map[r.college].sales   += r.sales;
+      if (!map[r.college]) map[r.college] = { revenue: 0, sales: 0, discounted: 0, courses: {} };
+      map[r.college].revenue    += Number(r.revenue);
+      map[r.college].sales      += r.sales;
+      map[r.college].discounted += (r.discounted_sales || 0);
       const cn = r.course_name;
-      if (!map[r.college].courses[cn]) map[r.college].courses[cn] = { revenue: 0, sales: 0, chapters: [] };
-      map[r.college].courses[cn].revenue += Number(r.revenue);
-      map[r.college].courses[cn].sales   += r.sales;
+      if (!map[r.college].courses[cn]) map[r.college].courses[cn] = { revenue: 0, sales: 0, discounted: 0, chapters: [] };
+      map[r.college].courses[cn].revenue    += Number(r.revenue);
+      map[r.college].courses[cn].sales      += r.sales;
+      map[r.college].courses[cn].discounted += (r.discounted_sales || 0);
       map[r.college].courses[cn].chapters.push(r);
     });
     const entries = Object.entries(map);
@@ -1810,10 +1816,13 @@ function SalesView({ salesData, loading }) {
       {/* Summary cards */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
         {[
-          { label: 'Total revenue', value: `BD ${filteredRevenue.toFixed(3)}`, sub: 'from paid chapters', color: 'var(--notati-walnut)' },
+          { label: 'Total revenue', value: `BD ${filteredRevenue.toFixed(3)}`, sub: 'after discounts', color: 'var(--notati-walnut)' },
           { label: 'Total sales',   value: String(filteredSales),              sub: 'access grants sold', color: 'var(--notati-amber)' },
+          { label: 'Sold with discount', value: String(filteredDiscounted),
+            sub: filteredSaved > 0 ? `BD ${filteredSaved.toFixed(3)} given off` : 'no discounts used',
+            color: 'var(--notati-forest)' },
           { label: 'Avg per sale',  value: `BD ${filteredSales > 0 ? (filteredRevenue / filteredSales).toFixed(3) : '0.000'}`,
-            sub: 'average chapter price', color: 'var(--fg-1)' },
+            sub: 'average paid', color: 'var(--fg-1)' },
         ].map(card => (
           <div key={card.label} style={{ flex: 1, minWidth: 160, background: 'var(--bg-section)',
                         border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)', padding: '16px 20px' }}>
@@ -1889,6 +1898,12 @@ function SalesView({ salesData, loading }) {
                             <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
                               · {courseEntries.length} course{courseEntries.length !== 1 ? 's' : ''}
                             </span>
+                            {cData.discounted > 0 && (
+                              <span className="tag" style={{ fontSize: 10,
+                                    background: 'rgba(122,155,107,.16)', color: 'var(--notati-forest)' }}>
+                                {cData.discounted} discounted
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="r" data-l="Sales">
@@ -1919,6 +1934,12 @@ function SalesView({ salesData, loading }) {
                                 <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
                                   {chapters.length} ch.
                                 </span>
+                                {coData.discounted > 0 && (
+                                  <span className="tag" style={{ fontSize: 10,
+                                        background: 'rgba(122,155,107,.16)', color: 'var(--notati-forest)' }}>
+                                    {coData.discounted} discounted
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="r" data-l="Sales">
@@ -1950,6 +1971,13 @@ function SalesView({ salesData, loading }) {
                                       <span className="tag tag-bark" style={{ marginLeft: 8, fontSize: 10 }}>
                                         BD {Number(ch.price).toFixed(3)}
                                       </span>
+                                      {ch.discounted_sales > 0 && (
+                                        <span className="tag" style={{ marginLeft: 6, fontSize: 10,
+                                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                                              background: 'rgba(122,155,107,.16)', color: 'var(--notati-forest)' }}>
+                                          <Icons.Tag size={9}/> {ch.discounted_sales} with discount
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 </td>
@@ -1957,6 +1985,11 @@ function SalesView({ salesData, loading }) {
                                   <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>{ch.sales}</span>
                                 </td>
                                 <td className="r" data-l="Revenue">
+                                  {ch.discounted_sales > 0 && ch.gross_revenue != null && Number(ch.gross_revenue) !== Number(ch.revenue) && (
+                                    <span style={{ fontSize: 11, color: 'var(--fg-3)', textDecoration: 'line-through', marginRight: 6 }}>
+                                      BD {Number(ch.gross_revenue).toFixed(3)}
+                                    </span>
+                                  )}
                                   <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>BD {Number(ch.revenue).toFixed(3)}</span>
                                 </td>
                               </tr>

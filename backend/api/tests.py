@@ -429,3 +429,55 @@ class DiscountCodeTests(TestCase):
         resp = self._c(self.admin).post('/api/admin/discounts/',
                                         {'code': 'BAD', 'percent': 150}, format='json')
         self.assertEqual(resp.status_code, 400)
+
+
+class SalesDiscountTests(TestCase):
+    """The sales view must report revenue net of discounts and flag discounted sales."""
+    def setUp(self):
+        cache.clear()
+        self.course = Course.objects.create(name='ITIS103')
+        self.n1 = Note.objects.create(course=self.course, chapter_number=1,
+                                      chapter_title='Ch1', price=Decimal('2.000'))
+        self.n2 = Note.objects.create(course=self.course, chapter_number=2,
+                                      chapter_title='Ch2', price=Decimal('3.000'))
+        self.student = User.objects.create_user('s@x.com', 'pw', name='S')
+        self.full    = User.objects.create_user('f@x.com', 'pw', name='F')
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        DiscountCode.objects.create(code='HALF', percent=50, active=True)
+
+    def _c(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def _paid_order(self, user, ids, code=None):
+        body = {'note_ids': ids}
+        if code:
+            body['discount_code'] = code
+        oid = self._c(user).post('/api/orders/', body, format='json').data['id']
+        self._c(self.admin).patch(f'/api/admin/orders/{oid}/', {'status': 'paid'}, format='json')
+
+    def test_revenue_is_net_of_discount(self):
+        # Student buys both notes (BD5) with 50% off -> paid BD2.5
+        self._paid_order(self.student, [self.n1.id, self.n2.id], code='HALF')
+        # Another student buys n1 at full price (BD2)
+        self._paid_order(self.full, [self.n1.id])
+
+        data = self._c(self.admin).get('/api/admin/sales/').data
+        # Net revenue: discounted 2.5 + full 2.0 = 4.5 (gross would be 7.0)
+        self.assertEqual(Decimal(data['total_revenue']), Decimal('4.500'))
+        self.assertEqual(Decimal(data['total_gross_revenue']), Decimal('7.000'))
+        self.assertEqual(data['total_sales'], 3)
+        self.assertEqual(data['total_discounted_sales'], 2)
+
+        row1 = next(r for r in data['rows'] if r['id'] == self.n1.id)
+        # n1 sold twice: 1.0 (discounted) + 2.0 (full) = 3.0
+        self.assertEqual(Decimal(row1['revenue']), Decimal('3.000'))
+        self.assertEqual(row1['discounted_sales'], 1)
+        self.assertEqual(row1['sales'], 2)
+
+    def test_manual_access_counts_at_list_price(self):
+        # A manual unlock (no order) should still count at full price, no discount flag.
+        Access.objects.create(user=self.student, note=self.n1)
+        data = self._c(self.admin).get('/api/admin/sales/').data
+        row1 = next(r for r in data['rows'] if r['id'] == self.n1.id)
+        self.assertEqual(Decimal(row1['revenue']), Decimal('2.000'))
+        self.assertEqual(row1['discounted_sales'], 0)
