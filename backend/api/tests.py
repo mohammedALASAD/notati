@@ -280,3 +280,37 @@ class EmailVerificationTests(TestCase):
         login = APIClient().post('/api/auth/login/',
                                  {'email': 'r@x.com', 'password': 'Br4ndNew!!'}, format='json')
         self.assertEqual(login.status_code, 200)
+
+
+class BroadcastEmailTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.s1 = User.objects.create_user('s1@x.com', 'pw', name='S1')          # active student
+        self.s2 = User.objects.create_user('s2@x.com', 'pw', name='S2')          # active student
+        User.objects.create_user('inactive@x.com', 'pw', name='S3', is_active=False)  # excluded
+
+    def _admin(self):
+        c = APIClient()
+        c.force_authenticate(self.admin)
+        return c
+
+    def test_broadcast_sends_to_active_students_only(self):
+        sent = []
+        with patch('api.emails.send_support_email',
+                   side_effect=lambda email, name, subject, message: sent.append(email)):
+            resp = self._admin().post('/api/admin/broadcast-email/',
+                                      {'subject': 'Hi', 'message': 'Welcome'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['count'], 2)
+        self.assertCountEqual(sent, ['s1@x.com', 's2@x.com'])
+
+    def test_broadcast_requires_subject_and_message(self):
+        resp = self._admin().post('/api/admin/broadcast-email/', {'subject': 'Hi'}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_students_cannot_broadcast(self):
+        resp = APIClient()
+        resp.force_authenticate(self.s1)
+        r = resp.post('/api/admin/broadcast-email/',
+                      {'subject': 'Hi', 'message': 'x'}, format='json')
+        self.assertEqual(r.status_code, 403)

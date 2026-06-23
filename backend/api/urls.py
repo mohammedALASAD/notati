@@ -68,4 +68,5 @@ urlpatterns = [
     path('admin/testimonials/',        views.TestimonialAdminListView.as_view(),    name='admin-testimonial-list'),
     path('admin/testimonials/<int:pk>/', views.TestimonialAdminDetailView.as_view(), name='admin-testimonial-detail'),
     path('admin/send-email/',            views.AdminSendEmailView.as_view(),          name='admin-send-email'),
+    path('admin/broadcast-email/',       views.AdminBroadcastEmailView.as_view(),     name='admin-broadcast-email'),
 ]

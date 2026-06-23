@@ -1015,6 +1015,68 @@ function SendEmailModal({ user, onClose }) {
   );
 }
 
+/* ── Broadcast email modal (to all students) ─────────────────────────────────── */
+function BroadcastEmailModal({ studentCount, onClose }) {
+  const { toast } = useToast();
+  const [subject, setSubject] = useStateAd('');
+  const [message, setMessage] = useStateAd('');
+  const [busy,    setBusy]    = useStateAd(false);
+
+  async function send(e) {
+    e.preventDefault();
+    if (!subject.trim() || !message.trim()) return;
+    setBusy(true);
+    const s = subject.trim();
+    const m = message.trim();
+    try {
+      const res = await NotatiAPI.broadcastEmail(s, m);
+      onClose();
+      toast.success('Broadcast sent.', (res && res.detail) || `Delivered to ${studentCount} students.`);
+    } catch (err) {
+      setBusy(false);
+      toast.error('Could not send', err.message);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="modal-title">Email all students</div>
+            <div className="modal-sub">
+              This goes to <strong>{studentCount} {studentCount === 1 ? 'student' : 'students'}</strong>
+              <span style={{ color: 'var(--fg-3)' }}> · everyone with a verified account</span>
+            </div>
+          </div>
+          <button className="btn-close" onClick={onClose}><Icons.Close size={18}/></button>
+        </div>
+
+        <form className="modal-body" onSubmit={send} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="field">
+            <label>Subject</label>
+            <input autoFocus value={subject} onChange={e => setSubject(e.target.value)}
+                   placeholder="e.g. New chapters just landed in the library" required/>
+          </div>
+          <div className="field">
+            <label>Message</label>
+            <textarea value={message} onChange={e => setMessage(e.target.value)}
+                      placeholder="Write your announcement here…" required
+                      style={{ minHeight: 180, resize: 'vertical', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.7 }}/>
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
+            <button type="button" className="btn btn-outline" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={busy || !subject.trim() || !message.trim()}>
+              {busy ? 'Sending…' : `Send to ${studentCount}`}
+              {!busy && <Icons.ArrowRight size={15}/>}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function UsersList({ topbarSearch }) {
   const [users,       setUsers]       = useStateAd([]);
   const [uploads,     setUploads]     = useStateAd([]);
@@ -1022,6 +1084,9 @@ function UsersList({ topbarSearch }) {
   const [q,           setQ]           = useStateAd('');
   const [role,        setRole]        = useStateAd('all');
   const [emailTarget, setEmailTarget] = useStateAd(null);
+  const [showBroadcast, setShowBroadcast] = useStateAd(false);
+
+  const studentCount = users.filter(u => u.role === 'customer').length;
 
   useEffectAd(() => { setQ(topbarSearch || ''); }, [topbarSearch]);
   useEffectAd(() => {
@@ -1044,6 +1109,13 @@ function UsersList({ topbarSearch }) {
         <div className="ttl">
           <h1>Registered users</h1>
           <p className="sub">Everyone with a Notati account. Students sign up themselves; admins are seeded.</p>
+        </div>
+        <div className="actions">
+          <button className="btn btn-primary" onClick={() => setShowBroadcast(true)}
+                  disabled={studentCount === 0}>
+            <Icons.Mail size={16}/> Email all students
+            {studentCount > 0 && <span style={{ opacity: .7, marginLeft: 2 }}>({studentCount})</span>}
+          </button>
         </div>
       </div>
 
@@ -1127,6 +1199,9 @@ function UsersList({ topbarSearch }) {
       </section>
 
       <SendEmailModal user={emailTarget} onClose={() => setEmailTarget(null)}/>
+      {showBroadcast && (
+        <BroadcastEmailModal studentCount={studentCount} onClose={() => setShowBroadcast(false)}/>
+      )}
     </div>
   );
 }

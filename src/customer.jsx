@@ -414,7 +414,6 @@ function CustomerDashboard({ user, onNav, onOpenNote, onShowDetails, bag, onAddT
   const accessibleCount = notes.filter(n => NotatiStore.canReadNote(user.id, n)).length;
 
   const recentUploads = uploads.slice(0, 4);
-  const featured = notes.slice(0, 3);
 
   return (
     <div>
@@ -435,32 +434,25 @@ function CustomerDashboard({ user, onNav, onOpenNote, onShowDetails, bag, onAddT
         </div>
       </div>
 
-      {loading ? <PageLoader variant="stats" rows={4}/> : (
+      {loading ? <PageLoader variant="stats" rows={3}/> : (
         <div className="stats fade-in">
           <Stat hero label="Notes I can read"
                 num={accessibleCount}
                 delta={{ dir: 'up', text: `${notes.length} notes in the library` }}
                 icon="Library"
-                onClick={() => onNav('mynotes')} navLabel="My notes"/>
+                onClick={() => onNav('mynotes')} navLabel="Open my notes"/>
+          <Stat tone="sage" label="Notes library" num={notes.length}
+                delta={{ text: 'Browse every chapter' }}
+                icon="Library"
+                onClick={() => onNav('library')} navLabel="Go to library"/>
           <Stat tone="walnut" label="My uploads" num={uploads.length}
                 delta={{ text: `${ready} ready · ${pending} pending` }}
                 icon="Upload"
                 onClick={() => onNav('uploads')} navLabel="View uploads"/>
-          <Stat tone="amber" label="Awaiting review" num={pending}
-                delta={pending > 0
-                  ? { text: 'Admin team usually replies within 48h' }
-                  : { dir: 'up', text: 'Nothing pending — nice and tidy' }}
-                icon="Clock"
-                onClick={() => onNav('uploads')} navLabel="View uploads"/>
-          <Stat tone="sage" label="Notes ready for you" num={ready}
-                delta={{ dir: 'up', text: 'From files you submitted' }}
-                icon="Check"
-                onClick={() => onNav('mynotes')} navLabel="My notes"/>
         </div>
       )}
 
-      <div className="grid-2">
-        <section className="panel">
+      <section className="panel">
           <div className="panel-head">
             <h3>Your recent uploads</h3>
             <button className="btn btn-ghost btn-sm" onClick={() => onNav('uploads')}>
@@ -469,8 +461,8 @@ function CustomerDashboard({ user, onNav, onOpenNote, onShowDetails, bag, onAddT
           </div>
           <div className="panel-body">
             {loading ? <PageLoader variant="table" rows={3}/> : recentUploads.length === 0 ? (
-              <EmptyState title="No uploads yet"
-                          message="Drop a .pptx, .docx or .pdf and we'll turn it into a clean Note."
+              <EmptyState title="Turn your own slides into clean study notes — free"
+                          message="Send us any lecture .pptx, .docx or .pdf and we'll rebuild it into a tidy, easy-to-study Notati note. Notes made from your own files are always free — it's our way of saying thanks for sharing."
                           action={<button className="btn btn-primary" onClick={() => onNav('upload')}>
                                     <Icons.Upload size={16}/> Upload your first file
                                   </button>}/>
@@ -497,85 +489,6 @@ function CustomerDashboard({ user, onNav, onOpenNote, onShowDetails, bag, onAddT
             )}
           </div>
         </section>
-
-        <section className="panel">
-          <div className="panel-head" style={{ borderBottomColor: 'var(--border-2)' }}>
-            <h3>Fresh notes for you</h3>
-            <button className="btn btn-ghost btn-sm" onClick={() => onNav('library')}>
-              Library <Icons.ArrowRight size={14}/>
-            </button>
-          </div>
-          <div className="panel-body">
-            {loading ? <PageLoader rows={3}/> : featured.length === 0 ? (
-              <EmptyState title="No notes published yet"
-                          message="The library is empty for now — check back soon."/>
-            ) : (
-              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {featured.map(n => {
-                  const canRead = NotatiStore.canReadNote(user.id, n);
-                  const isFree  = !n.price || Number(n.price) === 0;
-                  const inBag   = bag && bag.some(i => i.id === n.id);
-                  return (
-                    <div key={n.id} className={`notecard ${canRead ? '' : 'notecard-locked'}`}
-                         onClick={canRead ? () => onOpenNote(n) : () => onShowDetails && onShowDetails(n)}
-                         style={{ position: 'relative', cursor: 'pointer' }}>
-                      {isFree && (
-                        <span style={{ position: 'absolute', top: 10, right: 10,
-                                       background: 'var(--notati-sage)', color: 'var(--notati-paper)',
-                                       font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
-                                       borderRadius: 'var(--r-pill)' }}>FREE</span>
-                      )}
-                      {canRead && !isFree && (
-                        <span style={{ position: 'absolute', top: 10, right: 10,
-                                       background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
-                                       font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
-                                       borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                          <Icons.Check size={9}/> For you
-                        </span>
-                      )}
-                      {inBag && !canRead && (
-                        <span style={{ position: 'absolute', top: 10, right: 10,
-                                       background: 'var(--notati-sage)', color: 'var(--notati-paper)',
-                                       font: 'var(--type-label)', fontSize: 10, padding: '2px 8px',
-                                       borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                          <Icons.Bag size={9}/> In bag
-                        </span>
-                      )}
-                      <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{n.college}</div>
-                      <span className="course">{n.courseName}</span>
-                      <div className="title">{n.title}</div>
-                      <div className="desc">{n.description}</div>
-                      <div className="tags">
-                        {(n.tags || []).slice(0, 2).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
-                      </div>
-                      <div className="foot">
-                        <span>{fmtDate(n.publishedAt)}</span>
-                        {canRead ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--notati-walnut)', fontWeight: 700 }}>
-                            Read <Icons.ArrowRight size={13}/>
-                          </span>
-                        ) : !isFree ? (
-                          inBag ? (
-                            <button className="btn btn-sm btn-in-bag"
-                                    onClick={(e) => { e.stopPropagation(); onRemoveFromBag && onRemoveFromBag(n.id); }}>
-                              <Icons.Check size={12}/> In bag
-                            </button>
-                          ) : (
-                            <button className="btn btn-primary btn-sm"
-                                    onClick={(e) => { e.stopPropagation(); onAddToBag && onAddToBag(n); toast.success('Added to bag', n.title); }}>
-                              <Icons.Bag size={12}/> Add to bag
-                            </button>
-                          )
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </section>
-      </div>
 
       <TestimonialForm user={user}/>
     </div>

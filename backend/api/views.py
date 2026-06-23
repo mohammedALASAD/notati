@@ -740,3 +740,23 @@ class AdminSendEmailView(APIView):
         from .emails import send_support_email
         send_support_email(recipient.email, recipient.name, subject, message)
         return Response({'detail': 'Email sent.'})
+
+
+class AdminBroadcastEmailView(APIView):
+    """Send one email to every active student in a single click."""
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        subject = (request.data.get('subject') or '').strip()
+        message = (request.data.get('message') or '').strip()
+
+        if not subject or not message:
+            return Response({'detail': 'subject and message are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        students = User.objects.filter(role='student', is_active=True).exclude(email='')
+        from .emails import send_support_email
+        sent = 0
+        for s in students:
+            send_support_email(s.email, s.name, subject, message)
+            sent += 1
+        return Response({'detail': f'Broadcast queued to {sent} student{"" if sent == 1 else "s"}.', 'count': sent})

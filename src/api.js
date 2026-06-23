@@ -402,6 +402,10 @@
       return req('POST', '/admin/send-email/', { user_id: userId, subject, message });
     },
 
+    async broadcastEmail(subject, message) {
+      return req('POST', '/admin/broadcast-email/', { subject, message });
+    },
+
     /* Bag (server-synced) */
     async getBag() {
       const data = await req('GET', '/bag/');
