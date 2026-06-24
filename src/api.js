@@ -15,11 +15,39 @@
 
   /* ── token helpers ────────────────────────────────────────── */
   function getToken()    { try { return localStorage.getItem(KEYS.token); } catch(e) { return null; } }
+  function getRefresh()  { try { return localStorage.getItem(KEYS.refresh); } catch(e) { return null; } }
   function setToken(t)   { try { localStorage.setItem(KEYS.token, t); } catch(e) {} }
+  function setRefresh(t) { try { localStorage.setItem(KEYS.refresh, t); } catch(e) {} }
   function clearTokens() {
     try {
       [KEYS.token, KEYS.refresh, KEYS.user].forEach(k => localStorage.removeItem(k));
     } catch(e) {}
+  }
+
+  /* Exchange the long-lived refresh token for a fresh access token.
+     A single in-flight request is shared so a burst of 401s only refreshes once.
+     Returns true on success. */
+  let _refreshing = null;
+  function refreshAccessToken() {
+    const refresh = getRefresh();
+    if (!refresh) return Promise.resolve(false);
+    if (!_refreshing) {
+      _refreshing = fetch(BASE + '/auth/token/refresh/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh }),
+      }).then(async (r) => {
+        if (!r.ok) return false;
+        const data = await r.json().catch(() => ({}));
+        if (data && data.access) {
+          setToken(data.access);
+          if (data.refresh) setRefresh(data.refresh);   // ROTATE_REFRESH_TOKENS is on
+          return true;
+        }
+        return false;
+      }).catch(() => false).finally(() => { _refreshing = null; });
+    }
+    return _refreshing;
   }
 
   /* ── stored user (fast boot, no extra round-trip) ────────── */
@@ -32,7 +60,7 @@
   }
 
   /* ── core fetch wrapper ───────────────────────────────────── */
-  async function req(method, path, body, isFormData) {
+  async function req(method, path, body, isFormData, _retried) {
     const token = getToken();
     const headers = {};
     if (!isFormData) headers['Content-Type'] = 'application/json';
@@ -46,6 +74,19 @@
       res = await fetch(BASE + path, opts);
     } catch (e) {
       throw new Error('Cannot reach server. Is the backend running?');
+    }
+
+    // The access token (1-day life) likely expired between sessions. Use the
+    // refresh token to get a new one and retry once, so reopening the site keeps
+    // working without a manual sign-out/sign-in.
+    if (res.status === 401 && !_retried && getRefresh()
+        && path !== '/auth/token/refresh/' && path !== '/auth/login/') {
+      const ok = await refreshAccessToken();
+      if (ok) return req(method, path, body, isFormData, true);
+      // Refresh token is gone/expired too — the session is truly dead. Clear it
+      // and reboot to the login screen instead of showing empty pages.
+      clearTokens();
+      if (typeof window !== 'undefined') window.location.reload();
     }
 
     if (res.status === 204) return null;
@@ -449,10 +490,13 @@
 
   };
 
-  async function _proxyFetch(url) {
+  async function _proxyFetch(url, _retried) {
     const token = getToken();
     const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
     const res = await fetch(url, { headers });
+    if (res.status === 401 && !_retried && getRefresh()) {
+      if (await refreshAccessToken()) return _proxyFetch(url, true);
+    }
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.detail || 'Request failed');
