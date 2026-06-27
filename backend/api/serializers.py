@@ -142,6 +142,15 @@ class NoteSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at']
 
+    def _purchased(self, obj):
+        """Read the annotated _user_has_access flag if present, else fall back to DB query."""
+        if hasattr(obj, '_user_has_access'):
+            return obj._user_has_access
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        return obj.access_grants.filter(user=request.user).exists()
+
     def _can_access(self, obj):
         """Whether the requesting user may receive direct file URLs for this note."""
         request = self.context.get('request')
@@ -149,17 +158,13 @@ class NoteSerializer(serializers.ModelSerializer):
             return obj.is_free
         if request.user.role == 'admin':
             return True
-        if obj.is_free:
-            return True
-        return obj.access_grants.filter(user=request.user).exists()
+        return obj.is_free or self._purchased(obj)
 
     def get_has_access(self, obj):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
-        if obj.is_free:
-            return True
-        return obj.access_grants.filter(user=request.user).exists()
+        return obj.is_free or self._purchased(obj)
 
     def get_files(self, obj):
         # Only hand out the direct (signed) download URL to users who have access.

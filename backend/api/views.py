@@ -11,7 +11,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
-from django.db.models import Q
+from django.db.models import Q, Exists, OuterRef
 from django.db import transaction
 from django.utils import timezone
 from django.contrib.auth.password_validation import validate_password
@@ -251,6 +251,13 @@ class NoteListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         qs = Note.objects.select_related('course').prefetch_related('files').all()
+        user = self.request.user
+        if user.is_authenticated and user.role != 'admin':
+            qs = qs.annotate(
+                _user_has_access=Exists(
+                    Access.objects.filter(note=OuterRef('pk'), user=user)
+                )
+            )
         course_id = self.request.query_params.get('course')
         if course_id:
             qs = qs.filter(course_id=course_id)
