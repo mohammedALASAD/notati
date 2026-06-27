@@ -105,6 +105,11 @@ class ThrottledLoginView(TokenObtainPairView):
     """Login with per-IP rate limiting to slow brute-force / credential stuffing."""
     throttle_scope = 'login'
 
+    def post(self, request, *args, **kwargs):
+        # Opportunistic purge of never-activated signups on every login.
+        verification.cleanup_unverified()
+        return super().post(request, *args, **kwargs)
+
 
 class RegisterView(APIView):
     """Create an INACTIVE account and email a 6-digit activation code.
@@ -486,11 +491,16 @@ class UploadDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ── Admin: Users ──────────────────────────────────────────────────────────────
 
 class AdminUserListView(generics.ListAPIView):
-    queryset = User.objects.all().order_by('name')
     serializer_class = UserAdminSerializer
     permission_classes = [IsAdmin]
     filter_backends = [filters.SearchFilter]
     search_fields = ['email', 'name', 'college']
+
+    def get_queryset(self):
+        # Purge expired never-activated signups, then only show real (active)
+        # accounts — unverified placeholders shouldn't clutter the list or DB.
+        verification.cleanup_unverified()
+        return User.objects.filter(is_active=True).order_by('name')
 
 
 class AdminUserDetailView(generics.RetrieveUpdateAPIView):

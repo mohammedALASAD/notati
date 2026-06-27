@@ -481,3 +481,39 @@ class SalesDiscountTests(TestCase):
         row1 = next(r for r in data['rows'] if r['id'] == self.n1.id)
         self.assertEqual(Decimal(row1['revenue']), Decimal('2.000'))
         self.assertEqual(row1['discounted_sales'], 0)
+
+
+class UnverifiedCleanupTriggerTests(TestCase):
+    """Expired never-activated accounts get purged on login + admin user-list load,
+    and are never shown in the admin users list."""
+    def setUp(self):
+        cache.clear()
+        self.admin = User.objects.create_user('admin@x.com', 'pw', name='Admin', role='admin')
+        # An expired, never-activated student (code expired in the past).
+        self.ghost = User.objects.create_user('ghost@x.com', 'pw', name='Ghost', is_active=False)
+        VerificationCode.objects.create(user=self.ghost, purpose='activate', code_hash='x',
+                                        expires_at=timezone.now() - timedelta(minutes=1))
+
+    def test_admin_user_list_purges_and_hides_unverified(self):
+        c = APIClient(); c.force_authenticate(self.admin)
+        resp = c.get('/api/admin/users/')
+        rows = resp.data['results'] if isinstance(resp.data, dict) else resp.data
+        emails = [u['email'] for u in rows]
+        self.assertNotIn('ghost@x.com', emails)
+        self.assertFalse(User.objects.filter(email='ghost@x.com').exists())
+
+    def test_login_purges_unverified(self):
+        APIClient().post('/api/auth/login/',
+                         {'email': 'admin@x.com', 'password': 'pw'}, format='json')
+        self.assertFalse(User.objects.filter(email='ghost@x.com').exists())
+
+    def test_fresh_unverified_is_kept_but_hidden(self):
+        fresh = User.objects.create_user('fresh@x.com', 'pw', name='Fresh', is_active=False)
+        VerificationCode.objects.create(user=fresh, purpose='activate', code_hash='x',
+                                        expires_at=timezone.now() + timedelta(minutes=5))
+        c = APIClient(); c.force_authenticate(self.admin)
+        resp = c.get('/api/admin/users/')
+        rows = resp.data['results'] if isinstance(resp.data, dict) else resp.data
+        emails = [u['email'] for u in rows]
+        self.assertNotIn('fresh@x.com', emails)           # hidden from admin list
+        self.assertTrue(User.objects.filter(email='fresh@x.com').exists())  # but not deleted yet
