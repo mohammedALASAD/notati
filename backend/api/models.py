@@ -1,5 +1,8 @@
+import re
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 
 class UserManager(BaseUserManager):
@@ -273,3 +276,39 @@ class DiscountRedemption(models.Model):
 
     def __str__(self):
         return f'{self.user.email} used {self.code.code}'
+
+
+# ── Cloudinary cleanup signals ─────────────────────────────────────────────────
+
+def _delete_cloudinary_file(file_field):
+    """Delete a file from Cloudinary when its DB record is removed."""
+    if not file_field:
+        return
+    try:
+        url = file_field.url
+    except Exception:
+        return
+    if 'res.cloudinary.com' not in url:
+        return
+    try:
+        import cloudinary.uploader
+        match = re.search(r'/raw/upload/(?:v\d+/)?(.+)$', url)
+        if match:
+            cloudinary.uploader.destroy(match.group(1), resource_type='raw')
+    except Exception:
+        pass
+
+
+@receiver(post_delete, sender=NoteFile)
+def _notefile_post_delete(sender, instance, **kwargs):
+    _delete_cloudinary_file(instance.file)
+
+
+@receiver(post_delete, sender=UploadFile)
+def _uploadfile_post_delete(sender, instance, **kwargs):
+    _delete_cloudinary_file(instance.file)
+
+
+@receiver(post_delete, sender=Upload)
+def _upload_post_delete(sender, instance, **kwargs):
+    _delete_cloudinary_file(instance.file)
