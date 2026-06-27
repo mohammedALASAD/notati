@@ -219,6 +219,7 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
   const [collegeFilter, setCollegeFilter] = useStateAd('all');
   const [confirmDel, setConfirmDel]           = useStateAd(null);
   const [viewFilesUpload, setViewFilesUpload] = useStateAd(null);
+  const [timerUpload, setTimerUpload]         = useStateAd(null);
 
   function refresh() {
     Promise.all([NotatiAPI.getUploads(), NotatiAPI.getUsers()])
@@ -319,6 +320,7 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
                     <th>Uploader</th>
                     <th>Type</th>
                     <th>Uploaded</th>
+                    <th>Auto-delete</th>
                     <th>Status</th>
                     <th className="r">Actions</th>
                   </tr>
@@ -345,6 +347,18 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
                         </td>
                         <td data-l="Type"><FileTypeChip type={up.fileType}/></td>
                         <td data-l="Uploaded" style={{ whiteSpace: 'nowrap' }}>{fmtDate(up.uploadedAt)}</td>
+                        <td data-l="Auto-delete" style={{ whiteSpace: 'nowrap' }}>
+                          {(() => {
+                            const rem = Math.ceil((new Date(up.autoDeleteAt) - Date.now()) / 86400000);
+                            const color = rem <= 7 ? 'var(--notati-crimson)' : rem <= 14 ? '#d97706' : 'var(--fg-3)';
+                            return (
+                              <span style={{ font: 'var(--type-caption)', color, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Icons.Clock size={13}/>
+                                {rem <= 0 ? 'Expiring soon' : `${rem}d`}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td data-l="Status"><StatusBadge status={up.status}/></td>
                         <td className="r" data-l="Actions">
                           <div className="row-actions">
@@ -367,6 +381,9 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
                               : <button className="btn btn-soft btn-sm" onClick={() => onPublish(up)}>
                                   <Icons.Edit size={14}/> Update
                                 </button>}
+                            <button className="btn btn-ghost btn-sm" title="Set auto-delete timer" onClick={() => setTimerUpload(up)}>
+                              <Icons.Clock size={15}/>
+                            </button>
                             <button className="btn btn-danger btn-sm" title="Delete" onClick={() => setConfirmDel(up)}>
                               <Icons.Trash size={15}/>
                             </button>
@@ -410,7 +427,92 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
         open={!!viewFilesUpload}
         upload={viewFilesUpload}
         onClose={() => setViewFilesUpload(null)}/>
+
+      <SetTimerModal
+        open={!!timerUpload}
+        upload={timerUpload}
+        onClose={() => setTimerUpload(null)}
+        onSaved={updated => setUploads(prev => prev.map(u => u.id === updated.id ? updated : u))}/>
     </div>
+  );
+}
+
+/* ============================================================
+   SetTimerModal — admin sets or extends the auto-delete timer for an upload
+   ============================================================ */
+function SetTimerModal({ open, upload, onClose, onSaved }) {
+  const { toast } = useToast();
+  const [saving, setSaving] = useStateAd(false);
+  const [days, setDays] = useStateAd('');
+
+  function daysRemaining(upload) {
+    if (!upload) return null;
+    const d = new Date(upload.autoDeleteAt) - Date.now();
+    return Math.ceil(d / 86400000);
+  }
+
+  async function handleSet(daysFromNow) {
+    setSaving(true);
+    try {
+      const dt = new Date(Date.now() + daysFromNow * 86400000).toISOString();
+      const updated = await NotatiAPI.setUploadTimer(upload.id, dt);
+      toast.success('Timer updated', `Auto-delete set to ${daysFromNow} days from now.`);
+      onSaved(updated);
+      onClose();
+    } catch(e) {
+      toast.error('Failed', e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleReset() {
+    setSaving(true);
+    try {
+      const updated = await NotatiAPI.setUploadTimer(upload.id, null);
+      toast.success('Reset', 'Timer reset to default (45 days from upload date).');
+      onSaved(updated);
+      onClose();
+    } catch(e) {
+      toast.error('Failed', e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const rem = upload ? daysRemaining(upload) : null;
+
+  return (
+    <Modal open={open} onClose={onClose} title="Set auto-delete timer"
+           subtitle={upload ? `"${upload.title}" — currently deletes in ${rem != null ? rem + ' day' + (rem !== 1 ? 's' : '') : '…'}` : ''}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <p style={{ margin: 0, font: 'var(--type-caption)', color: 'var(--fg-3)' }}>
+          Choose how many days from <strong>now</strong> before this submission is automatically deleted:
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[15, 30, 45, 60, 90].map(d => (
+            <button key={d} className="btn btn-soft btn-sm" disabled={saving}
+                    onClick={() => handleSet(d)}>
+              {d} days
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input type="number" min="1" max="365" placeholder="Custom days"
+                 className="form-input" style={{ width: 130 }}
+                 value={days} onChange={e => setDays(e.target.value)}/>
+          <button className="btn btn-primary btn-sm" disabled={saving || !days || Number(days) < 1}
+                  onClick={() => handleSet(Number(days))}>
+            Set
+          </button>
+        </div>
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
+          <button className="btn btn-ghost btn-sm" disabled={saving} onClick={handleReset}>
+            Reset to default (45 days from upload date)
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

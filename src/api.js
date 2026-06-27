@@ -166,6 +166,8 @@
       sizeKB:        0,
       noteId:        u.note ? String(u.note) : null,
       uploadedAt:    u.created_at,
+      deleteAfter:   u.delete_after || null,
+      autoDeleteAt:  u.auto_delete_at || null,
     };
   }
 
@@ -379,6 +381,11 @@
 
     async deleteUpload(id) {
       await req('DELETE', `/uploads/${id}/`);
+    },
+
+    async setUploadTimer(id, deleteAfter) {
+      const raw = await req('PATCH', `/uploads/${id}/`, { delete_after: deleteAfter });
+      return toUpload(raw);
     },
 
     /* Courses: find by name or create */

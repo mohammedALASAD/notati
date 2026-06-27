@@ -32,6 +32,19 @@ from .serializers import (
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
 from . import pdfutils, verification, emails
+from datetime import timedelta
+
+
+def _cleanup_expired_uploads():
+    """Delete uploads whose auto-delete timer has passed. Runs lazily on admin list load."""
+    now = timezone.now()
+    cutoff = now - timedelta(days=Upload.DEFAULT_RETENTION_DAYS)
+    expired = list(
+        Upload.objects.filter(delete_after__lte=now) |
+        Upload.objects.filter(delete_after__isnull=True, created_at__lte=cutoff)
+    )
+    for upload in expired:
+        upload.delete()  # post_delete signal cleans up Cloudinary files
 
 
 # ── Cloudinary proxy helper ───────────────────────────────────────────────────
@@ -464,6 +477,7 @@ class UploadListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         user = self.request.user
         if user.role == 'admin':
+            _cleanup_expired_uploads()
             return Upload.objects.select_related('user').all()
         return Upload.objects.filter(user=user)
 

@@ -227,9 +227,10 @@ class AccessSerializer(serializers.ModelSerializer):
 
 
 class UploadSerializer(serializers.ModelSerializer):
-    user_email = serializers.EmailField(source='user.email', read_only=True)
-    user_name  = serializers.CharField(source='user.name', read_only=True)
-    file_url   = serializers.SerializerMethodField()
+    user_email    = serializers.EmailField(source='user.email', read_only=True)
+    user_name     = serializers.CharField(source='user.name', read_only=True)
+    file_url      = serializers.SerializerMethodField()
+    auto_delete_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Upload
@@ -237,9 +238,12 @@ class UploadSerializer(serializers.ModelSerializer):
             'id', 'user', 'user_email', 'user_name',
             'file', 'file_url', 'title', 'description',
             'college', 'course_name', 'chapter_number', 'chapter_title',
-            'status', 'note', 'created_at',
+            'status', 'note', 'delete_after', 'auto_delete_at', 'created_at',
         ]
-        read_only_fields = ['id', 'user', 'status', 'note', 'created_at']
+        read_only_fields = ['id', 'user', 'status', 'note', 'auto_delete_at', 'created_at']
+
+    def get_auto_delete_at(self, obj):
+        return obj.auto_delete_at().isoformat()
 
     def get_file_url(self, obj):
         request = self.context.get('request')

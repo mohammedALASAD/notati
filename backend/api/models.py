@@ -113,6 +113,8 @@ class Upload(models.Model):
         ('rejected', 'Rejected'),
     ]
 
+    DEFAULT_RETENTION_DAYS = 45
+
     user           = models.ForeignKey(User, on_delete=models.CASCADE, related_name='uploads')
     file           = models.FileField(upload_to='uploads/', blank=True, null=True)
     title          = models.CharField(max_length=200)
@@ -125,7 +127,12 @@ class Upload(models.Model):
     note        = models.ForeignKey(
         Note, on_delete=models.SET_NULL, null=True, blank=True, related_name='source_upload'
     )
+    delete_after = models.DateTimeField(null=True, blank=True)
     created_at  = models.DateTimeField(auto_now_add=True)
+
+    def auto_delete_at(self):
+        from datetime import timedelta
+        return self.delete_after or (self.created_at + timedelta(days=self.DEFAULT_RETENTION_DAYS))
 
     class Meta:
         ordering = ['-created_at']
