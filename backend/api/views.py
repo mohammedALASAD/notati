@@ -646,7 +646,7 @@ class TestimonialPublicView(generics.ListAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        return Testimonial.objects.filter(approved=True)
+        return Testimonial.objects.select_related('user').filter(approved=True)
 
 
 class TestimonialCreateView(generics.CreateAPIView):
@@ -659,7 +659,7 @@ class TestimonialAdminListView(generics.ListAPIView):
     permission_classes = [IsAdmin]
 
     def get_queryset(self):
-        return Testimonial.objects.all()
+        return Testimonial.objects.select_related('user').all()
 
 
 class TestimonialAdminDetailView(generics.RetrieveUpdateDestroyAPIView):

@@ -61,32 +61,17 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class UserAdminSerializer(serializers.ModelSerializer):
-    uploads_count = serializers.SerializerMethodField()
-    access_count  = serializers.SerializerMethodField()
-
     class Meta:
         model = User
-        fields = ['id', 'email', 'name', 'role', 'college', 'phone', 'created_at',
-                  'uploads_count', 'access_count']
+        fields = ['id', 'email', 'name', 'role', 'college', 'phone', 'created_at']
         read_only_fields = ['id', 'email', 'created_at']
-
-    def get_uploads_count(self, obj):
-        return obj.uploads.count()
-
-    def get_access_count(self, obj):
-        return obj.access_grants.count()
 
 
 class CourseSerializer(serializers.ModelSerializer):
-    notes_count = serializers.SerializerMethodField()
-
     class Meta:
         model = Course
-        fields = ['id', 'name', 'college', 'notes_count', 'created_at']
+        fields = ['id', 'name', 'college', 'created_at']
         read_only_fields = ['id', 'created_at']
-
-    def get_notes_count(self, obj):
-        return obj.notes.count()
 
 
 def _file_url(file_field, request=None):
@@ -164,6 +149,8 @@ class NoteSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
+        if request.user.role == 'admin':
+            return True
         return obj.is_free or self._purchased(obj)
 
     def get_files(self, obj):
@@ -329,7 +316,9 @@ class OrderSerializer(serializers.ModelSerializer):
                             'item_count', 'items', 'created_at', 'paid_at']
 
     def get_item_count(self, obj):
-        return obj.items.count()
+        # len() on the related manager reuses prefetch_related('items') instead
+        # of firing a fresh COUNT query per order (.count() always hits the DB).
+        return len(obj.items.all())
 
 
 class DiscountCodeSerializer(serializers.ModelSerializer):
