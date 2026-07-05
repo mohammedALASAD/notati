@@ -75,7 +75,7 @@ function _downloadNote(n, openReader, toast) {
    buying: its description + how many files it includes, plus quick
    Sample / Add to bag actions.
    ============================================================ */
-function NoteDetailsModal({ open, note, bag, onAddToBag, onRemoveFromBag, onClose }) {
+function NoteDetailsModal({ open, note, bag, pendingNoteIds, onAddToBag, onRemoveFromBag, onClose }) {
   const { toast } = useToast();
   if (!open || !note) return null;
 
@@ -83,6 +83,7 @@ function NoteDetailsModal({ open, note, bag, onAddToBag, onRemoveFromBag, onClos
   const fileCount = files.length;
   const inBag     = bag && bag.some(i => i.id === note.id);
   const isFree    = !note.price || Number(note.price) === 0;
+  const pending   = pendingNoteIds && pendingNoteIds.has(note._numId);
 
   function sampleFile(f) {
     const ok = (f && f.id) ? NotatiAPI.openSampleFile(f.id) : NotatiAPI.openSample(note);
@@ -95,7 +96,12 @@ function NoteDetailsModal({ open, note, bag, onAddToBag, onRemoveFromBag, onClos
            subtitle={`${note.courseName}${note.college ? ' · ' + note.college : ''}`}
            footer={<>
              <button className="btn btn-ghost" onClick={onClose}>Close</button>
-             {!isFree && (inBag ? (
+             {!isFree && (pending ? (
+               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 14px',
+                              color: 'var(--notati-bark, #8a6d3b)', fontWeight: 700 }}>
+                 <Icons.Clock size={15}/> Waiting for approval
+               </span>
+             ) : inBag ? (
                <button className="btn btn-in-bag" onClick={() => onRemoveFromBag && onRemoveFromBag(note.id)}>
                  <Icons.Check size={15}/> In bag
                </button>
@@ -318,19 +324,6 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
           )}
         </div>
 
-        {/* Order code — shared with us on WhatsApp so we can match your payment fast */}
-        <div style={{ background: 'rgba(122, 155, 107, .12)', border: '1px solid var(--notati-sage)',
-                      borderRadius: 'var(--r-5)', padding: '12px 16px', display: 'flex',
-                      alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', letterSpacing: '.08em' }}>
-            YOUR ORDER CODE
-          </div>
-          <span style={{ font: 'var(--type-h3)', fontSize: 20, fontWeight: 800, letterSpacing: '.12em',
-                         color: 'var(--notati-forest)' }}>
-            {orderCode}
-          </span>
-        </div>
-
         {/* Steps */}
         <div>
           <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 10, letterSpacing: '.08em' }}>
@@ -395,7 +388,7 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
 /* ============================================================
    Bag Drawer — slide-in panel with items, total, and checkout
    ============================================================ */
-function BagDrawer({ open, items, user, onClose, onRemove, onClear }) {
+function BagDrawer({ open, items, user, onClose, onRemove, onClear, onOrdered }) {
   const { toast } = useToast();
   const [checkoutOpen, setCheckoutOpen] = useStateC(false);
 
@@ -412,14 +405,15 @@ function BagDrawer({ open, items, user, onClose, onRemove, onClear }) {
     // Record a pending order so the admin gets a tracked order they can mark
     // paid + unlock in one click. Send the note ids from the bag the user sees.
     // Returns true on success / false on failure so the modal can re-enable its button.
+    const noteIds = items.map(i => i._numId).filter(Boolean);
     try {
-      const noteIds = items.map(i => i._numId).filter(Boolean);
       await NotatiAPI.createOrder(noteIds, discountCode, orderCode);
     } catch (e) {
       toast.error('Could not place order', e.message || 'Please try again.');
       return false; // keep the bag and modal so the user can retry
     }
     onClear();
+    onOrdered && onOrdered(noteIds);   // mark these chapters "waiting for approval"
     setCheckoutOpen(false);
     onClose();
     toast.success('Order placed', 'We received your order. Your notes unlock once we confirm payment.');
@@ -1089,7 +1083,7 @@ function FilterDropdown({ value, onChange, options, placeholder, icon }) {
 /* ============================================================
    Notes Library — two-level browse: course grid → chapter list
    ============================================================ */
-function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemoveFromBag, topbarSearch }) {
+function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemoveFromBag, pendingNoteIds, topbarSearch }) {
   const { toast } = useToast();
   const [notes,   setNotes]   = useStateC([]);
   const [loading, setLoading] = useStateC(true);
@@ -1150,12 +1144,14 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
     const freeCount = courseChapters.filter(n => !n.price || Number(n.price) === 0).length;
     const paidCount = courseChapters.length - freeCount;
 
-    // Chapters the student could still buy: paid, not already owned, not already in the bag.
+    // Chapters the student could still buy: paid, not already owned, not already
+    // in the bag, and not already awaiting approval from a pending order.
     const buyable = courseChapters.filter(n => {
-      const isFree = !n.price || Number(n.price) === 0;
-      const owned  = NotatiStore.canReadNote(user.id, n);
-      const inBag  = bag && bag.some(i => i.id === n.id);
-      return !isFree && !owned && !inBag;
+      const isFree  = !n.price || Number(n.price) === 0;
+      const owned   = NotatiStore.canReadNote(user.id, n);
+      const inBag   = bag && bag.some(i => i.id === n.id);
+      const pending = pendingNoteIds && pendingNoteIds.has(n._numId);
+      return !isFree && !owned && !inBag && !pending;
     });
     const buyableTotal = buyable.reduce((s, n) => s + Number(n.price), 0);
 
@@ -1193,6 +1189,7 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
               const canRead = NotatiStore.canReadNote(user.id, n);
               const isFree  = !n.price || Number(n.price) === 0;
               const inBag   = bag && bag.some(i => i.id === n.id);
+              const pending = !canRead && pendingNoteIds && pendingNoteIds.has(n._numId);
               return (
                 <div key={n.id} className="chapter-row"
                      style={{ cursor: 'pointer' }}
@@ -1200,8 +1197,8 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
 
                   {/* Chapter number bubble */}
                   <div className="chapter-bubble"
-                       style={{ background: isFree ? 'var(--notati-sage)' : canRead ? 'var(--notati-walnut)' : inBag ? 'var(--notati-forest)' : 'var(--bg-card-2)',
-                                color: (isFree || canRead || inBag) ? 'var(--notati-paper)' : 'var(--fg-3)' }}>
+                       style={{ background: isFree ? 'var(--notati-sage)' : canRead ? 'var(--notati-walnut)' : pending ? 'var(--notati-bark, #8a6d3b)' : inBag ? 'var(--notati-forest)' : 'var(--bg-card-2)',
+                                color: (isFree || canRead || inBag || pending) ? 'var(--notati-paper)' : 'var(--fg-3)' }}>
                     {n.chapterNumber}
                   </div>
 
@@ -1224,6 +1221,13 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
                                      font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
                                      borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                         <Icons.Check size={9}/> For you
+                      </span>
+                    ) : pending ? (
+                      <span style={{ background: 'var(--notati-bark, #8a6d3b)', color: 'var(--notati-paper)',
+                                     font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
+                                     borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center',
+                                     gap: 4, whiteSpace: 'nowrap' }}>
+                        <Icons.Clock size={9}/> Waiting for approval
                       </span>
                     ) : inBag ? (
                       <button className="btn btn-sm btn-in-bag"

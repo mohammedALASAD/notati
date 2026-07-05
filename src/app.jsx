@@ -55,16 +55,35 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
   const [refreshKey, setRefreshKey]       = useStateApp(0);
   const [bagItems, setBagItems]           = useStateApp(() => NotatiStore.getBag());
   const [bagOpen, setBagOpen]             = useStateApp(false);
+  const [pendingNoteIds, setPendingNoteIds] = useStateApp(() => new Set());  // notes in a pending order
 
   const isAdmin = role === 'admin';
   const nav     = isAdmin ? ADMIN_NAV : CUSTOMER_NAV;
   const current = page || 'overview';
 
-  // Sync bag from server on mount (covers both fresh login and already-logged-in page loads)
+  // On mount, sync the bag from the server and reconcile it against what the
+  // student already owns or has already ordered — so paid/ordered chapters don't
+  // linger in the bag (including when they log in on a second device).
   useEffectApp(() => {
-    if (!isAdmin) {
-      NotatiStore.syncBagFromServer().then(merged => setBagItems(merged)).catch(() => {});
-    }
+    if (isAdmin) return;
+    (async () => {
+      let merged;
+      try { merged = await NotatiStore.syncBagFromServer(); }
+      catch (e) { merged = NotatiStore.getBag(); }
+      try {
+        const [notes, orders] = await Promise.all([NotatiAPI.getNotes(), NotatiAPI.getOrders()]);
+        const ownedIds = new Set(notes.filter(n => n.hasAccess).map(n => n._numId));
+        const pending  = new Set();
+        orders.filter(o => o.status === 'pending').forEach(o =>
+          (o.items || []).forEach(it => { if (it.note_id != null) pending.add(it.note_id); }));
+        setPendingNoteIds(pending);
+        // Drop bag items the student already owns or has already ordered.
+        const stale = merged.filter(i => ownedIds.has(i._numId) || pending.has(i._numId));
+        stale.forEach(i => NotatiStore.removeFromBag(i.id));
+        if (stale.length) merged = NotatiStore.getBag();
+      } catch (e) { /* keep the synced bag as-is if reconcile fails */ }
+      setBagItems(merged);
+    })();
   }, []);
 
   useEffectApp(() => { setSideOpen(false); }, [page]);
@@ -100,6 +119,15 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
   }
   function handleClearBag() {
     setBagItems(NotatiStore.clearBag());
+  }
+  // After an order is placed, mark those chapters as pending so the library shows
+  // "Waiting for approval" instead of letting the student re-order them.
+  function handleOrdered(noteIds) {
+    setPendingNoteIds(prev => {
+      const next = new Set(prev);
+      (noteIds || []).forEach(id => { if (id != null) next.add(id); });
+      return next;
+    });
   }
 
   function shellCls() {
@@ -171,6 +199,7 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
           {!isAdmin && current === 'library' && (
             <NotesLibrary user={user} onOpenNote={setReadingNote} onShowDetails={setDetailsNote}
                           bag={bagItems} onAddToBag={handleAddToBag} onRemoveFromBag={handleRemoveFromBag}
+                          pendingNoteIds={pendingNoteIds}
                           topbarSearch={search}/>
           )}
           {!isAdmin && current === 'mynotes' && (
@@ -197,6 +226,7 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
           open={!!detailsNote}
           note={detailsNote}
           bag={bagItems}
+          pendingNoteIds={pendingNoteIds}
           onAddToBag={handleAddToBag}
           onRemoveFromBag={handleRemoveFromBag}
           onClose={() => setDetailsNote(null)}/>
@@ -210,7 +240,8 @@ function DashboardShell({ user, role, page, onNav, onLogout, darkMode, onThemeTo
           user={user}
           onClose={() => setBagOpen(false)}
           onRemove={handleRemoveFromBag}
-          onClear={handleClearBag}/>
+          onClear={handleClearBag}
+          onOrdered={handleOrdered}/>
       )}
     </div>
   );
