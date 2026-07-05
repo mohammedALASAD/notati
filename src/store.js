@@ -72,6 +72,32 @@
     return [];
   }
 
+  /* ── Order code ───────────────────────────────────────────── */
+  // A short reference for a checkout. Kept STABLE for a given set of bag items,
+  // so re-opening checkout (or re-sending the WhatsApp message) reuses the same
+  // code. It only changes if the student adds/removes items, and is cleared once
+  // the order is placed so a later identical bag gets a fresh code.
+  const ORDERCODE = NS + ':ordercode';
+  function _genOrderCode() {
+    // Ambiguous characters (0/O, 1/I) are left out so it's easy to read and type.
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
+    return code;
+  }
+  function _bagSignature(items) {
+    return (items || []).map(i => i._numId).filter(v => v != null).sort((a, b) => a - b).join(',');
+  }
+  function orderCodeFor(items) {
+    const sig = _bagSignature(items);
+    const stored = read(ORDERCODE, null);
+    if (stored && stored.sig === sig && stored.code) return stored.code;
+    const code = _genOrderCode();
+    write(ORDERCODE, { sig, code });
+    return code;
+  }
+  function clearOrderCode() { write(ORDERCODE, null); }
+
   /* Called on login: fetch server bag and merge with any local items */
   async function syncBagFromServer() {
     try {
@@ -96,5 +122,6 @@
     canReadNote,
     getBag, addToBag, removeFromBag, clearBag, getBagTotal,
     syncBagFromServer,
+    orderCodeFor, clearOrderCode,
   };
 })();

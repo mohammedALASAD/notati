@@ -29,16 +29,6 @@ const CONTACT = {
 };
 const WA_DEFAULT_MSG = encodeURIComponent('Hi! I\'d like to purchase notes from Notati. Can you help me?');
 
-// Short, human-friendly order reference the student sees at checkout and sends
-// us on WhatsApp — we store the same code on the order so the admin can match it.
-// Ambiguous characters (0/O, 1/I) are left out so it's easy to read and type.
-function genOrderCode() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return code;
-}
-
 /* ============================================================
    Note file helpers — shared preview/download logic for multi-file notes
    openReader: function that opens the NoteReader modal for a given note
@@ -176,7 +166,7 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
   const [orderCode,  setOrderCode]  = useStateC('');
   useEffectC(() => {
     if (!open) { setCopied(false); setCode(''); setApplied(null); setCodeErr(''); setChecking(false); setSubmitting(false); setOrderCode(''); }
-    else setOrderCode(prev => prev || genOrderCode());   // one stable code per checkout
+    else setOrderCode(NotatiStore.orderCodeFor(items));   // stable per bag contents
   }, [open]);
   if (!open || !items || items.length === 0) return null;
 
@@ -413,6 +403,7 @@ function BagDrawer({ open, items, user, onClose, onRemove, onClear, onOrdered })
       return false; // keep the bag and modal so the user can retry
     }
     onClear();
+    NotatiStore.clearOrderCode();       // this bag is now an order — next order gets a fresh code
     onOrdered && onOrdered(noteIds);   // mark these chapters "waiting for approval"
     setCheckoutOpen(false);
     onClose();
