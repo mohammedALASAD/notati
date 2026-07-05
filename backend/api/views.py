@@ -47,6 +47,21 @@ def _cleanup_expired_uploads():
         upload.delete()  # post_delete signal cleans up Cloudinary files
 
 
+# Pending orders older than this are auto-cancelled so the admin's Pending list
+# stays focused on orders that still need action.
+PENDING_ORDER_STALE_DAYS = 3
+
+
+def _cancel_stale_pending_orders():
+    """Move long-abandoned pending orders to 'cancelled'. Runs lazily on admin list load.
+    Keeps the record (nothing is deleted) but frees any discount code they reserved."""
+    cutoff = timezone.now() - timedelta(days=PENDING_ORDER_STALE_DAYS)
+    stale = Order.objects.filter(status='pending', created_at__lte=cutoff)
+    for order in stale:
+        DiscountRedemption.objects.filter(order=order).delete()
+    stale.update(status='cancelled')
+
+
 # ── Cloudinary proxy helper ───────────────────────────────────────────────────
 
 def _fetch_file_bytes(file_field):
@@ -750,8 +765,13 @@ class OrderListCreateView(generics.ListCreateAPIView):
             if err:
                 return Response({'detail': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Short reference the student sees in the checkout / WhatsApp message.
+        # Generated client-side so the exact code is in the message they send us;
+        # we just store it so it shows on the matching admin order.
+        code = (str(request.data.get('code') or '')).strip().upper()[:12]
+
         with transaction.atomic():
-            order = Order.objects.create(user=request.user, status='pending')
+            order = Order.objects.create(user=request.user, status='pending', code=code)
             subtotal = Decimal('0')
             for n in notes:
                 OrderItem.objects.create(
@@ -787,6 +807,7 @@ class AdminOrderListView(generics.ListAPIView):
     permission_classes = [IsAdmin]
 
     def get_queryset(self):
+        _cancel_stale_pending_orders()
         qs = Order.objects.select_related('user').prefetch_related('items')
         st = self.request.query_params.get('status')
         if st:

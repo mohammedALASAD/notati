@@ -472,10 +472,11 @@
     async clearBag()             { return req('DELETE', '/bag/clear/'); },
 
     /* Orders */
-    async createOrder(noteIds, discountCode) {
+    async createOrder(noteIds, discountCode, code) {
       const body = {};
       if (noteIds && noteIds.length) body.note_ids = noteIds;
       if (discountCode) body.discount_code = discountCode;
+      if (code) body.code = code;
       return req('POST', '/orders/', body);
     },
     async getOrders()      { return list(await req('GET', '/orders/')); },

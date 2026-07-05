@@ -205,6 +205,29 @@ class OrderFlowTests(TestCase):
         resp = self._client(self.student).get('/api/admin/orders/')
         self.assertEqual(resp.status_code, 403)
 
+    def test_order_stores_and_returns_code(self):
+        resp = self._client(self.student).post(
+            '/api/orders/', {'code': 'ab12cd'}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        # Stored upper-cased so it matches the code the student sends on WhatsApp.
+        self.assertEqual(resp.data['code'], 'AB12CD')
+
+    def test_stale_pending_orders_auto_cancel_on_admin_load(self):
+        from django.utils import timezone
+        from datetime import timedelta
+        order_id = self._client(self.student).post('/api/orders/').data['id']
+        # Backdate it past the stale window.
+        Order.objects.filter(pk=order_id).update(
+            created_at=timezone.now() - timedelta(days=4))
+        # Admin loading the orders list triggers the lazy cleanup.
+        self._client(self.admin).get('/api/admin/orders/')
+        self.assertEqual(Order.objects.get(pk=order_id).status, 'cancelled')
+
+    def test_recent_pending_orders_are_not_cancelled(self):
+        order_id = self._client(self.student).post('/api/orders/').data['id']
+        self._client(self.admin).get('/api/admin/orders/')
+        self.assertEqual(Order.objects.get(pk=order_id).status, 'pending')
+
 
 class EmailVerificationTests(TestCase):
     def setUp(self):

@@ -21,12 +21,23 @@ const COLLEGES = [
 ];
 
 const CONTACT = {
-  benefitpay: '+973 3930 9797',
-  whatsapp:   '97339309797',
-  instagram:  'notes.uob',
-  email:      'support@notati.app',
+  benefitpay:   '+973 3930 9797',
+  whatsapp:     '97339309797',
+  instagram:    'notati_notes',
+  instagramUrl: 'https://www.instagram.com/notati_notes?igsh=MWtheTA1MWt2bGdobw%3D%3D&utm_source=qr',
+  email:        'support@notati.app',
 };
 const WA_DEFAULT_MSG = encodeURIComponent('Hi! I\'d like to purchase notes from Notati. Can you help me?');
+
+// Short, human-friendly order reference the student sees at checkout and sends
+// us on WhatsApp — we store the same code on the order so the admin can match it.
+// Ambiguous characters (0/O, 1/I) are left out so it's easy to read and type.
+function genOrderCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return code;
+}
 
 /* ============================================================
    Note file helpers — shared preview/download logic for multi-file notes
@@ -44,7 +55,7 @@ function _previewNote(n, openReader, toast) {
   if (files.length === 0) { toast.info('No file', 'No PDF attached yet.'); return; }
   const f = files[0];
   if (files.length > 1) {
-    toast.info(`${files.length} files`, 'Opening file 1 — use Preview to access all files.');
+    toast.info(`${files.length} files`, 'Opening file 1 - use Preview to access all files.');
   }
   if (f.id) NotatiAPI.previewNoteFileById(f.id).catch(e => toast.error('Preview failed', e.message));
   else NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message));
@@ -150,13 +161,16 @@ function NoteDetailsModal({ open, note, bag, onAddToBag, onRemoveFromBag, onClos
    Bag Checkout Modal — shows all bag items + BenefitPay + WhatsApp
    ============================================================ */
 function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
-  const [copied,   setCopied]   = useStateC(false);
-  const [code,     setCode]     = useStateC('');
-  const [applied,  setApplied]  = useStateC(null);   // { code, percent }
-  const [checking, setChecking] = useStateC(false);
-  const [codeErr,  setCodeErr]  = useStateC('');
+  const [copied,     setCopied]     = useStateC(false);
+  const [code,       setCode]       = useStateC('');
+  const [applied,    setApplied]    = useStateC(null);   // { code, percent }
+  const [checking,   setChecking]   = useStateC(false);
+  const [codeErr,    setCodeErr]    = useStateC('');
+  const [submitting, setSubmitting] = useStateC(false);
+  const [orderCode,  setOrderCode]  = useStateC('');
   useEffectC(() => {
-    if (!open) { setCopied(false); setCode(''); setApplied(null); setCodeErr(''); setChecking(false); }
+    if (!open) { setCopied(false); setCode(''); setApplied(null); setCodeErr(''); setChecking(false); setSubmitting(false); setOrderCode(''); }
+    else setOrderCode(prev => prev || genOrderCode());   // one stable code per checkout
   }, [open]);
   if (!open || !items || items.length === 0) return null;
 
@@ -195,17 +209,28 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
     ? `\nSubtotal: BD ${subtotal.toFixed(3)}\nDiscount code ${applied.code} (${applied.percent}% off): -BD ${discountAmount.toFixed(3)}`
     : '';
   const waMsg = encodeURIComponent(
-    `Hi, I would like to purchase the following notes:\n${itemLines}${discountLines}\nTotal: BD ${total.toFixed(3)}\nMy Notati email: ${user.email}`
+    `Hi, I would like to purchase the following notes:\nOrder code: ${orderCode}\n${itemLines}${discountLines}\nTotal: BD ${total.toFixed(3)}\nMy Notati email: ${user.email}`
   );
 
+  // Guard against double-submission: once the order is being placed the button
+  // is disabled, so a second click can't create a duplicate order.
+  async function confirm() {
+    if (submitting) return;
+    setSubmitting(true);
+    const ok = await onConfirm(applied ? applied.code : null, orderCode);
+    if (!ok) setSubmitting(false);   // on success the modal closes and unmounts
+  }
+
   return (
-    <Modal open={open} onClose={onClose} size="lg"
+    <Modal open={open} onClose={submitting ? undefined : onClose} size="lg"
            title="Checkout"
            subtitle={`${items.length} item${items.length !== 1 ? 's' : ''} · Total BD ${total.toFixed(3)}`}
            footer={<>
-             <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-             <button className="btn btn-primary" onClick={() => onConfirm(applied ? applied.code : null)}>
-               <Icons.Check size={16}/> Done, I have paid
+             <button className="btn btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+             <button className="btn btn-primary" onClick={confirm} disabled={submitting}>
+               {submitting
+                 ? <>Placing order…</>
+                 : <><Icons.Check size={16}/> Done, I have paid</>}
              </button>
            </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -293,6 +318,19 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
           )}
         </div>
 
+        {/* Order code — shared with us on WhatsApp so we can match your payment fast */}
+        <div style={{ background: 'rgba(122, 155, 107, .12)', border: '1px solid var(--notati-sage)',
+                      borderRadius: 'var(--r-5)', padding: '12px 16px', display: 'flex',
+                      alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', letterSpacing: '.08em' }}>
+            YOUR ORDER CODE
+          </div>
+          <span style={{ font: 'var(--type-h3)', fontSize: 20, fontWeight: 800, letterSpacing: '.12em',
+                         color: 'var(--notati-forest)' }}>
+            {orderCode}
+          </span>
+        </div>
+
         {/* Steps */}
         <div>
           <div style={{ font: 'var(--type-label)', color: 'var(--fg-3)', marginBottom: 10, letterSpacing: '.08em' }}>
@@ -301,8 +339,8 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[
               ['1', `Send BD ${total.toFixed(3)} via BenefitPay to the number below.`],
-              ['2', 'Tap WhatsApp — your order list is pre-filled. Just hit send.'],
-              ['3', 'We will unlock all your chapters — usually within a few hours.']
+              ['2', 'Tap WhatsApp - your order list is pre-filled. Just hit send.'],
+              ['3', 'We will unlock all your chapters - usually within a few hours.']
             ].map(([num, text]) => (
               <div key={num} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                 <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--notati-walnut)',
@@ -341,7 +379,7 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
                       display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icons.Mail size={15}/> WhatsApp us
           </a>
-          <a href={`https://instagram.com/${CONTACT.instagram}`}
+          <a href={CONTACT.instagramUrl}
              target="_blank" rel="noopener noreferrer"
              className="btn btn-outline"
              style={{ flex: 1, textDecoration: 'none', justifyContent: 'center',
@@ -370,20 +408,22 @@ function BagDrawer({ open, items, user, onClose, onRemove, onClear }) {
 
   const total = items.reduce((s, i) => s + Number(i.price), 0);
 
-  async function handleConfirm(discountCode) {
+  async function handleConfirm(discountCode, orderCode) {
     // Record a pending order so the admin gets a tracked order they can mark
     // paid + unlock in one click. Send the note ids from the bag the user sees.
+    // Returns true on success / false on failure so the modal can re-enable its button.
     try {
       const noteIds = items.map(i => i._numId).filter(Boolean);
-      await NotatiAPI.createOrder(noteIds, discountCode);
+      await NotatiAPI.createOrder(noteIds, discountCode, orderCode);
     } catch (e) {
       toast.error('Could not place order', e.message || 'Please try again.');
-      return; // keep the bag and modal so the user can retry
+      return false; // keep the bag and modal so the user can retry
     }
     onClear();
     setCheckoutOpen(false);
     onClose();
     toast.success('Order placed', 'We received your order. Your notes unlock once we confirm payment.');
+    return true;
   }
 
   return (
@@ -498,7 +538,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, onShowDetails, bag, onAddT
     <div>
       <div className="page-head">
         <div className="ttl">
-          <h1>Hey {user.name.split(' ')[0]} — ready to study?</h1>
+          <h1>Hey {user.name.split(' ')[0]}, ready to study?</h1>
           <p className="sub">
             Pick up where you left off. Your uploads sit at the top, the library is one tap away.
           </p>
@@ -540,8 +580,8 @@ function CustomerDashboard({ user, onNav, onOpenNote, onShowDetails, bag, onAddT
           </div>
           <div className="panel-body">
             {loading ? <PageLoader variant="table" rows={3}/> : recentUploads.length === 0 ? (
-              <EmptyState title="Turn your own slides into clean study notes — free"
-                          message="Send us any lecture .pptx, .docx or .pdf and we'll rebuild it into a tidy, easy-to-study Notati note. Notes made from your own files are always free — it's our way of saying thanks for sharing."
+              <EmptyState title="Turn your own slides into clean study notes, free"
+                          message="Send us any lecture .pptx, .docx or .pdf and we'll rebuild it into a tidy, easy-to-study Notati note. Notes made from your own files are always free - it's our way of saying thanks for sharing."
                           action={<button className="btn btn-primary" onClick={() => onNav('upload')}>
                                     <Icons.Upload size={16}/> Upload your first file
                                   </button>}/>
@@ -706,7 +746,7 @@ function UploadContent({ user, onDone }) {
     if (pickedFiles.length === 0) { setErr('Add at least one file before submitting.'); setBusy(false); return; }
     try {
       const fd = new FormData();
-      fd.append('title', `${courseName} — Ch.${chapterNumber}: ${chapterTitle}`);
+      fd.append('title', `${courseName} - Ch.${chapterNumber}: ${chapterTitle}`);
       fd.append('description', description || '');
       fd.append('college', college);
       fd.append('course_name', courseName);
@@ -834,7 +874,7 @@ function UploadContent({ user, onDone }) {
             <div className="field">
               <label>Description <span style={{ opacity: .5, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Anything we should know — exam date, weak spots, specific topics…"/>
+                        placeholder="Anything we should know, like exam date, weak spots, specific topics…"/>
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
@@ -1110,6 +1150,20 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
     const freeCount = courseChapters.filter(n => !n.price || Number(n.price) === 0).length;
     const paidCount = courseChapters.length - freeCount;
 
+    // Chapters the student could still buy: paid, not already owned, not already in the bag.
+    const buyable = courseChapters.filter(n => {
+      const isFree = !n.price || Number(n.price) === 0;
+      const owned  = NotatiStore.canReadNote(user.id, n);
+      const inBag  = bag && bag.some(i => i.id === n.id);
+      return !isFree && !owned && !inBag;
+    });
+    const buyableTotal = buyable.reduce((s, n) => s + Number(n.price), 0);
+
+    function buyAllChapters() {
+      buyable.forEach(n => onAddToBag && onAddToBag(n));
+      toast.success('Added to bag', `${buyable.length} chapter${buyable.length !== 1 ? 's' : ''} added · BD ${buyableTotal.toFixed(3)}`);
+    }
+
     return (
       <div className="fade-in">
         <div className="page-head">
@@ -1122,6 +1176,11 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
             </p>
           </div>
           <div className="actions">
+            {buyable.length > 0 && (
+              <button className="btn btn-primary" onClick={buyAllChapters}>
+                <Icons.Bag size={16}/> Buy all chapters · BD {buyableTotal.toFixed(3)}
+              </button>
+            )}
             <button className="btn btn-outline" onClick={() => { setSelectedCourse(null); setQ(''); }}>
               <Icons.ArrowLeft size={16}/> All courses
             </button>
@@ -1225,7 +1284,7 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
         <section className="panel">
           <div className="panel-body">
             {loading ? <PageLoader rows={4} variant="cards"/> : collegeSummaries.length === 0 ? (
-              <EmptyState title="No courses yet" message="The library is empty — check back soon."/>
+              <EmptyState title="No courses yet" message="The library is empty - check back soon."/>
             ) : (
               <div className="grid-3 fade-in">
                 {collegeSummaries.map(({ name, courseCount }) => (
@@ -1286,7 +1345,7 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
           {loading ? <PageLoader rows={6} variant="cards"/> : courses.length === 0 ? (
             <EmptyState title="No courses yet"
                         message={notes.length === 0
-                          ? "The library is empty — check back soon."
+                          ? "The library is empty - check back soon."
                           : "No courses match these filters. Try a broader search."}/>
           ) : (
             <div className="grid-3 fade-in">
@@ -1715,7 +1774,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                   <div style={{ font: 'var(--type-body)', color: 'var(--fg-2)', marginBottom: 16 }}>
                     {loadSecs < 3  ? 'Loading courses…'
                    : loadSecs < 9  ? 'Waking the server up…'
-                   : loadSecs < 17 ? 'Server is starting — almost there…'
+                   : loadSecs < 17 ? 'Server is starting - almost there…'
                    :                 'Taking a bit longer than usual, hang tight…'}
                   </div>
                   <div style={{ width: 220, height: 3, background: 'var(--border-2)', borderRadius: 2, margin: '0 auto 16px', overflow: 'hidden' }}>
@@ -1733,7 +1792,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                   )}
                 </div>
               ) : collegeSummaries.length === 0 ? (
-                <EmptyState title="No courses yet" message="The library is empty — check back soon."/>
+                <EmptyState title="No courses yet" message="The library is empty - check back soon."/>
               ) : (
                 <div className="grid-3 fade-in">
                   {collegeSummaries.map(({ name, courseCount }) => (
@@ -1791,7 +1850,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                     <div style={{ font: 'var(--type-body)', color: 'var(--fg-2)', marginBottom: 16 }}>
                       {loadSecs < 3  ? 'Loading courses…'
                      : loadSecs < 9  ? 'Waking the server up…'
-                     : loadSecs < 17 ? 'Server is starting — almost there…'
+                     : loadSecs < 17 ? 'Server is starting - almost there…'
                      :                 'Taking a bit longer than usual, hang tight…'}
                     </div>
                     <div style={{ width: 220, height: 3, background: 'var(--border-2)', borderRadius: 2, margin: '0 auto 16px', overflow: 'hidden' }}>
@@ -1809,7 +1868,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                     )}
                   </div>
                 ) : courses.length === 0 ? (
-                  <EmptyState title="No courses yet" message="The library is empty — check back soon."/>
+                  <EmptyState title="No courses yet" message="The library is empty - check back soon."/>
                 ) : (
                   <div className="grid-3 fade-in">
                     {courses.map(({ courseName, college: coll, notes: cNotes }) => {
@@ -1866,7 +1925,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                 A student-to-student notes marketplace for university students in Bahrain.
               </p>
               <div style={{ display: 'flex', gap: 10 }}>
-                <a href={`https://www.instagram.com/${CONTACT.instagram}`} target="_blank" rel="noopener noreferrer"
+                <a href={CONTACT.instagramUrl} target="_blank" rel="noopener noreferrer"
                    title="Instagram"
                    style={{ width: 36, height: 36, borderRadius: '50%', border: '1px solid rgba(251,247,243,.18)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1920,7 +1979,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                    onMouseLeave={e => e.target.style.color = 'rgba(251,247,243,.7)'}>
                   {CONTACT.benefitpay}
                 </a>
-                <a href={`https://www.instagram.com/${CONTACT.instagram}`} target="_blank" rel="noopener noreferrer"
+                <a href={CONTACT.instagramUrl} target="_blank" rel="noopener noreferrer"
                    style={{ color: 'rgba(251,247,243,.7)', textDecoration: 'none', fontSize: 14 }}
                    onMouseEnter={e => e.target.style.color = 'var(--notati-paper)'}
                    onMouseLeave={e => e.target.style.color = 'rgba(251,247,243,.7)'}>
@@ -1951,6 +2010,7 @@ function MyNotesPage({ user, onOpenNote }) {
   const [loading,        setLoading]        = useStateC(true);
   const [selectedCourse, setSelectedCourse] = useStateC(null);
   const [q,              setQ]              = useStateC('');
+  const [priceFilter,    setPriceFilter]    = useStateC('all');   // all | paid | free
 
   useEffectC(() => {
     NotatiAPI.getNotes()
@@ -1958,10 +2018,16 @@ function MyNotesPage({ user, onOpenNote }) {
       .catch(() => setLoading(false));
   }, []);
 
-  // Group accessible notes into course folders
+  function matchesPrice(n) {
+    if (priceFilter === 'paid') return n.price && Number(n.price) > 0;
+    if (priceFilter === 'free') return !n.price || Number(n.price) === 0;
+    return true;
+  }
+
+  // Group accessible notes into course folders (respecting the paid/free filter)
   const courses = useMemoC(() => {
     const map = {};
-    notes.forEach(n => {
+    notes.filter(matchesPrice).forEach(n => {
       if (!map[n.courseName]) map[n.courseName] = { courseName: n.courseName, college: n.college, notes: [] };
       map[n.courseName].notes.push(n);
     });
@@ -1970,13 +2036,13 @@ function MyNotesPage({ user, onOpenNote }) {
     return Object.values(map).filter(c =>
       !ql || c.courseName.toLowerCase().includes(ql) || c.college.toLowerCase().includes(ql)
     );
-  }, [notes, q]);
+  }, [notes, q, priceFilter]);
 
   const courseChapters = useMemoC(() => {
     if (!selectedCourse) return [];
-    return notes.filter(n => n.courseName === selectedCourse)
+    return notes.filter(n => n.courseName === selectedCourse && matchesPrice(n))
                 .sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber));
-  }, [notes, selectedCourse]);
+  }, [notes, selectedCourse, priceFilter]);
 
   function download(n) { _downloadNote(n, onOpenNote, toast); }
 
@@ -2037,15 +2103,24 @@ function MyNotesPage({ user, onOpenNote }) {
       <div className="page-head">
         <div className="ttl">
           <h1>My Notes</h1>
-          <p className="sub">Chapters you have access to — free and unlocked.</p>
+          <p className="sub">Chapters you have access to, free and unlocked.</p>
         </div>
       </div>
 
       <section className="panel">
-        <div className="panel-head">
+        <div className="panel-head" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="search-mini" style={{ minWidth: 260 }}>
             <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by course name…"/>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
+            {[{ id: 'all', label: 'All' }, { id: 'paid', label: 'Paid' }, { id: 'free', label: 'Free' }].map(o => (
+              <button key={o.id}
+                      className={`btn btn-sm ${priceFilter === o.id ? 'btn-primary' : 'btn-soft'}`}
+                      onClick={() => setPriceFilter(o.id)}>
+                {o.label}
+              </button>
+            ))}
           </div>
         </div>
         <div className="panel-body">

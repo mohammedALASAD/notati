@@ -36,7 +36,7 @@ function fmtPrice(price) {
 
 /* ---------- shared lookup ---------- */
 function uploaderOf(upload, users) {
-  return users.find(u => u.id === upload.userId) || { name: 'Unknown', email: '—' };
+  return users.find(u => u.id === upload.userId) || { name: 'Unknown', email: '-' };
 }
 
 /* ============================================================
@@ -70,7 +70,7 @@ function AdminDashboard({ user, onNav }) {
     <div>
       <div className="page-head">
         <div className="ttl">
-          <h1>Hey {user.name.split(' ')[0]} — here's the room.</h1>
+          <h1>Hey {user.name.split(' ')[0]}, here's the room.</h1>
           <p className="sub">A quick read on the inbox, the library, and who's joined this week. Anything pending is yours to turn around.</p>
         </div>
         <div className="actions">
@@ -484,7 +484,7 @@ function SetTimerModal({ open, upload, onClose, onSaved }) {
 
   return (
     <Modal open={open} onClose={onClose} title="Set auto-delete timer"
-           subtitle={upload ? `"${upload.title}" — currently deletes in ${rem != null ? rem + ' day' + (rem !== 1 ? 's' : '') : '…'}` : ''}>
+           subtitle={upload ? `"${upload.title}" · currently deletes in ${rem != null ? rem + ' day' + (rem !== 1 ? 's' : '') : '…'}` : ''}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <p style={{ margin: 0, font: 'var(--type-caption)', color: 'var(--fg-3)' }}>
           Choose how many days from <strong>now</strong> before this submission is automatically deleted:
@@ -715,7 +715,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
            title={existingNote ? 'Edit published note' : 'Publish note for this submission'}
            subtitle={upload
              ? `Linked to: ${upload.title} · ${upload.fileName}`
-             : 'Standalone note — not linked to a specific submission.'}
+             : 'Standalone note, not linked to a specific submission.'}
            footer={<>
              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
              <button className="btn btn-primary" onClick={publish} disabled={busy}>
@@ -762,7 +762,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
           {PRICES.map(p => <option key={p.val} value={p.val}>{p.lbl}</option>)}
         </select>
         <div className="hint">
-          Free — all students can read without paying. Paid — student must contact you via BenefitPay first.
+          Free means all students can read without paying. Paid means the student must contact you via BenefitPay first.
         </div>
       </div>
       <div className="field">
@@ -772,7 +772,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
       <div className="field">
         <label>Description <span style={{ color: 'var(--notati-crimson)' }}>*</span></label>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)}
-                  placeholder="One or two sentences — what the student gets out of these notes." required/>
+                  placeholder="One or two sentences on what the student gets out of these notes." required/>
       </div>
 
       {/* ── Files section ── */}
@@ -856,7 +856,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
         {visibleExisting.length === 0 && pendingFiles.length === 0 && (
           <div style={{ padding: '14px 16px', borderRadius: 'var(--r-5)', textAlign: 'center',
                         border: '1px dashed var(--border-1)', color: 'var(--fg-3)', fontSize: 13 }}>
-            No files yet — click "Add a file" to attach PDFs.
+            No files yet. Click "Add a file" to attach PDFs.
           </div>
         )}
 
@@ -1317,6 +1317,7 @@ function OrdersManager() {
   const [filter, setFilter]   = useStateAd('pending');
   const [loading, setLoading] = useStateAd(true);
   const [busyId, setBusyId]   = useStateAd(null);
+  const [q, setQ]             = useStateAd('');
 
   function load() {
     setLoading(true);
@@ -1357,6 +1358,15 @@ function OrdersManager() {
     cancelled: { background: 'var(--bg-card-2)',            color: 'var(--fg-3)' },
   };
 
+  const needle = q.trim().toLowerCase();
+  const shown = needle
+    ? orders.filter(o =>
+        String(o.id).includes(needle)
+        || (o.code || '').toLowerCase().includes(needle)
+        || (o.user_email || '').toLowerCase().includes(needle)
+        || (o.user_name || '').toLowerCase().includes(needle))
+    : orders;
+
   return (
     <div>
       <div className="page-head">
@@ -1364,36 +1374,55 @@ function OrdersManager() {
           <h1>Orders</h1>
           <p className="sub">
             Students place orders from their bag and pay via BenefitPay. Once you receive payment,
-            mark the order paid — that unlocks every note in it for the student automatically.
+            mark the order paid and that unlocks every note in it for the student automatically.
           </p>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {FILTERS.map(f => (
-          <button key={f.id}
-                  className={`btn btn-sm ${filter === f.id ? 'btn-primary' : 'btn-soft'}`}
-                  onClick={() => setFilter(f.id)}>
-            {f.label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {FILTERS.map(f => (
+            <button key={f.id}
+                    className={`btn btn-sm ${filter === f.id ? 'btn-primary' : 'btn-soft'}`}
+                    onClick={() => setFilter(f.id)}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="search-mini" style={{ marginLeft: 'auto', minWidth: 240 }}>
+          <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+          <input value={q} onChange={e => setQ(e.target.value)}
+                 placeholder="Search by order code, ID, or email…"/>
+        </div>
       </div>
 
       {loading ? (
         <PageLoader/>
-      ) : orders.length === 0 ? (
+      ) : shown.length === 0 ? (
         <EmptyState title="No orders here"
-                    message="Orders placed by students will appear in this list."/>
+                    message={q.trim()
+                      ? 'No orders match your search.'
+                      : 'Orders placed by students will appear in this list.'}/>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {orders.map(o => (
+          {shown.map(o => (
             <section key={o.id} className="panel">
               <div className="panel-body">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
                               gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', fontWeight: 700 }}>
-                      Order #{o.id} · {o.user_name}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', fontWeight: 700 }}>
+                        Order #{o.id} · {o.user_name}
+                      </span>
+                      {o.code && (
+                        <span style={{ background: 'rgba(122, 155, 107, .14)', color: 'var(--notati-forest)',
+                                       font: 'var(--type-label)', fontSize: 12, fontWeight: 800,
+                                       letterSpacing: '.08em', padding: '3px 10px',
+                                       borderRadius: 'var(--r-pill)', border: '1px solid var(--notati-sage)' }}>
+                          {o.code}
+                        </span>
+                      )}
                     </div>
                     <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)', marginTop: 2 }}>
                       {o.user_email} · {fmtDate(o.created_at)}
@@ -2359,7 +2388,7 @@ function ChapterInsights() {
                       </span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)' }}>
-                          {a.user_name || '—'}
+                          {a.user_name || '-'}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{a.user_email}</div>
                       </div>
@@ -2697,7 +2726,7 @@ function DiscountsManager() {
                         </td>
                         <td data-l="Window" style={{ fontSize: 12, color: 'var(--fg-2)' }}>
                           {d.valid_from || d.valid_until
-                            ? `${d.valid_from ? fmtDate(d.valid_from) : '—'} → ${d.valid_until ? fmtDate(d.valid_until) : '—'}`
+                            ? `${d.valid_from ? fmtDate(d.valid_from) : '-'} → ${d.valid_until ? fmtDate(d.valid_until) : '-'}`
                             : 'Always'}
                         </td>
                         <td className="r" data-l="Uses">

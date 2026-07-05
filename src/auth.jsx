@@ -43,7 +43,7 @@ function AuthShell({ children, switchTo, mode, onGuest, darkMode, onThemeToggle 
           <div className="amber-line"></div>
           <h1>From the student, to the student.</h1>
           <p>
-            Dense chapters turned into clear, scannable notes — written by students
+            Dense chapters turned into clear, scannable notes, written by students
             who actually sat the exam. Submit your slides, get back something you will
             actually read at 2am.
           </p>
@@ -52,7 +52,7 @@ function AuthShell({ children, switchTo, mode, onGuest, darkMode, onThemeToggle 
         <div className="quote">
           "{q.text}"
           <span className="by">
-            — {q.user_name}{q.course ? `, ${q.course}` : ''}{q.user_college ? ` · ${q.user_college}` : ''}
+            {q.user_name}{q.course ? `, ${q.course}` : ''}{q.user_college ? ` · ${q.user_college}` : ''}
           </span>
           {quotes.length > 1 && (
             <div className="quote-dots">
@@ -113,7 +113,7 @@ function LoginView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
       setTimeout(() => onAuth(user), 250);
     } catch (e2) {
       if (e2.message.includes('Cannot reach server')) {
-        setErr('Server is starting up — retrying in 15 seconds...');
+        setErr('Server is starting up, retrying in 15 seconds...');
         setTimeout(() => submit(e), 15000);
       } else {
         setErr(e2.message);
@@ -125,14 +125,14 @@ function LoginView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
 
   const showWait = busy && busySecs >= 3;
   const waitMsg  = busySecs < 9  ? 'Waking the server up…'
-                 : busySecs < 17 ? 'Server is starting — almost there…'
+                 : busySecs < 17 ? 'Server is starting - almost there…'
                  :                 'Taking a bit longer than usual, hang tight…';
 
   return (
     <AuthShell mode="login" switchTo={switchTo} onGuest={onGuest} darkMode={darkMode} onThemeToggle={onThemeToggle}>
       <form className="auth-card" onSubmit={submit} noValidate>
         <h2>Welcome back.</h2>
-        <p className="sub">Pick up where you left off — your notes are waiting.</p>
+        <p className="sub">Pick up where you left off. Your notes are waiting.</p>
 
         <div className="field">
           <label htmlFor="email">Email</label>
@@ -299,7 +299,7 @@ function SignupView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
       ) : (
         <form className="auth-card" onSubmit={submitForm} noValidate>
           <h2>Join Notati.</h2>
-          <p className="sub">Get clear, student-written notes — and contribute your own.</p>
+          <p className="sub">Get clear, student-written notes, and contribute your own.</p>
 
           <div className="field">
             <label htmlFor="name">Full name</label>
@@ -354,7 +354,7 @@ function SignupView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
           )}
 
           <p style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)', marginTop: 14 }}>
-            By signing up you agree to our friendly terms — be kind, share fairly, no plagiarism.
+            By signing up you agree to our friendly terms: be kind, share fairly, no plagiarism.
           </p>
         </form>
       )}

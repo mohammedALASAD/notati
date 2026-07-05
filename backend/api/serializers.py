@@ -308,10 +308,10 @@ class OrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Order
-        fields = ['id', 'user', 'user_email', 'user_name', 'status',
+        fields = ['id', 'user', 'user_email', 'user_name', 'code', 'status',
                   'subtotal', 'discount_code', 'discount_percent', 'total',
                   'note', 'item_count', 'items', 'created_at', 'paid_at']
-        read_only_fields = ['id', 'user', 'user_email', 'user_name',
+        read_only_fields = ['id', 'user', 'user_email', 'user_name', 'code',
                             'subtotal', 'discount_code', 'discount_percent', 'total',
                             'item_count', 'items', 'created_at', 'paid_at']
 

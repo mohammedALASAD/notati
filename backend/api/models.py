@@ -175,6 +175,7 @@ class Order(models.Model):
     ]
 
     user             = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
+    code             = models.CharField(max_length=12, blank=True, db_index=True)  # short ref shared with the student
     status           = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
     subtotal         = models.DecimalField(max_digits=8, decimal_places=3, default=0)  # before discount
     discount_code    = models.CharField(max_length=40, blank=True)
