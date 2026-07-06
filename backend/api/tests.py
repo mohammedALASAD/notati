@@ -75,10 +75,12 @@ class FileAccessGatingTests(TestCase):
         # Metadata (id/label/filename) is still present so the UI can list it.
         self.assertEqual(data['files'][0]['label'], 'Lecture')
 
-    def test_buyer_gets_url_for_paid_note(self):
+    def test_buyer_gets_no_direct_url_for_paid_note(self):
+        # A buyer has access but must download through the fingerprinting proxy,
+        # so the direct Cloudinary URL is withheld even though has_access is true.
         data = _serialize_note(self.paid, self.buyer)
         self.assertTrue(data['has_access'])
-        self.assertIsNotNone(data['files'][0]['file_url'])
+        self.assertIsNone(data['files'][0]['file_url'])
 
     def test_admin_gets_url_for_paid_note(self):
         data = _serialize_note(self.paid, self.admin)
@@ -540,3 +542,82 @@ class UnverifiedCleanupTriggerTests(TestCase):
         emails = [u['email'] for u in rows]
         self.assertNotIn('fresh@x.com', emails)           # hidden from admin list
         self.assertTrue(User.objects.filter(email='fresh@x.com').exists())  # but not deleted yet
+
+
+class LeakTracingTests(TestCase):
+    """Per-download fingerprinting: paid notes are stamped with a per-student code,
+    each download is logged, and a code reverses back to the student."""
+
+    def setUp(self):
+        from .models import DownloadLog
+        from . import tracing
+        self.tracing = tracing
+        self.DownloadLog = DownloadLog
+        self.course = Course.objects.create(name='ITCY460')
+        self.note = Note.objects.create(course=self.course, chapter_number=2,
+                                        chapter_title='Risk framework', price=Decimal('1.500'))
+        self.student = User.objects.create_user('stud@x.com', 'pw', name='Stud')
+        self.admin = User.objects.create_user('adm@x.com', 'pw', name='Adm', role='admin')
+        Access.objects.create(user=self.student, note=self.note)
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def test_code_is_deterministic_and_distinct(self):
+        a1 = self.tracing.code_for(self.student.id, self.note.id)
+        a2 = self.tracing.code_for(self.student.id, self.note.id)
+        self.assertEqual(a1, a2)                                  # stable per (user, note)
+        other = User.objects.create_user('o@x.com', 'pw', name='O')
+        self.assertNotEqual(a1, self.tracing.code_for(other.id, self.note.id))
+
+    def test_fingerprint_pdf_embeds_code_and_keeps_content(self):
+        stamped = pdfutils.fingerprint_pdf(_make_pdf(3), 'ABC12XYZ')
+        reader = PdfReader(BytesIO(stamped))
+        self.assertEqual(len(reader.pages), 3)
+        self.assertEqual(reader.metadata.get('/NotatiTrace'), 'ABC12XYZ')
+        self.assertIn('Page 1 body text', _page_text(stamped))     # original kept
+        self.assertIn('NT-ABC12XYZ', _page_text(stamped))          # code present
+
+    def test_fingerprint_pdf_passes_through_non_pdf(self):
+        junk = b'not a pdf'
+        self.assertEqual(pdfutils.fingerprint_pdf(junk, 'X'), junk)
+
+    def test_download_stamps_pdf_and_logs(self):
+        pdf = _make_pdf(2)
+        with patch('api.views._fetch_file_bytes', return_value=(pdf, 'application/pdf')):
+            self.note.pdf_file = 'notes/x.pdf'      # truthy; bytes come from the mock
+            self.note.save(update_fields=['pdf_file'])
+            resp = self._client(self.student).get(f'/api/notes/{self.note.id}/download/')
+        self.assertEqual(resp.status_code, 200)
+        content = b''.join(resp.streaming_content) if resp.streaming else resp.content
+        code = self.tracing.code_for(self.student.id, self.note.id)
+        self.assertEqual(PdfReader(BytesIO(content)).metadata.get('/NotatiTrace'), code)
+        log = self.DownloadLog.objects.get(user=self.student, note=self.note)
+        self.assertEqual(log.code, code)
+
+    def test_admin_download_is_not_stamped(self):
+        pdf = _make_pdf(1)
+        with patch('api.views._fetch_file_bytes', return_value=(pdf, 'application/pdf')):
+            self.note.pdf_file = 'notes/x.pdf'
+            self.note.save(update_fields=['pdf_file'])
+            resp = self._client(self.admin).get(f'/api/notes/{self.note.id}/download/')
+        content = b''.join(resp.streaming_content) if resp.streaming else resp.content
+        self.assertIsNone(PdfReader(BytesIO(content)).metadata.get('/NotatiTrace') if PdfReader(BytesIO(content)).metadata else None)
+        self.assertFalse(self.DownloadLog.objects.filter(user=self.admin).exists())
+
+    def test_admin_trace_lookup(self):
+        code = self.tracing.code_for(self.student.id, self.note.id)
+        self.DownloadLog.objects.create(user=self.student, note=self.note, code=code, ip='1.2.3.4')
+        resp = self._client(self.admin).get(f'/api/admin/trace/?code={code}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data['matches']), 1)
+        self.assertEqual(resp.data['matches'][0]['email'], 'stud@x.com')
+
+    def test_trace_lookup_recomputes_without_log(self):
+        code = self.tracing.code_for(self.student.id, self.note.id)
+        matches = self.tracing.find_by_code(code)   # no DownloadLog rows exist
+        self.assertTrue(any(m['user_id'] == self.student.id for m in matches))
+
+    def test_students_cannot_use_trace_lookup(self):
+        resp = self._client(self.student).get('/api/admin/trace/?code=ABC')
+        self.assertEqual(resp.status_code, 403)

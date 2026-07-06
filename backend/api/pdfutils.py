@@ -73,3 +73,69 @@ def sample_pdf(content):
     out = BytesIO()
     writer.write(out)
     return out.getvalue()
+
+
+# ── Per-download fingerprint ──────────────────────────────────────────────────
+
+def _code_overlay(width_pt, height_pt, text):
+    """A near-invisible layer that tiles `text` across the page. Uses a very low
+    fill alpha instead of near-white ink so it stays imperceptible on dark or
+    coloured backgrounds, while remaining real page text that survives printing
+    and re-saving to PDF."""
+    out = BytesIO()
+    c = canvas.Canvas(out, pagesize=(width_pt, height_pt))
+    c.setFont('Helvetica', 6)
+    c.setFillColorRGB(0.5, 0.5, 0.5)
+    try:
+        c.setFillAlpha(0.05)
+    except Exception:
+        pass
+    step_x, step_y = 170, 220
+    y = 24
+    while y < height_pt:
+        x = 20
+        while x < width_pt:
+            c.drawString(x, y, text)
+            x += step_x
+        y += step_y
+    c.save()
+    out.seek(0)
+    return PdfReader(out).pages[0]
+
+
+def fingerprint_pdf(content, code):
+    """Return `content` stamped with the trace `code`: the code is tiled across
+    every page as near-invisible text and written into the PDF metadata. Best
+    effort — on any failure the original bytes are returned so a paid download is
+    never blocked by watermarking."""
+    try:
+        reader = PdfReader(BytesIO(content))
+        if reader.is_encrypted:
+            try:
+                reader.decrypt('')
+            except Exception:
+                return content
+        writer = PdfWriter()
+        overlays = {}
+        marker = f'NT-{code}'
+        for page in reader.pages:
+            w = float(page.mediabox.width)
+            h = float(page.mediabox.height)
+            key = (round(w, 1), round(h, 1))
+            if key not in overlays:
+                overlays[key] = _code_overlay(w, h, marker)
+            try:
+                page.merge_page(overlays[key])
+            except Exception:
+                pass  # keep the page even if the overlay won't merge
+            writer.add_page(page)
+        writer.add_metadata({
+            '/Producer': 'Notati',
+            '/Keywords': f'notati-trace:{code}',
+            '/NotatiTrace': code,
+        })
+        out = BytesIO()
+        writer.write(out)
+        return out.getvalue()
+    except Exception:
+        return content

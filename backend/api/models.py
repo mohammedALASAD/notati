@@ -205,6 +205,23 @@ class OrderItem(models.Model):
         return f'{self.chapter_title} ({self.price})'
 
 
+class DownloadLog(models.Model):
+    """One row per note download / in-app read. The `code` is a per-(user, note)
+    fingerprint embedded in the delivered PDF, so a leaked copy can be traced back
+    to the student who downloaded it."""
+    user       = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='downloads')
+    note       = models.ForeignKey(Note, on_delete=models.SET_NULL, null=True, related_name='downloads')
+    code       = models.CharField(max_length=32, db_index=True)
+    ip         = models.CharField(max_length=45, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.code} · {self.user_id} · note {self.note_id}'
+
+
 class VerificationCode(models.Model):
     """One-time code for email activation or password reset (5-minute TTL)."""
     PURPOSE_CHOICES = [('activate', 'Activate'), ('reset', 'Reset password')]

@@ -153,24 +153,30 @@ class NoteSerializer(serializers.ModelSerializer):
             return True
         return obj.is_free or self._purchased(obj)
 
+    def _is_admin(self):
+        request = self.context.get('request')
+        return bool(request and request.user.is_authenticated and request.user.role == 'admin')
+
     def get_files(self, obj):
-        # Only hand out the direct (signed) download URL to users who have access.
-        # Everyone still gets id/label/filename so the UI can list the contents;
-        # the actual bytes are fetched through the access-checked download proxy.
-        can = self._can_access(obj)
+        # For PAID notes, only admins get the raw (signed) Cloudinary URL. Students
+        # download through the fingerprinting proxy (/note-files/<id>/download/) so
+        # every copy they receive is traceable — a direct URL would bypass that.
+        # Free notes have nothing to trace, so they keep the direct URL.
+        # Everyone still gets id/label/filename so the UI can list the contents.
+        direct = self._is_admin() or obj.is_free
         result = []
         for nf in obj.files.all():
             result.append({
                 'id': nf.id,
                 'label': nf.label or '',
-                'file_url': _file_url(nf.file, self.context.get('request')) if can else None,
+                'file_url': _file_url(nf.file, self.context.get('request')) if direct else None,
                 'filename': nf.file.name.split('/')[-1] if nf.file else '',
             })
         if not result and obj.pdf_file:
             result.append({
                 'id': None,
                 'label': '',
-                'file_url': _signed_url(obj.pdf_file.url) if can else None,
+                'file_url': _signed_url(obj.pdf_file.url) if direct else None,
                 'is_legacy': True,
             })
         return result
@@ -178,7 +184,10 @@ class NoteSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         if data.get('pdf_file'):
-            data['pdf_file'] = _signed_url(data['pdf_file']) if self._can_access(instance) else None
+            # Same rule: paid notes go through the proxy for students; admins and
+            # free notes keep the direct URL.
+            direct = self._is_admin() or instance.is_free
+            data['pdf_file'] = _signed_url(data['pdf_file']) if direct else None
         return data
 
 

@@ -21,6 +21,7 @@ def health(request):
 from .models import (
     User, Course, Note, NoteFile, Access, Upload, UploadFile,
     Testimonial, BagItem, Order, OrderItem, DiscountCode, DiscountRedemption,
+    DownloadLog,
 )
 from .serializers import (
     RegisterSerializer, UserSerializer, UserAdminSerializer,
@@ -31,7 +32,7 @@ from .serializers import (
     BagItemSerializer, OrderSerializer, DiscountCodeSerializer,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
-from . import pdfutils, verification, emails
+from . import pdfutils, verification, emails, tracing
 from datetime import timedelta
 
 
@@ -104,6 +105,36 @@ def _proxy_file_response(file_field):
     """Return a file as a download response."""
     content, content_type = _fetch_file_bytes(file_field)
     filename = file_field.name.split('/')[-1]
+    response = HttpResponse(content, content_type=content_type)
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _client_ip(request):
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    ip = xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR', '')
+    return (ip or '')[:45]
+
+
+def _note_file_response(file_field, request, note):
+    """Deliver a note's file. For an authenticated student we stamp the PDF with a
+    per-(student, note) fingerprint and log the download, so a leaked copy can be
+    traced back. Stamping is best-effort and never blocks the download."""
+    content, content_type = _fetch_file_bytes(file_field)
+    filename = file_field.name.split('/')[-1]
+
+    user = request.user if request.user.is_authenticated else None
+    # Only fingerprint real students' PDFs — admins get the clean master, and
+    # non-PDF files can't be stamped.
+    if user and user.role != 'admin' and pdfutils.is_pdf(content):
+        code = tracing.code_for(user.id, note.id)
+        content = pdfutils.fingerprint_pdf(content, code)
+        content_type = 'application/pdf'
+        try:
+            DownloadLog.objects.create(user=user, note=note, code=code, ip=_client_ip(request))
+        except Exception:
+            pass  # never fail a download because logging hiccuped
+
     response = HttpResponse(content, content_type=content_type)
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
@@ -317,7 +348,7 @@ class NoteDownloadView(APIView):
         if not note.pdf_file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            return _proxy_file_response(note.pdf_file)
+            return _note_file_response(note.pdf_file, request, note)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -382,7 +413,7 @@ class NoteFileDownloadView(APIView):
         if not nf.file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            return _proxy_file_response(nf.file)
+            return _note_file_response(nf.file, request, note)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -652,6 +683,19 @@ def admin_sales(request):
         'total_discounted_sales': total_discounted,
         'rows': rows,
     })
+
+
+# ── Leak tracing ──────────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAdmin])
+def admin_trace(request):
+    """Reverse a fingerprint code found in a leaked PDF back to the student(s)."""
+    code = request.query_params.get('code', '')
+    if not code.strip():
+        return Response({'detail': 'Provide a ?code= to look up.'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    return Response({'code': code.strip().upper(), 'matches': tracing.find_by_code(code)})
 
 
 # ── Testimonials ──────────────────────────────────────────────────────────────

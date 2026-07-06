@@ -52,6 +52,7 @@ urlpatterns = [
     path('admin/stats/',             views.admin_stats,             name='admin-stats'),
     path('admin/chapter-rankings/', views.admin_chapter_rankings,  name='chapter-rankings'),
     path('admin/sales/',            views.admin_sales,             name='admin-sales'),
+    path('admin/trace/',            views.admin_trace,             name='admin-trace'),
 
     # Bag
     path('bag/',       views.BagView.as_view(),      name='bag'),
