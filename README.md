@@ -34,6 +34,7 @@ A student-to-student notes marketplace for university students in Bahrain. Stude
 - Users list — view all registered students
 - Unlock access — grant or revoke note access per student
 - Testimonials manager — approve or remove student reviews
+- Leak tracing — every downloaded PDF is fingerprinted per student; trace a shared/leaked copy back to who downloaded it (see [LEAK_TRACING.md](LEAK_TRACING.md))
 
 ---
 
