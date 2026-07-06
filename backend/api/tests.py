@@ -618,6 +618,12 @@ class LeakTracingTests(TestCase):
         matches = self.tracing.find_by_code(code)   # no DownloadLog rows exist
         self.assertTrue(any(m['user_id'] == self.student.id for m in matches))
 
+    def test_trace_lookup_tolerates_on_page_prefix(self):
+        # The on-page text reads "NT-<code>"; looking that up verbatim must work.
+        code = self.tracing.code_for(self.student.id, self.note.id)
+        matches = self.tracing.find_by_code(f'nt-{code.lower()}')
+        self.assertTrue(any(m['user_id'] == self.student.id for m in matches))
+
     def test_students_cannot_use_trace_lookup(self):
         resp = self._client(self.student).get('/api/admin/trace/?code=ABC')
         self.assertEqual(resp.status_code, 403)

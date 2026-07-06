@@ -32,6 +32,10 @@ def find_by_code(code):
     from .models import DownloadLog, User, Note
 
     code = (code or '').strip().upper()
+    # The on-page text is written as "NT-<code>", so accept that form too — a
+    # leaked file is most easily read off the page rather than the metadata.
+    if code.startswith('NT-'):
+        code = code[3:]
     results = []
     seen = set()
 
