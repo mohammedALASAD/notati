@@ -284,6 +284,10 @@
       return data || { total_revenue: '0.000', total_sales: 0, rows: [] };
     },
 
+    async adminTrace(code) {
+      return req('GET', '/admin/trace/?code=' + encodeURIComponent(code));
+    },
+
     async grantAccess(userId, noteId) {
       return req('POST', '/access/', { user: Number(userId), note: Number(noteId) });
     },

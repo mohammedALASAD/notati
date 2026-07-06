@@ -2144,6 +2144,82 @@ function SalesView({ salesData, loading }) {
 /* ============================================================
    Chapter Insights (admin)
    ============================================================ */
+function LeakTrace() {
+  const { toast } = useToast();
+  const [code,   setCode]   = useStateAd('');
+  const [busy,   setBusy]   = useStateAd(false);
+  const [result, setResult] = useStateAd(null);   // { code, matches } once searched
+
+  async function lookup() {
+    const c = code.trim();
+    if (!c) return;
+    setBusy(true); setResult(null);
+    try {
+      setResult(await NotatiAPI.adminTrace(c));
+    } catch (e) {
+      toast.error('Lookup failed', e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const matches = result && result.matches ? result.matches : [];
+
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h3>Trace a leaked note</h3>
+        <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
+          Find who a shared PDF was downloaded by
+        </span>
+      </div>
+      <div className="panel-body">
+        <p className="sub" style={{ marginTop: 0 }}>
+          Paste the code from the leaked PDF — it's in the file's properties/metadata,
+          and tiled faintly across the pages as <strong>NT-XXXXXXXX</strong>. Either form works.
+        </p>
+        <div style={{ display: 'flex', gap: 8, maxWidth: 460 }}>
+          <input value={code}
+                 onChange={e => setCode(e.target.value)}
+                 onKeyDown={e => { if (e.key === 'Enter') lookup(); }}
+                 placeholder="e.g. 5KDV6FB3 or NT-5KDV6FB3"
+                 style={{ flex: 1, padding: '10px 14px', borderRadius: 'var(--r-5)',
+                          border: '1px solid var(--border-1)', background: 'var(--bg-section)',
+                          color: 'var(--fg-1)', font: 'var(--type-body)', letterSpacing: '.05em' }}/>
+          <button className="btn btn-primary" onClick={lookup} disabled={busy || !code.trim()}>
+            {busy ? 'Searching…' : 'Trace'}
+          </button>
+        </div>
+
+        {result && matches.length === 0 && (
+          <div style={{ marginTop: 16, font: 'var(--type-body)', fontSize: 14, color: 'var(--fg-3)' }}>
+            No student found for <strong>{result.code || code.trim().toUpperCase()}</strong>.
+          </div>
+        )}
+
+        {matches.map((m, i) => (
+          <div key={i} style={{ marginTop: 16, padding: '14px 16px', background: 'var(--bg-section)',
+                                border: '1px solid var(--notati-crimson)', borderRadius: 'var(--r-5)' }}>
+            <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', fontWeight: 700 }}>
+              {m.name || 'Unknown'} · {m.email || '-'}
+            </div>
+            <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 13, color: 'var(--fg-2)', marginTop: 6 }}>
+              {m.note || `Note #${m.note_id}`}
+            </div>
+            <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)', marginTop: 6 }}>
+              Code <strong>{m.code}</strong>
+              {m.downloads ? ` · ${m.downloads} download${m.downloads !== 1 ? 's' : ''}` : ''}
+              {m.last_seen ? ` · last ${fmtDate(m.last_seen)}` : ''}
+              {m.source === 'recomputed' ? ' · (no download logged yet — matched by code)' : ''}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+
 function ChapterInsights() {
   const { toast } = useToast();
   const [notes,         setNotes]         = useStateAd([]);
@@ -2232,6 +2308,7 @@ function ChapterInsights() {
             {[
               { id: 'access', label: 'Access & Rankings' },
               { id: 'sales',  label: 'Sales' },
+              { id: 'trace',  label: 'Leak trace' },
             ].map(t => (
               <button key={t.id}
                       className={`btn btn-sm ${insightsTab === t.id ? 'btn-primary' : 'btn-soft'}`}
@@ -2242,6 +2319,8 @@ function ChapterInsights() {
           </div>
         </div>
       </div>
+
+      {insightsTab === 'trace' && <LeakTrace/>}
 
       {insightsTab === 'access' && (<>
       {/* ── Chapter access lookup ── */}
