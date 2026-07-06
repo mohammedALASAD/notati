@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Course, Note, Access, Upload, Order, OrderItem
+from .models import User, Course, Note, Access, Upload, Order, OrderItem, DownloadLog
 
 
 @admin.register(User)
@@ -57,3 +57,18 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter = ['status']
     search_fields = ['user__email']
     inlines = [OrderItemInline]
+
+
+@admin.register(DownloadLog)
+class DownloadLogAdmin(admin.ModelAdmin):
+    """Read-only audit trail of note downloads / reads and their trace codes."""
+    list_display = ['created_at', 'code', 'user', 'note', 'ip']
+    list_filter = ['created_at']
+    search_fields = ['code', 'user__email', 'user__name', 'note__chapter_title']
+    readonly_fields = ['user', 'note', 'code', 'ip', 'created_at']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
