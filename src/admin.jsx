@@ -2219,6 +2219,141 @@ function LeakTrace() {
   );
 }
 
+/* ============================================================
+   Note views — how many times each chapter (free or paid) was
+   opened/read, from the download log, ranked by opens.
+   ============================================================ */
+function NoteViews() {
+  const { toast } = useToast();
+  const [rows,    setRows]    = useStateAd([]);
+  const [loading, setLoading] = useStateAd(true);
+  const [college, setCollege] = useStateAd('all');
+  const [priceF,  setPriceF]  = useStateAd('all');
+
+  useEffectAd(() => {
+    NotatiAPI.getNoteViews()
+      .then(setRows).catch(e => toast.error('Could not load views', e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const colleges = useMemoAd(() => {
+    const seen = new Set();
+    rows.forEach(r => { if (r.college) seen.add(r.college); });
+    return Array.from(seen).sort();
+  }, [rows]);
+
+  const shown = useMemoAd(() => rows.filter(r => {
+    if (priceF === 'free' && !r.is_free) return false;
+    if (priceF === 'paid' && r.is_free) return false;
+    if (college !== 'all' && r.college !== college) return false;
+    return true;
+  }), [rows, college, priceF]);
+
+  const totalOpens = useMemoAd(() => shown.reduce((s, r) => s + r.opens, 0), [shown]);
+  const topOpens   = shown.length > 0 ? shown[0].opens : 1;
+
+  if (loading) return <PageLoader rows={5}/>;
+  if (rows.length === 0) return (
+    <EmptyState title="No opens yet"
+                message="This fills in as students open chapters. Every read or download by a logged-in student is counted here."/>
+  );
+
+  return (
+    <div>
+      {/* Summary cards */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Total opens',      value: String(totalOpens),    sub: 'reads + downloads', color: 'var(--notati-walnut)' },
+          { label: 'Chapters opened',  value: String(shown.length),  sub: 'distinct chapters', color: 'var(--notati-amber)' },
+          { label: 'Most opened',      value: shown.length > 0 ? String(shown[0].opens) : '0',
+            sub: shown.length > 0 ? `${shown[0].course_name} Ch.${shown[0].chapter_number}` : '-', color: 'var(--notati-forest)' },
+        ].map(card => (
+          <div key={card.label} style={{ flex: 1, minWidth: 160, background: 'var(--bg-section)',
+                        border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)', padding: '16px 20px' }}>
+            <div style={{ fontSize: 11, color: 'var(--fg-3)', fontWeight: 600,
+                          textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+              {card.label}
+            </div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: card.color, lineHeight: 1 }}>
+              {card.value}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 6 }}>{card.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter bar */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
+        <select className="filter-select" value={college} onChange={e => setCollege(e.target.value)}>
+          <option value="all">All colleges</option>
+          {colleges.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select className="filter-select" value={priceF} onChange={e => setPriceF(e.target.value)}>
+          <option value="all">Free and paid</option>
+          <option value="free">Free only</option>
+          <option value="paid">Paid only</option>
+        </select>
+      </div>
+
+      {shown.length === 0 ? (
+        <EmptyState title="No matches" message="Try a different filter."/>
+      ) : (
+        <section className="panel">
+          <div className="panel-body flush">
+            <div className="scroll-table">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Chapter</th>
+                    <th className="r" style={{ width: 110 }}>Opens</th>
+                    <th className="r" style={{ width: 100 }}>Students</th>
+                    <th className="r" style={{ width: 130 }}>Last opened</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map(r => (
+                    <tr key={r.id}>
+                      <td data-l="Chapter">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--fg-1)' }}>
+                            {r.course_name} Ch.{r.chapter_number}
+                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                                         background: r.is_free ? 'var(--notati-forest)' : 'var(--notati-amber)',
+                                         color: '#fff', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                            {r.is_free ? 'Free' : 'Paid'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 2 }}>
+                          {r.chapter_title} · {r.college}
+                        </div>
+                      </td>
+                      <td className="r" data-l="Opens">
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                          <div style={{ flex: '0 1 70px', height: 6, borderRadius: 999, background: 'var(--border-1)',
+                                        overflow: 'hidden', maxWidth: 70 }}>
+                            <div style={{ width: `${Math.max(6, (r.opens / topOpens) * 100)}%`, height: '100%',
+                                          background: 'var(--notati-walnut)' }}/>
+                          </div>
+                          <strong style={{ color: 'var(--fg-1)' }}>{r.opens}</strong>
+                        </div>
+                      </td>
+                      <td className="r" data-l="Students" style={{ color: 'var(--fg-2)' }}>{r.students}</td>
+                      <td className="r" data-l="Last opened" style={{ color: 'var(--fg-3)', fontSize: 13 }}>
+                        {r.last_seen ? fmtDate(r.last_seen) : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 
 function ChapterInsights() {
   const { toast } = useToast();
@@ -2301,12 +2436,13 @@ function ChapterInsights() {
       <div className="page-head">
         <div className="ttl">
           <h1>Insights</h1>
-          <p className="sub">Look up who has access to any chapter, track revenue, and see which chapters are selling best.</p>
+          <p className="sub">Look up who has access to any chapter, see how often each is opened, track revenue, and see which chapters are selling best.</p>
         </div>
         <div className="actions">
           <div className="filters" style={{ margin: 0 }}>
             {[
               { id: 'access', label: 'Access & Rankings' },
+              { id: 'views',  label: 'Views' },
               { id: 'sales',  label: 'Sales' },
               { id: 'trace',  label: 'Leak trace' },
             ].map(t => (
@@ -2321,6 +2457,8 @@ function ChapterInsights() {
       </div>
 
       {insightsTab === 'trace' && <LeakTrace/>}
+
+      {insightsTab === 'views' && <NoteViews/>}
 
       {insightsTab === 'access' && (<>
       {/* ── Chapter access lookup ── */}

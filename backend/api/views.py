@@ -685,6 +685,48 @@ def admin_sales(request):
     })
 
 
+@api_view(['GET'])
+@permission_classes([IsAdmin])
+def admin_note_views(request):
+    """Per-chapter open counts from the download log — how many times each note
+    (free or paid) was opened/read, and by how many distinct students. Every
+    in-app read/download by a logged-in student is one log row, so 'opens' means
+    times accessed, and 'students' is the unique-student count."""
+    from django.db.models import Count, Max
+    rows = (
+        DownloadLog.objects.filter(note__isnull=False)
+        .values('note_id')
+        .annotate(
+            opens=Count('id'),
+            students=Count('user_id', distinct=True),
+            last_seen=Max('created_at'),
+        )
+        .order_by('-opens')[:50]
+    )
+    notes = {
+        n.id: n for n in
+        Note.objects.select_related('course').filter(id__in=[r['note_id'] for r in rows])
+    }
+    data = []
+    for r in rows:
+        n = notes.get(r['note_id'])
+        if not n:
+            continue
+        data.append({
+            'id': n.id,
+            'chapter_number': n.chapter_number,
+            'chapter_title': n.chapter_title,
+            'course_name': n.course.name,
+            'college': n.course.college,
+            'is_free': n.is_free,
+            'price': str(n.price),
+            'opens': r['opens'],
+            'students': r['students'],
+            'last_seen': r['last_seen'],
+        })
+    return Response(data)
+
+
 # ── Leak tracing ──────────────────────────────────────────────────────────────
 
 @api_view(['GET'])

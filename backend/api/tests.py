@@ -627,3 +627,20 @@ class LeakTracingTests(TestCase):
     def test_students_cannot_use_trace_lookup(self):
         resp = self._client(self.student).get('/api/admin/trace/?code=ABC')
         self.assertEqual(resp.status_code, 403)
+
+    def test_note_views_counts_opens_and_unique_students(self):
+        other = User.objects.create_user('o2@x.com', 'pw', name='O2')
+        # student opens twice, another student once → 3 opens, 2 students
+        for u in (self.student, self.student, other):
+            self.DownloadLog.objects.create(user=u, note=self.note,
+                                            code=self.tracing.code_for(u.id, self.note.id))
+        resp = self._client(self.admin).get('/api/admin/note-views/')
+        self.assertEqual(resp.status_code, 200)
+        row = next(r for r in resp.data if r['id'] == self.note.id)
+        self.assertEqual(row['opens'], 3)
+        self.assertEqual(row['students'], 2)
+        self.assertFalse(row['is_free'])
+
+    def test_students_cannot_use_note_views(self):
+        resp = self._client(self.student).get('/api/admin/note-views/')
+        self.assertEqual(resp.status_code, 403)

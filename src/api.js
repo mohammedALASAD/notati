@@ -284,6 +284,11 @@
       return data || { total_revenue: '0.000', total_sales: 0, rows: [] };
     },
 
+    async getNoteViews() {
+      const data = await req('GET', '/admin/note-views/');
+      return Array.isArray(data) ? data : [];
+    },
+
     async adminTrace(code) {
       return req('GET', '/admin/trace/?code=' + encodeURIComponent(code));
     },
