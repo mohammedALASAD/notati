@@ -644,3 +644,40 @@ class LeakTracingTests(TestCase):
     def test_students_cannot_use_note_views(self):
         resp = self._client(self.student).get('/api/admin/note-views/')
         self.assertEqual(resp.status_code, 403)
+
+    def test_guest_open_of_free_note_is_logged_unstamped(self):
+        free = Note.objects.create(course=self.course, chapter_number=9,
+                                   chapter_title='Intro', price=Decimal('0'))
+        pdf = _make_pdf(1)
+        with patch('api.views._fetch_file_bytes', return_value=(pdf, 'application/pdf')):
+            free.pdf_file = 'notes/free.pdf'
+            free.save(update_fields=['pdf_file'])
+            resp = APIClient().get(f'/api/notes/{free.id}/download/')   # no auth = guest
+        self.assertEqual(resp.status_code, 200)
+        log = self.DownloadLog.objects.get(note=free, user__isnull=True)
+        self.assertEqual(log.code, '')                                  # no trace code for guests
+        content = b''.join(resp.streaming_content) if resp.streaming else resp.content
+        meta = PdfReader(BytesIO(content)).metadata
+        self.assertIsNone(meta.get('/NotatiTrace') if meta else None)   # guest gets clean master
+
+    def test_guest_cannot_open_paid_note_and_is_not_logged(self):
+        pdf = _make_pdf(1)
+        with patch('api.views._fetch_file_bytes', return_value=(pdf, 'application/pdf')):
+            self.note.pdf_file = 'notes/x.pdf'
+            self.note.save(update_fields=['pdf_file'])
+            resp = APIClient().get(f'/api/notes/{self.note.id}/download/')   # paid, no auth
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(self.DownloadLog.objects.filter(user__isnull=True).exists())
+
+    def test_note_views_reports_guest_opens(self):
+        free = Note.objects.create(course=self.course, chapter_number=8,
+                                   chapter_title='Basics', price=Decimal('0'))
+        self.DownloadLog.objects.create(user=None, note=free, code='', ip='9.9.9.9')
+        self.DownloadLog.objects.create(user=None, note=free, code='', ip='9.9.9.8')
+        self.DownloadLog.objects.create(user=self.student, note=free,
+                                        code=self.tracing.code_for(self.student.id, free.id))
+        resp = self._client(self.admin).get('/api/admin/note-views/')
+        row = next(r for r in resp.data if r['id'] == free.id)
+        self.assertEqual(row['opens'], 3)          # 2 guests + 1 student
+        self.assertEqual(row['students'], 1)       # unique accounts (guests excluded)
+        self.assertEqual(row['guest_opens'], 2)

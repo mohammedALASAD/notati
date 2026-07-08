@@ -134,6 +134,13 @@ def _note_file_response(file_field, request, note):
             DownloadLog.objects.create(user=user, note=note, code=code, ip=_client_ip(request))
         except Exception:
             pass  # never fail a download because logging hiccuped
+    elif user is None and note.is_free:
+        # Guest reading a free chapter (no account). We can't fingerprint without an
+        # identity, but we still count the open — logged with no user, by IP.
+        try:
+            DownloadLog.objects.create(user=None, note=note, code='', ip=_client_ip(request))
+        except Exception:
+            pass
 
     response = HttpResponse(content, content_type=content_type)
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
@@ -699,6 +706,7 @@ def admin_note_views(request):
         .annotate(
             opens=Count('id'),
             students=Count('user_id', distinct=True),
+            guest_opens=Count('id', filter=Q(user_id__isnull=True)),
             last_seen=Max('created_at'),
         )
         .order_by('-opens')[:50]
@@ -722,6 +730,7 @@ def admin_note_views(request):
             'price': str(n.price),
             'opens': r['opens'],
             'students': r['students'],
+            'guest_opens': r['guest_opens'],
             'last_seen': r['last_seen'],
         })
     return Response(data)

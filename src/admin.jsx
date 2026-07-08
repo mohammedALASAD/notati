@@ -2249,13 +2249,14 @@ function NoteViews() {
     return true;
   }), [rows, college, priceF]);
 
-  const totalOpens = useMemoAd(() => shown.reduce((s, r) => s + r.opens, 0), [shown]);
-  const topOpens   = shown.length > 0 ? shown[0].opens : 1;
+  const totalOpens  = useMemoAd(() => shown.reduce((s, r) => s + r.opens, 0), [shown]);
+  const totalGuests = useMemoAd(() => shown.reduce((s, r) => s + (r.guest_opens || 0), 0), [shown]);
+  const topOpens    = shown.length > 0 ? shown[0].opens : 1;
 
   if (loading) return <PageLoader rows={5}/>;
   if (rows.length === 0) return (
     <EmptyState title="No opens yet"
-                message="This fills in as students open chapters. Every read or download by a logged-in student is counted here."/>
+                message="This fills in as chapters get opened. Every read or download is counted here — by logged-in students and by guests with no account (guests can only open free chapters)."/>
   );
 
   return (
@@ -2264,9 +2265,10 @@ function NoteViews() {
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
         {[
           { label: 'Total opens',      value: String(totalOpens),    sub: 'reads + downloads', color: 'var(--notati-walnut)' },
-          { label: 'Chapters opened',  value: String(shown.length),  sub: 'distinct chapters', color: 'var(--notati-amber)' },
+          { label: 'Guest opens',      value: String(totalGuests),   sub: 'no account (free only)', color: 'var(--notati-amber)' },
+          { label: 'Chapters opened',  value: String(shown.length),  sub: 'distinct chapters', color: 'var(--notati-forest)' },
           { label: 'Most opened',      value: shown.length > 0 ? String(shown[0].opens) : '0',
-            sub: shown.length > 0 ? `${shown[0].course_name} Ch.${shown[0].chapter_number}` : '-', color: 'var(--notati-forest)' },
+            sub: shown.length > 0 ? `${shown[0].course_name} Ch.${shown[0].chapter_number}` : '-', color: 'var(--fg-1)' },
         ].map(card => (
           <div key={card.label} style={{ flex: 1, minWidth: 160, background: 'var(--bg-section)',
                         border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)', padding: '16px 20px' }}>
@@ -2306,7 +2308,8 @@ function NoteViews() {
                   <tr>
                     <th>Chapter</th>
                     <th className="r" style={{ width: 110 }}>Opens</th>
-                    <th className="r" style={{ width: 100 }}>Students</th>
+                    <th className="r" style={{ width: 90 }}>Students</th>
+                    <th className="r" style={{ width: 90 }}>Guests</th>
                     <th className="r" style={{ width: 130 }}>Last opened</th>
                   </tr>
                 </thead>
@@ -2339,6 +2342,10 @@ function NoteViews() {
                         </div>
                       </td>
                       <td className="r" data-l="Students" style={{ color: 'var(--fg-2)' }}>{r.students}</td>
+                      <td className="r" data-l="Guests"
+                          style={{ color: r.guest_opens ? 'var(--notati-amber)' : 'var(--fg-3)', fontWeight: r.guest_opens ? 700 : 400 }}>
+                        {r.guest_opens || 0}
+                      </td>
                       <td className="r" data-l="Last opened" style={{ color: 'var(--fg-3)', fontSize: 13 }}>
                         {r.last_seen ? fmtDate(r.last_seen) : '-'}
                       </td>
