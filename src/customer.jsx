@@ -1373,7 +1373,7 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
                       )}
                     </div>
                     <div className="foot">
-                      <span style={{ opacity: .5 }}>{fmtDate(cNotes[0].publishedAt)}</span>
+                      <span/>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
                                      color: 'var(--notati-walnut)', fontWeight: 700 }}>
                         Browse chapters <Icons.ArrowRight size={13}/>
@@ -1889,7 +1889,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                             )}
                           </div>
                           <div className="foot">
-                            <span style={{ opacity: .5 }}>{fmtDate(cNotes[0].publishedAt)}</span>
+                            <span/>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
                                            color: 'var(--notati-walnut)', fontWeight: 700 }}>
                               Browse chapters <Icons.ArrowRight size={13}/>
@@ -2141,7 +2141,7 @@ function MyNotesPage({ user, onOpenNote }) {
                     </span>
                   </div>
                   <div className="foot">
-                    <span style={{ opacity: .5 }}>{fmtDate(cNotes[0].publishedAt)}</span>
+                    <span/>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
                                    color: 'var(--notati-walnut)', fontWeight: 700 }}>
                       Open <Icons.ArrowRight size={13}/>
