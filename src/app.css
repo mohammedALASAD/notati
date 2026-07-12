@@ -594,12 +594,13 @@ input, textarea, select { font-family: inherit; }
   border-radius: 0 0 3px 3px;
 }
 .notecard .course {
-  font: var(--type-label); letter-spacing: .08em; text-transform: uppercase;
-  color: var(--fg-3); margin-top: 12px;
+  font: var(--type-label); letter-spacing: .03em; text-transform: uppercase;
+  color: var(--fg-1); margin-top: 12px;
+  font-size: 23px; font-weight: 800; line-height: 1.15;
 }
 .notecard .title {
-  font: var(--type-h2); font-size: 20px; color: var(--fg-1);
-  margin: 8px 0 10px;
+  font: var(--type-body); font-size: 13px; font-weight: 600; color: var(--fg-2);
+  margin: 5px 0 10px;
 }
 .notecard .desc {
   font: var(--type-body); font-size: 13px; color: var(--fg-2);
