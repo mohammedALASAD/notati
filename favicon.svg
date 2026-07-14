@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Notati">
+  <rect width="100" height="100" rx="22" fill="#FBF7F3"></rect>
+  <g transform="translate(6.42 1.82) scale(1.147)">
+    <rect x="18" y="18" width="50" height="58" rx="6" fill="#C9B8A8"></rect>
+    <rect x="13" y="13" width="50" height="58" rx="6" fill="#B5A090"></rect>
+    <rect x="8" y="8" width="50" height="58" rx="6" fill="#6B5744"></rect>
+    <rect x="16" y="18" width="34" height="4" rx="2" fill="#C9902A"></rect>
+    <circle cx="18" cy="34" r="2" fill="#FBF7F3"></circle>
+    <rect x="24" y="32.5" width="26" height="3" rx="1.5" fill="#FBF7F3"></rect>
+    <circle cx="18" cy="44" r="2" fill="#FBF7F3"></circle>
+    <rect x="24" y="42.5" width="26" height="3" rx="1.5" fill="#FBF7F3"></rect>
+    <circle cx="18" cy="54" r="2" fill="#FBF7F3"></circle>
+    <rect x="24" y="52.5" width="22" height="3" rx="1.5" fill="#FBF7F3"></rect>
+  </g>
+</svg>

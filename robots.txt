@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://notati.app/sitemap.xml
