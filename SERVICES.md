@@ -13,7 +13,7 @@
                           /         \
                          /           \
               [ Render Frontend ]   [ Render Backend ]
-               React app (Vite)      Django / Python
+              React (no build step)  Django / Python
                                           |
                           ┌───────────────┼───────────────┐
                           |               |               |
@@ -29,8 +29,8 @@
 ### Code & Deployment
 | Service | Role |
 |---------|------|
-| **GitHub** | Source code repository. Render connects to GitHub and auto-deploys on every push to `main`. |
-| **Render** | Hosts both the frontend (React/Vite static site) and backend (Django API). Free tier sleeps after 15 min inactivity — mitigated by UptimeRobot. |
+| **GitHub** | Source code repository. Render deploys from `main`. |
+| **Render** | Hosts both the frontend (static site) and backend (Django API). **Backend auto-deploys** on every push to `main` (and runs migrations in the release phase). **The frontend does NOT** — static sites must be deployed manually from the Render dashboard (Manual Deploy → Deploy latest commit). The frontend has **no build step**: React + JSX are compiled in the browser by Babel Standalone, so bump the `?v=` query strings in `index.html` on every frontend change or browsers serve stale cached files. Free tier sleeps after 15 min inactivity — mitigated by UptimeRobot. |
 
 ### Domain & Networking
 | Service | Role |
@@ -53,6 +53,24 @@
 | Service | Role |
 |---------|------|
 | **UptimeRobot** | Pings `https://api.notati.app/api/health/` every 5 minutes to keep Render awake. Uses a lightweight endpoint that returns `{"status":"ok"}` with no database query — so Neon can still sleep and conserve its free-tier CU-hrs. Free plan, no time limit, 50 monitors available. |
+
+### SEO & Search
+| Service | Role |
+|---------|------|
+| **Google Search Console** | Free Google tool that reports how Google sees `notati.app`. Used to **request re-indexing** after changing page metadata, **submit `sitemap.xml`**, and — under **Performance** — see which search queries actually bring students to the site (impressions, clicks, ranking position). It only *reports and requests*: it cannot edit the site, and it cannot force Google to update. Property verified via the HTML-file method. |
+
+**How the site appears in Google / shared links.** These files are served from the web root, and the tags live in the `<head>` of `index.html`:
+
+| File / tag | Purpose |
+|------------|---------|
+| `<title>` + `<meta name="description">` | The headline and snippet in Google results. Without a description, Google scrapes arbitrary page text and the snippet looks broken. |
+| `favicon.ico`, `favicon.svg`, `favicon-96/192/512.png`, `apple-touch-icon.png` | The logo in the browser tab and next to the Google result. Google needs a **square, crawlable** icon; without one it shows a generic globe. |
+| `og-image.png` (1200×630) + Open Graph / Twitter tags | The branded preview card shown when `notati.app` is pasted into **WhatsApp, Instagram, or LinkedIn**. |
+| `robots.txt` | Allows crawling and points Google to the sitemap. The favicon must be crawlable, so nothing here may block it. |
+| `sitemap.xml` | Submitted in Search Console to prompt a re-crawl. |
+| `googleba8bc66c111c4cdf.html` | Search Console ownership proof. **Never delete this file** — removing it un-verifies the property. It is public by design and is not a secret. |
+
+> **Google lags behind the site.** After a metadata change and a frontend deploy, the browser tab and link previews update immediately, but the Google result does not: the title/description typically refresh within a few days (faster after "Request indexing"), and the **favicon can take 1–3 weeks** because Google runs a separate favicon crawler. This is expected, not a bug. Re-requesting indexing does not speed it up.
 
 ---
 
