@@ -58,6 +58,9 @@
 | Service | Role |
 |---------|------|
 | **Google Search Console** | Free Google tool that reports how Google sees `notati.app`. Used to **request re-indexing** after changing page metadata, **submit `sitemap.xml`**, and — under **Performance** — see which search queries actually bring students to the site (impressions, clicks, ranking position). It only *reports and requests*: it cannot edit the site, and it cannot force Google to update. Property verified via the HTML-file method. |
+| **Bing Webmaster Tools** | Bing's equivalent of Search Console. Covers **Bing plus DuckDuckGo, Yahoo, and Ecosia**, which all use Bing's index. Set up by **importing the property from Google Search Console** (no separate verification file or deploy needed — it trusts the existing Google verification). The `sitemap.xml` came across in the import and crawled successfully. Google is still >90% of search in Bahrain, so this is a "nice to have", not essential. |
+
+Both tools only speed up their own engine; neither is needed for the site to work. The on-page tags below (title, description, favicon, Open Graph, `robots.txt`, `sitemap.xml`) are **universal web standards** every search engine and social platform reads — set once, they serve Google, Bing, and everyone else. Typing `notati.app` directly (e.g. from the Instagram bio link) bypasses search engines entirely and just loads the site.
 
 **How the site appears in Google / shared links.** These files are served from the web root, and the tags live in the `<head>` of `index.html`:
 
