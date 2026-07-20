@@ -681,3 +681,51 @@ class LeakTracingTests(TestCase):
         self.assertEqual(row['opens'], 3)          # 2 guests + 1 student
         self.assertEqual(row['students'], 1)       # unique accounts (guests excluded)
         self.assertEqual(row['guest_opens'], 2)
+
+
+class AdminAlertTests(TestCase):
+    """A student placing an order, uploading, or reviewing emails the admin."""
+
+    def setUp(self):
+        self.student = User.objects.create_user('sara@x.com', 'pw', name='Sara Ali')
+        self.admin = User.objects.create_user('adm@x.com', 'pw', name='Adm', role='admin')
+        self.course = Course.objects.create(name='ITIS103')
+        self.note = Note.objects.create(course=self.course, chapter_number=1,
+                                        chapter_title='Intro', price=Decimal('1.500'))
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    @patch('api.emails._send_async')
+    def test_order_alerts_admin(self, mock_send):
+        resp = self._client(self.student).post(
+            '/api/orders/', {'note_ids': [self.note.id], 'code': 'AB12CD'}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertTrue(mock_send.called)
+        payload = mock_send.call_args[0][0]
+        self.assertEqual(payload['to'], ['support@notati.app'])
+        self.assertIn('order', payload['subject'].lower())
+        self.assertIn('sara@x.com', payload['html'])
+
+    @patch('api.emails._send_async')
+    def test_upload_alerts_admin(self, mock_send):
+        resp = self._client(self.student).post(
+            '/api/uploads/', {'title': 'My lecture notes'}, format='json')
+        self.assertIn(resp.status_code, (200, 201))
+        self.assertTrue(mock_send.called)
+        self.assertIn('upload', mock_send.call_args[0][0]['subject'].lower())
+
+    @patch('api.emails._send_async')
+    def test_review_alerts_admin(self, mock_send):
+        resp = self._client(self.student).post(
+            '/api/testimonials/submit/', {'text': 'Great, clear notes!'}, format='json')
+        self.assertIn(resp.status_code, (200, 201))
+        self.assertTrue(mock_send.called)
+        self.assertIn('review', mock_send.call_args[0][0]['subject'].lower())
+
+    @patch('api.emails._send_async')
+    def test_admin_own_actions_do_not_alert(self, mock_send):
+        # Admin leaving a review should not email the admin (no self-notification).
+        self._client(self.admin).post(
+            '/api/testimonials/submit/', {'text': 'internal'}, format='json')
+        self.assertFalse(mock_send.called)

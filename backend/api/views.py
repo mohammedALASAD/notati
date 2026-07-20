@@ -116,6 +116,47 @@ def _client_ip(request):
     return (ip or '')[:45]
 
 
+def _alert_admin_of_activity(kind, user, obj):
+    """Email the admin when a student places an order, uploads content, or leaves a
+    review. Best-effort — a failure here must never break the student's action, and
+    the admin's own actions are skipped to avoid self-notifications."""
+    if getattr(user, 'role', None) == 'admin':
+        return
+    try:
+        from .emails import send_admin_alert
+        who = f'{user.name or "A student"} ({user.email})'
+        if kind == 'order':
+            items = list(obj.items.all())
+            lines = '\n'.join(
+                f'- {i.course_name} Ch.{i.chapter_number}: {i.chapter_title} (BD {i.price})'
+                for i in items)
+            disc = (f'\nDiscount: {obj.discount_code} ({obj.discount_percent}% off)'
+                    if obj.discount_code else '')
+            subject = f'New order · {user.name or user.email}'
+            message = (f'{who} placed an order.\n\n'
+                       f'Order code: {obj.code or "-"}\n'
+                       f'Items ({len(items)}):\n{lines}\n\n'
+                       f'Subtotal: BD {obj.subtotal}{disc}\n'
+                       f'Total: BD {obj.total}\n\n'
+                       'Open the admin Orders page to confirm payment and grant access.')
+        elif kind == 'upload':
+            loc = ' · '.join(x for x in [obj.college, obj.course_name] if x)
+            subject = f'New upload · {user.name or user.email}'
+            message = (f'{who} uploaded content for review.\n\n'
+                       f'Title: {obj.title}\n'
+                       + (f'Course: {loc}\n' if loc else '')
+                       + '\nReview it in the admin Content inbox.')
+        else:  # review
+            subject = f'New review · {user.name or user.email}'
+            message = (f'{who} submitted a review'
+                       + (f' for {obj.course}' if obj.course else '') + '.\n\n'
+                       f'"{obj.text}"\n\n'
+                       'Approve or remove it in the admin Testimonials page.')
+        send_admin_alert(subject, message)
+    except Exception:
+        pass  # alerts are best-effort; never block the student's action
+
+
 def _note_file_response(file_field, request, note):
     """Deliver a note's file. For an authenticated student we stamp the PDF with a
     per-(student, note) fingerprint and log the download, so a leaked copy can be
@@ -546,6 +587,10 @@ class UploadListCreateView(generics.ListCreateAPIView):
             return UploadAdminSerializer
         return UploadSerializer
 
+    def perform_create(self, serializer):
+        upload = serializer.save()
+        _alert_admin_of_activity('upload', self.request.user, upload)
+
 
 class UploadDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
@@ -763,6 +808,10 @@ class TestimonialCreateView(generics.CreateAPIView):
     serializer_class   = TestimonialSerializer
     permission_classes = [IsAuthenticated]
 
+    def perform_create(self, serializer):
+        testimonial = serializer.save()
+        _alert_admin_of_activity('review', self.request.user, testimonial)
+
 
 class TestimonialAdminListView(generics.ListAPIView):
     serializer_class   = TestimonialAdminSerializer
@@ -894,6 +943,8 @@ class OrderListCreateView(generics.ListCreateAPIView):
 
             # The bag has become an order — clear it.
             BagItem.objects.filter(user=request.user).delete()
+
+        _alert_admin_of_activity('order', request.user, order)
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 

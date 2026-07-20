@@ -134,6 +134,46 @@ def _send_async(payload):
     threading.Thread(target=_worker, daemon=True).start()
 
 
+def _build_alert_html(subject, message):
+    body_html = message.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
+    font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif"
+    return f'''<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>{subject}</title></head>
+<body style="margin:0;padding:0;background:{_PAPER};-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{_PAPER};padding:40px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;">
+        <tr><td align="center" style="padding:0 0 20px;">
+          <span style="font-family:{font};font-size:20px;font-weight:900;color:{_BARK};">Notati</span>
+          <span style="font-family:{font};font-size:11px;color:{_MUTED};display:block;margin-top:5px;letter-spacing:.1em;text-transform:uppercase;">Admin alert</span>
+        </td></tr>
+        <tr><td style="background:#FFFFFF;border:1px solid rgba(181,160,144,0.40);border-radius:20px;padding:32px 36px;">
+          <h1 style="margin:0 0 20px;font-family:{font};font-size:22px;font-weight:800;color:{_BARK};line-height:1.25;">{subject}</h1>
+          <p style="margin:0;font-family:{font};font-size:15px;color:#5C4A3A;line-height:1.8;">{body_html}</p>
+        </td></tr>
+        <tr><td align="center" style="padding:20px 0 0;">
+          <p style="margin:0;font-family:{font};font-size:12px;color:{_MUTED};">Automated alert &middot; Notati &middot; Bahrain</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>'''
+
+
+def send_admin_alert(subject, message):
+    """Notify the site admin (ADMIN_ALERT_EMAIL) of student activity —
+    a new order, upload, or review. Best-effort; never blocks the student."""
+    to = getattr(settings, 'ADMIN_ALERT_EMAIL', '') or 'support@notati.app'
+    _send_async({
+        'from': 'Notati <support@notati.app>',
+        'to': [to],
+        'subject': subject,
+        'html': _build_alert_html(subject, message),
+    })
+
+
 def send_support_email(to_email, to_name, subject, message):
     _send_async({
         'from': 'Notati <support@notati.app>',
