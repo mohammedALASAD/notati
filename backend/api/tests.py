@@ -706,6 +706,8 @@ class AdminAlertTests(TestCase):
         self.assertEqual(payload['to'], ['support@notati.app'])
         self.assertIn('order', payload['subject'].lower())
         self.assertIn('sara@x.com', payload['html'])
+        self.assertIn('Open Notati', payload['html'])          # button label
+        self.assertIn('https://notati.app', payload['html'])   # button link
 
     @patch('api.emails._send_async')
     def test_upload_alerts_admin(self, mock_send):

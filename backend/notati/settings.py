@@ -143,3 +143,5 @@ CORS_ALLOW_CREDENTIALS = True
 RESEND_API_KEY = config('RESEND_API_KEY', default='')
 # Where student-activity alerts (new order / upload / review) are sent.
 ADMIN_ALERT_EMAIL = config('ADMIN_ALERT_EMAIL', default='support@notati.app')
+# Public site URL used for the button in alert emails.
+SITE_URL = config('SITE_URL', default='https://notati.app')
