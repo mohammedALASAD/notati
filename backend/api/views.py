@@ -1,9 +1,11 @@
+import math
 import re
 import time
 import urllib.request
 from decimal import Decimal, ROUND_HALF_UP
 from rest_framework import generics, status, filters
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -208,14 +210,78 @@ def _tokens_for(user):
     return {'access': str(refresh.access_token), 'refresh': str(refresh)}
 
 
+# ── Login brute-force lockout ─────────────────────────────────────────────────
+# After this many consecutive wrong passwords, the account is locked for the
+# duration below. A successful login or a password reset clears the streak.
+LOGIN_MAX_FAILED_ATTEMPTS = 4
+LOGIN_LOCKOUT_DURATION = timedelta(hours=1)
+
+
+def _register_failed_login(user):
+    """Count one wrong-password attempt and lock the account once the limit is hit."""
+    now = timezone.now()
+    # A lock that has already expired resets the streak before we count again.
+    if user.login_locked_until and user.login_locked_until <= now:
+        user.failed_login_attempts = 0
+        user.login_locked_until = None
+    user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+    if user.failed_login_attempts >= LOGIN_MAX_FAILED_ATTEMPTS:
+        user.login_locked_until = now + LOGIN_LOCKOUT_DURATION
+    user.save(update_fields=['failed_login_attempts', 'login_locked_until'])
+
+
+def _clear_login_lock(user):
+    """Reset the failed-login streak after a successful auth or a password reset."""
+    if user.failed_login_attempts or user.login_locked_until:
+        user.failed_login_attempts = 0
+        user.login_locked_until = None
+        user.save(update_fields=['failed_login_attempts', 'login_locked_until'])
+
+
+def _is_locked(user):
+    return bool(user and user.login_locked_until and user.login_locked_until > timezone.now())
+
+
+def _lockout_response(user):
+    mins = max(1, math.ceil((user.login_locked_until - timezone.now()).total_seconds() / 60))
+    return Response(
+        {'detail': f'Too many failed attempts. This account is locked for about '
+                   f'{mins} more minute{"s" if mins != 1 else ""}. '
+                   f'Reset your password to sign in right away.'},
+        status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+
 class ThrottledLoginView(TokenObtainPairView):
-    """Login with per-IP rate limiting to slow brute-force / credential stuffing."""
+    """Login with two brute-force defences: per-IP rate limiting (throttle_scope)
+    and per-account lockout after too many consecutive wrong passwords."""
     throttle_scope = 'login'
 
     def post(self, request, *args, **kwargs):
         # Opportunistic purge of never-activated signups on every login.
         verification.cleanup_unverified()
-        return super().post(request, *args, **kwargs)
+
+        email = (request.data.get('email') or '').strip().lower()
+        user = User.objects.filter(email__iexact=email, is_active=True).first()
+
+        # Refuse a locked account before we even check the password.
+        if _is_locked(user):
+            return _lockout_response(user)
+
+        try:
+            response = super().post(request, *args, **kwargs)
+        except AuthenticationFailed:
+            # Wrong password (or unknown/inactive account). Only count it against a
+            # real active account, so a non-existent email can never be "locked".
+            if user:
+                _register_failed_login(user)
+                if _is_locked(user):
+                    return _lockout_response(user)
+            raise
+
+        # Correct password — wipe any prior failed-attempt streak.
+        if user:
+            _clear_login_lock(user)
+        return response
 
 
 class RegisterView(APIView):
@@ -309,6 +375,9 @@ class PasswordResetView(APIView):
             return Response({'detail': ' '.join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(new_password)
         user.save(update_fields=['password'])
+        # A successful reset also lifts any brute-force lock, so a student who was
+        # locked out (even maliciously) can get back in immediately.
+        _clear_login_lock(user)
         return Response(_tokens_for(user))
 
 

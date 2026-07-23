@@ -94,6 +94,7 @@ function LoginView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
   const { toast } = useToast();
   const [email,    setEmail]    = useStateA('');
   const [password, setPassword] = useStateA('');
+  const [showPw,   setShowPw]   = useStateA(false);
   const [err,      setErr]      = useStateA('');
   const [busy,     setBusy]     = useStateA(false);
   const [busySecs, setBusySecs] = useStateA(0);
@@ -142,9 +143,19 @@ function LoginView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
         </div>
         <div className="field">
           <label htmlFor="pass">Password</label>
-          <input id="pass" type="password" autoComplete="current-password"
-                 value={password} onChange={(e) => setPassword(e.target.value)}
-                 placeholder="••••••••" required/>
+          <div style={{ position: 'relative' }}>
+            <input id="pass" type={showPw ? 'text' : 'password'} autoComplete="current-password"
+                   value={password} onChange={(e) => setPassword(e.target.value)}
+                   placeholder="••••••••" required style={{ paddingRight: 44 }}/>
+            <button type="button" onClick={() => setShowPw(v => !v)}
+                    aria-label={showPw ? 'Hide password' : 'Show password'}
+                    title={showPw ? 'Hide password' : 'Show password'}
+                    style={{ position: 'absolute', top: '50%', right: 10, transform: 'translateY(-50%)',
+                             background: 'none', border: 0, padding: 4, cursor: 'pointer',
+                             color: 'var(--fg-3)', display: 'flex', alignItems: 'center' }}>
+              {showPw ? <Icons.EyeOff size={18}/> : <Icons.Eye size={18}/>}
+            </button>
+          </div>
           {err ? <div className="err">{err}</div> : null}
           <div style={{ marginTop: 8, textAlign: 'right' }}>
             <a href="#" onClick={(e) => { e.preventDefault(); switchTo('forgot'); }}

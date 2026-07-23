@@ -31,6 +31,11 @@ class User(AbstractUser):
     college    = models.CharField(max_length=120, blank=True)
     phone      = models.CharField(max_length=20, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Brute-force protection: consecutive wrong-password attempts, and the time
+    # until which login is locked after too many. Reset on a successful login or
+    # a password reset. (See ThrottledLoginView.)
+    failed_login_attempts = models.PositiveIntegerField(default=0)
+    login_locked_until    = models.DateTimeField(null=True, blank=True)
 
     USERNAME_FIELD  = 'email'
     REQUIRED_FIELDS = ['name']

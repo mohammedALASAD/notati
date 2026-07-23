@@ -40,6 +40,16 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = User
         fields = ['email', 'name', 'password', 'college', 'phone']
 
+    def validate_email(self, value):
+        # Store every email lowercased+trimmed so one address can't be registered
+        # twice under a different case (Fatima@… vs fatima@…). Django only
+        # lowercases the domain, so we normalise the whole thing here and reject
+        # any case-variant that already belongs to an active account.
+        value = (value or '').strip().lower()
+        if User.objects.filter(email__iexact=value, is_active=True).exists():
+            raise serializers.ValidationError('An account with this email already exists.')
+        return value
+
     def validate_password(self, value):
         # Run Django's configured password validators (length, common, numeric, …)
         try:

@@ -13,7 +13,7 @@ from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from . import pdfutils, verification
 from .models import (User, Course, Note, NoteFile, Access, BagItem, VerificationCode,
-                     Order, DiscountCode, DiscountRedemption)
+                     Order, DiscountCode, DiscountRedemption, Upload, UploadFile)
 from .serializers import NoteSerializer, RegisterSerializer
 
 
@@ -731,3 +731,206 @@ class AdminAlertTests(TestCase):
         self._client(self.admin).post(
             '/api/testimonials/submit/', {'text': 'internal'}, format='json')
         self.assertFalse(mock_send.called)
+
+
+class IdorTests(TestCase):
+    """IDs are sequential integers (BigAutoField), so they're trivially guessable.
+    That's only safe because the server authorises every object access instead of
+    trusting the ID. Here 'Mallory' plays the attacker: she guesses 'Alice's'
+    resource IDs from the URL and must be refused on every one. The positive-control
+    tests at the end prove the refusals are *targeted* — Alice and the admin still
+    get through — so a passing suite can't just be a blanket 403/404 on everything."""
+
+    def setUp(self):
+        self.alice = User.objects.create_user('alice@x.com', 'pw', name='Alice')
+        self.mallory = User.objects.create_user('mallory@x.com', 'pw', name='Mallory')
+        self.admin = User.objects.create_user('adm@x.com', 'pw', name='Adm', role='admin')
+
+        self.course = Course.objects.create(name='ITIS103')
+        # A paid note Mallory has NOT bought.
+        self.paid = Note.objects.create(course=self.course, chapter_number=1,
+                                        chapter_title='Paid', price=Decimal('2.000'))
+        self.paid_file = NoteFile.objects.create(
+            note=self.paid, file=SimpleUploadedFile('p.pdf', b'%PDF-1.4 x'))
+
+        # Everything below belongs to Alice. Mallory owns none of it.
+        self.alice_upload = Upload.objects.create(
+            user=self.alice, title="Alice's notes",
+            file=SimpleUploadedFile('a.pdf', b'%PDF-1.4 x'))
+        self.alice_file = UploadFile.objects.create(
+            upload=self.alice_upload, file=SimpleUploadedFile('af.pdf', b'%PDF-1.4 x'))
+        self.alice_order = Order.objects.create(user=self.alice, status='pending')
+
+    def _c(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def _rows(self, resp):
+        return resp.data['results'] if isinstance(resp.data, dict) else resp.data
+
+    # ── Uploads: queryset is scoped to the owner, so a guessed ID looks absent (404) ──
+
+    def test_cannot_read_another_students_upload(self):
+        resp = self._c(self.mallory).get(f'/api/uploads/{self.alice_upload.id}/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_cannot_modify_another_students_upload(self):
+        resp = self._c(self.mallory).patch(
+            f'/api/uploads/{self.alice_upload.id}/', {'title': 'hacked'}, format='json')
+        self.assertEqual(resp.status_code, 404)
+        self.alice_upload.refresh_from_db()
+        self.assertEqual(self.alice_upload.title, "Alice's notes")   # untouched
+
+    def test_cannot_delete_another_students_upload(self):
+        resp = self._c(self.mallory).delete(f'/api/uploads/{self.alice_upload.id}/')
+        self.assertEqual(resp.status_code, 404)
+        self.assertTrue(Upload.objects.filter(id=self.alice_upload.id).exists())
+
+    # ── Downloads: explicit ownership check returns 403 before any file is served ──
+
+    def test_cannot_download_another_students_upload(self):
+        resp = self._c(self.mallory).get(f'/api/uploads/{self.alice_upload.id}/download/')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_cannot_download_another_students_upload_file(self):
+        resp = self._c(self.mallory).get(f'/api/upload-files/{self.alice_file.id}/download/')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_cannot_read_another_students_upload_file_metadata(self):
+        resp = self._c(self.mallory).get(f'/api/upload-files/{self.alice_file.id}/')
+        self.assertEqual(resp.status_code, 404)
+
+    # ── Paid notes: no Access grant → 403; not logged in → 401 ──
+
+    def test_cannot_download_paid_note_without_access(self):
+        resp = self._c(self.mallory).get(f'/api/notes/{self.paid.id}/download/')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_cannot_download_paid_note_file_without_access(self):
+        resp = self._c(self.mallory).get(f'/api/note-files/{self.paid_file.id}/download/')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_guest_cannot_download_paid_note(self):
+        resp = APIClient().get(f'/api/notes/{self.paid.id}/download/')
+        self.assertEqual(resp.status_code, 401)
+
+    # ── Orders: a student only ever sees their own list, and can't change status ──
+
+    def test_order_list_is_scoped_to_owner(self):
+        resp = self._c(self.mallory).get('/api/orders/')
+        self.assertEqual(resp.status_code, 200)
+        ids = [o['id'] for o in self._rows(resp)]
+        self.assertNotIn(self.alice_order.id, ids)   # Alice's order is invisible to Mallory
+
+    def test_student_cannot_change_order_status(self):
+        # The only order-detail route is admin-only, so a student PATCH is refused
+        # and the order is left untouched.
+        resp = self._c(self.mallory).patch(
+            f'/api/admin/orders/{self.alice_order.id}/', {'status': 'paid'}, format='json')
+        self.assertEqual(resp.status_code, 403)
+        self.alice_order.refresh_from_db()
+        self.assertEqual(self.alice_order.status, 'pending')
+
+    # ── Admin-only endpoint the screenshot came from: user records ──
+
+    def test_student_cannot_read_admin_user_detail(self):
+        resp = self._c(self.mallory).get(f'/api/admin/users/{self.alice.id}/')
+        self.assertEqual(resp.status_code, 403)
+
+    # ── Positive controls: the refusals above are authorisation, not broken routes ──
+
+    def test_owner_can_read_her_own_upload(self):
+        resp = self._c(self.alice).get(f'/api/uploads/{self.alice_upload.id}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['title'], "Alice's notes")
+
+    def test_admin_can_read_any_upload(self):
+        resp = self._c(self.admin).get(f'/api/uploads/{self.alice_upload.id}/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_ids_really_are_sequential(self):
+        # Proves the premise of the whole class: consecutive rows get consecutive IDs,
+        # so an attacker can guess a neighbour's ID by ±1. Safety comes from the
+        # authorisation checks above, not from the IDs being unguessable.
+        u1 = Upload.objects.create(user=self.alice, title='one')
+        u2 = Upload.objects.create(user=self.mallory, title='two')
+        self.assertEqual(u2.id, u1.id + 1)
+
+
+class EmailNormalizationTests(TestCase):
+    """One email address = one account, regardless of letter case. Emails are
+    stored lowercased so 'Fatima@…' and 'fatima@…' can't both sign up."""
+
+    def setUp(self):
+        cache.clear()  # reset register throttle counters
+
+    def _register(self, email):
+        with patch('api.views.emails.send_code_email'):
+            return APIClient().post('/api/auth/register/', {
+                'name': 'X', 'email': email, 'password': 'Tr0ub4dour!', 'phone': '33112233',
+            }, format='json')
+
+    def test_email_is_stored_lowercased(self):
+        resp = self._register('Fatima@Gmail.com')
+        self.assertEqual(resp.status_code, 201)
+        self.assertTrue(User.objects.filter(email='fatima@gmail.com').exists())
+        self.assertFalse(User.objects.filter(email='Fatima@Gmail.com').exists())
+
+    def test_case_variant_of_existing_account_is_rejected(self):
+        User.objects.create_user('fatima@gmail.com', 'pw', name='Fatima')  # active
+        resp = self._register('FATIMA@gmail.com')
+        self.assertEqual(resp.status_code, 400)
+        # Still exactly one account for that address.
+        self.assertEqual(User.objects.filter(email__iexact='fatima@gmail.com').count(), 1)
+
+
+class LoginLockoutTests(TestCase):
+    """Four consecutive wrong passwords lock the account for an hour. A correct
+    password or a password reset clears the streak."""
+
+    def setUp(self):
+        cache.clear()  # reset per-IP login throttle counters
+        self.pw = 'Correct-Horse-9'
+        self.user = User.objects.create_user('lock@x.com', self.pw, name='Locky')
+
+    def _login(self, password):
+        return APIClient().post(
+            '/api/auth/login/', {'email': 'lock@x.com', 'password': password}, format='json')
+
+    def test_four_wrong_attempts_lock_the_account(self):
+        for _ in range(3):
+            self.assertEqual(self._login('nope').status_code, 401)   # invalid creds
+        fourth = self._login('nope')                                 # trips the lock
+        self.assertEqual(fourth.status_code, 429)
+        self.assertIn('locked', fourth.data['detail'].lower())
+        # The correct password is refused while the lock is active.
+        self.assertEqual(self._login(self.pw).status_code, 429)
+
+    def test_success_resets_the_streak(self):
+        self.assertEqual(self._login('nope').status_code, 401)
+        self.assertEqual(self._login('nope').status_code, 401)
+        self.assertEqual(self._login(self.pw).status_code, 200)      # correct → resets
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.failed_login_attempts, 0)
+        self.assertIsNone(self.user.login_locked_until)
+
+    def test_password_reset_lifts_the_lock(self):
+        for _ in range(4):
+            self._login('nope')                                      # lock it
+        self.user.refresh_from_db()
+        self.assertIsNotNone(self.user.login_locked_until)
+        captured = {}
+        with patch('api.views.emails.send_code_email',
+                   side_effect=lambda u, code, purpose: captured.update(code=code)):
+            APIClient().post('/api/auth/password/forgot/', {'email': 'lock@x.com'}, format='json')
+        resp = APIClient().post('/api/auth/password/reset/', {
+            'email': 'lock@x.com', 'code': captured['code'], 'new_password': 'Br4ndNew!!',
+        }, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.login_locked_until)
+        self.assertEqual(self.user.failed_login_attempts, 0)
+
+    def test_unknown_email_never_locks_and_does_not_error(self):
+        resp = APIClient().post(
+            '/api/auth/login/', {'email': 'ghost@x.com', 'password': 'x'}, format='json')
+        self.assertEqual(resp.status_code, 401)   # ordinary invalid credentials, no crash
