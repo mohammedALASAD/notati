@@ -934,3 +934,54 @@ class LoginLockoutTests(TestCase):
         resp = APIClient().post(
             '/api/auth/login/', {'email': 'ghost@x.com', 'password': 'x'}, format='json')
         self.assertEqual(resp.status_code, 401)   # ordinary invalid credentials, no crash
+
+
+class OrderPaidEmailTests(TestCase):
+    """When the admin marks an order paid (granting access), the student gets a
+    'chapters unlocked' email with the chapter list and a button to the library."""
+
+    def setUp(self):
+        cache.clear()
+        self.course = Course.objects.create(name='MGMT233', college='Business')
+        self.n1 = Note.objects.create(course=self.course, chapter_number=4,
+                                      chapter_title='Working Capital', price=Decimal('2.000'))
+        self.student = User.objects.create_user('buyer@x.com', 'pw', name='Sara Ali')
+        self.admin = User.objects.create_user('adm@x.com', 'pw', name='Adm', role='admin')
+
+    def _c(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def _place_order(self):
+        return self._c(self.student).post(
+            '/api/orders/', {'note_ids': [self.n1.id]}, format='json').data['id']
+
+    @patch('api.emails._send_async')
+    def test_marking_paid_emails_the_customer(self, mock_send):
+        oid = self._place_order()
+        mock_send.reset_mock()   # ignore the admin-alert email from order placement
+        resp = self._c(self.admin).patch(
+            f'/api/admin/orders/{oid}/', {'status': 'paid'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(mock_send.called)
+        payload = mock_send.call_args[0][0]
+        self.assertEqual(payload['to'], ['buyer@x.com'])
+        self.assertIn('unlock', payload['subject'].lower())
+        self.assertIn('Working Capital', payload['html'])       # the chapter they bought
+        self.assertIn('https://notati.app', payload['html'])    # button link to the library
+
+    @patch('api.emails._send_async')
+    def test_paid_order_is_not_re_emailed(self, mock_send):
+        oid = self._place_order()
+        self._c(self.admin).patch(f'/api/admin/orders/{oid}/', {'status': 'paid'}, format='json')
+        mock_send.reset_mock()
+        # Saving an already-paid order again must not re-send the unlock email.
+        self._c(self.admin).patch(f'/api/admin/orders/{oid}/', {'status': 'paid'}, format='json')
+        self.assertFalse(mock_send.called)
+
+    @patch('api.emails._send_async')
+    def test_cancelling_does_not_email(self, mock_send):
+        oid = self._place_order()
+        mock_send.reset_mock()
+        self._c(self.admin).patch(
+            f'/api/admin/orders/{oid}/', {'status': 'cancelled'}, format='json')
+        self.assertFalse(mock_send.called)

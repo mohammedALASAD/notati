@@ -1053,6 +1053,13 @@ class AdminOrderDetailView(APIView):
                 order.status = 'paid'
                 order.paid_at = timezone.now()
                 order.save()
+            # Access is now granted — email the student their chapters are unlocked.
+            # Best-effort and only on the pending→paid transition (the guard above),
+            # so re-saving a paid order never re-sends. Never blocks the admin action.
+            try:
+                emails.send_order_paid_email(order)
+            except Exception:
+                pass
         elif new_status in ('pending', 'cancelled'):
             order.status = new_status
             # Cancelling frees up any discount code so the student can use it again.
