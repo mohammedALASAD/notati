@@ -985,3 +985,46 @@ class OrderPaidEmailTests(TestCase):
         self._c(self.admin).patch(
             f'/api/admin/orders/{oid}/', {'status': 'cancelled'}, format='json')
         self.assertFalse(mock_send.called)
+
+
+class ChapterUpdateNotifyTests(TestCase):
+    """Admin can email every owner of a chapter that it was updated. Only owners
+    are emailed, only admins can trigger it, and no owners means no emails."""
+
+    def setUp(self):
+        self.course = Course.objects.create(name='ITNE233', college='IT')
+        self.note = Note.objects.create(course=self.course, chapter_number=2,
+                                        chapter_title='Application layer', price=Decimal('2.000'))
+        self.owner1 = User.objects.create_user('o1@x.com', 'pw', name='Owner One')
+        self.owner2 = User.objects.create_user('o2@x.com', 'pw', name='Owner Two')
+        self.nonowner = User.objects.create_user('none@x.com', 'pw', name='No Access')
+        self.admin = User.objects.create_user('adm@x.com', 'pw', name='Adm', role='admin')
+        Access.objects.create(user=self.owner1, note=self.note)
+        Access.objects.create(user=self.owner2, note=self.note)
+
+    def _c(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    @patch('api.emails._send_async')
+    def test_notify_emails_only_owners(self, mock_send):
+        resp = self._c(self.admin).post(f'/api/notes/{self.note.id}/notify-update/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['count'], 2)
+        recipients = sorted(call.args[0]['to'][0] for call in mock_send.call_args_list)
+        self.assertEqual(recipients, ['o1@x.com', 'o2@x.com'])   # non-owner excluded
+        html = mock_send.call_args_list[0].args[0]['html']
+        self.assertIn('Application layer', html)                 # names the chapter
+        self.assertIn('https://notati.app', html)                # button to the library
+
+    @patch('api.emails._send_async')
+    def test_notify_with_no_owners_sends_nothing(self, mock_send):
+        orphan = Note.objects.create(course=self.course, chapter_number=9,
+                                     chapter_title='Intro', price=Decimal('0'))
+        resp = self._c(self.admin).post(f'/api/notes/{orphan.id}/notify-update/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['count'], 0)
+        self.assertFalse(mock_send.called)
+
+    def test_students_cannot_trigger_notify(self):
+        resp = self._c(self.owner1).post(f'/api/notes/{self.note.id}/notify-update/')
+        self.assertEqual(resp.status_code, 403)

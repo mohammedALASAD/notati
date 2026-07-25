@@ -470,6 +470,26 @@ class NoteDownloadView(APIView):
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class NoteNotifyUpdateView(APIView):
+    """Admin action: email every student who owns this chapter that we've published
+    an updated version, nudging them to the new one. Best-effort per recipient —
+    a mail failure for one student never aborts the rest."""
+    permission_classes = [IsAdmin]
+
+    def post(self, request, pk):
+        note = get_object_or_404(Note.objects.select_related('course'), pk=pk)
+        owners = User.objects.filter(access_grants__note=note).exclude(role='admin').distinct()
+        count = 0
+        for u in owners:
+            try:
+                emails.send_chapter_updated_email(u, note)
+                count += 1
+            except Exception:
+                pass  # keep notifying the others
+        return Response({'detail': f'Notified {count} student{"" if count == 1 else "s"}.',
+                         'count': count})
+
+
 class UploadDownloadView(APIView):
     permission_classes = [IsAuthenticated]
 

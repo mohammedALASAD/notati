@@ -257,6 +257,81 @@ def send_order_paid_email(order):
     })
 
 
+def _build_chapter_updated_html(to_name, chapter_label, url):
+    """Customer email: a chapter they own has a newer version; nudge them to it."""
+    first = _esc(to_name.split()[0]) if to_name else 'there'
+    font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif"
+    chapter = _esc(chapter_label)
+    button = f'''
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 4px;">
+        <tr><td align="center" bgcolor="{_WALNUT}" style="border-radius:999px;">
+          <a href="{url}" target="_blank" style="display:inline-block;font-family:{font};font-size:15px;font-weight:700;color:{_PAPER};text-decoration:none;padding:13px 34px;border-radius:999px;">Open my chapters &rarr;</a>
+        </td></tr>
+      </table>'''
+    return f'''<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="x-apple-disable-message-reformatting"/>
+  <title>A chapter you own was updated</title>
+</head>
+<body style="margin:0;padding:0;background:{_PAPER};-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{_PAPER};padding:40px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;">
+        <tr><td align="center" style="padding:0 0 24px;">
+          <span style="font-family:{font};font-size:22px;font-weight:900;letter-spacing:-0.5px;color:{_BARK};">Notati</span>
+        </td></tr>
+        <tr><td style="background:#FFFFFF;border:1px solid rgba(181,160,144,0.40);border-radius:20px;padding:40px 44px;">
+          <h1 style="margin:0 0 20px;font-family:{font};font-size:24px;font-weight:800;color:{_BARK};letter-spacing:-0.3px;line-height:1.2;">We've updated one of your chapters.</h1>
+          <p style="margin:0 0 16px;font-family:{font};font-size:15px;color:#5C4A3A;line-height:1.7;">Hi {first},</p>
+          <p style="margin:0 0 18px;font-family:{font};font-size:15px;color:#5C4A3A;line-height:1.8;">
+            We've just published an updated version of a chapter you own:
+          </p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{_PAPER};border:1px solid {_CREAM};border-radius:12px;margin:0 0 18px;">
+            <tr><td style="padding:13px 16px;font-family:{font};font-size:15px;font-weight:700;color:{_BARK};">{chapter}</td></tr>
+          </table>
+          <p style="margin:0;font-family:{font};font-size:15px;color:#5C4A3A;line-height:1.8;">
+            We recommend opening it again and revising from the latest version - it's already waiting in your library.
+          </p>
+          {button}
+          <hr style="margin:28px 0 20px;border:0;border-top:1px solid {_CREAM};" role="presentation"/>
+          <p style="margin:0;font-family:{font};font-size:15px;color:#5C4A3A;line-height:1.7;">
+            Happy studying,<br/><strong style="color:{_BARK};">The Notati Team</strong>
+          </p>
+        </td></tr>
+        <tr><td align="center" style="padding:24px 0 0;">
+          <p style="margin:0 0 4px;font-family:{font};font-size:12px;color:{_MUTED};line-height:1.6;">
+            Questions? Reply to this email or contact
+            <a href="mailto:support@notati.app" style="color:{_MUTED};text-decoration:underline;">support@notati.app</a>
+          </p>
+          <p style="margin:0;font-family:{font};font-size:12px;color:{_SAND};line-height:1.6;">&copy; 2025 Notati &middot; Bahrain</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>'''
+
+
+def send_chapter_updated_email(user, note):
+    """Tell a student who owns this chapter that we've published an updated version.
+    Best-effort; never blocks the admin's notify action."""
+    if not user or not user.email:
+        return
+    url = getattr(settings, 'SITE_URL', '') or 'https://notati.app'
+    course = note.course.name if getattr(note, 'course', None) else ''
+    prefix = f'{course} · ' if course else ''
+    label = f'{prefix}Chapter {note.chapter_number}: {note.chapter_title}'
+    _send_async({
+        'from': 'Notati <support@notati.app>',
+        'to': [user.email],
+        'subject': 'A chapter you own was updated',
+        'html': _build_chapter_updated_html(user.name, label, url),
+    })
+
+
 def send_admin_alert(subject, message):
     """Notify the site admin (ADMIN_ALERT_EMAIL) of student activity —
     a new order, upload, or review. Best-effort; never blocks the student."""

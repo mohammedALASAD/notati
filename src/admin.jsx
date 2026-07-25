@@ -584,6 +584,8 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
   const [description, setDescription]   = useStateAd('');
   const [busy, setBusy]                 = useStateAd(false);
   const [err, setErr]                   = useStateAd('');
+  // When editing, whether to email the chapter's owners about the update.
+  const [notifyOwners, setNotifyOwners] = useStateAd(true);
 
   // Multi-file state
   const [existingFiles,  setExistingFiles]  = useStateAd([]);   // NoteFile records
@@ -596,6 +598,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
   useEffectAd(() => {
     if (!open) return;
     setExistingFiles([]); setPendingFiles([]); setDeletedFileIds(new Set()); setErr('');
+    setNotifyOwners(true);
     if (existingNote) {
       setTitle(existingNote.title);
       setCollege(existingNote.college || '');
@@ -692,6 +695,17 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
         if (!pf.file) continue;
         await NotatiAPI.addNoteFile(savedNote._numId, pf.file, pf.label, order);
         order++;
+      }
+      // Best-effort: tell the chapter's owners it was updated. The save already
+      // succeeded, so a notify failure must not surface as a save error.
+      if (existingNote && notifyOwners) {
+        try {
+          const res = await NotatiAPI.notifyChapterUpdate(savedNote._numId);
+          if (res && res.count > 0) {
+            toast.success('Owners notified',
+              `Emailed ${res.count} student${res.count === 1 ? '' : 's'} about the update.`);
+          }
+        } catch (_) { /* ignore — the update itself is saved */ }
       }
       onPublished && onPublished();
       onClose();
@@ -864,6 +878,20 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
         <input ref={fileInputRef} type="file"
                accept=".pdf,.pptx,.docx,application/pdf"
                onChange={handleFilePicked} style={{ display: 'none' }}/>
+
+        {existingNote && (
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 18,
+                          padding: '12px 14px', border: '1px solid var(--border-2)',
+                          borderRadius: 'var(--r-5)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={notifyOwners}
+                   onChange={(e) => setNotifyOwners(e.target.checked)}
+                   style={{ marginTop: 2, flexShrink: 0 }}/>
+            <span style={{ fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.5 }}>
+              Email everyone who owns this chapter that it's been updated, with a nudge to
+              use the new version. Uncheck for small fixes (price, typo) you don't want to announce.
+            </span>
+          </label>
+        )}
       </div>
 
       {err ? <div className="err" style={{ marginTop: 12 }}>{err}</div> : null}

@@ -25,6 +25,7 @@ urlpatterns = [
     path('notes/<int:pk>/',     views.NoteDetailView.as_view(),       name='note-detail'),
     path('notes/<int:pk>/download/', views.NoteDownloadView.as_view(), name='note-download'),
     path('notes/<int:pk>/sample/',   views.NoteSampleView.as_view(),   name='note-sample'),
+    path('notes/<int:pk>/notify-update/', views.NoteNotifyUpdateView.as_view(), name='note-notify-update'),
 
     # Note files
     path('note-files/',                     views.NoteFileListCreateView.as_view(),  name='note-file-list'),

@@ -258,6 +258,11 @@
       return toNote(await req('PATCH', `/notes/${id}/`, payload, isFormData || false));
     },
 
+    // Email everyone who owns this chapter that it's been updated. Returns { count }.
+    async notifyChapterUpdate(id) {
+      return req('POST', `/notes/${id}/notify-update/`);
+    },
+
     async deleteNote(id) {
       await req('DELETE', `/notes/${id}/`);
     },
