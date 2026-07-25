@@ -321,8 +321,16 @@ function fmtRelative(iso) {
   return fmtDate(iso);
 }
 function fmtSize(kb) {
+  // No size, or a bad/zero value (e.g. notes carry no size) → show nothing rather
+  // than "NaN KB" / "0 KB".
+  if (!kb || !isFinite(kb) || kb <= 0) return '';
   if (kb >= 1024) return (kb / 1024).toFixed(1) + ' MB';
   return Math.round(kb) + ' KB';
+}
+// Join meta parts with " · ", dropping any empty ones so there are no dangling
+// or doubled separators when a piece (like file size) is missing.
+function metaJoin(...parts) {
+  return parts.filter(Boolean).join(' · ');
 }
 
 /* ============================================================

@@ -577,7 +577,7 @@ function CustomerDashboard({ user, onNav, onOpenNote, onShowDetails, bag, onAddT
                     <FileTypeChip type={up.fileType}/>
                     <div className="body">
                       <div className="ttl">{up.title}</div>
-                      <div className="meta">{up.fileName} · {fmtRelative(up.uploadedAt)} · {fmtSize(up.sizeKB)}</div>
+                      <div className="meta">{metaJoin(up.fileName, fmtRelative(up.uploadedAt), fmtSize(up.sizeKB))}</div>
                     </div>
                     <div className="acts">
                       {up.status === 'approved' ? (
@@ -990,7 +990,7 @@ function MyUploads({ user, onNav, onOpenNote }) {
                     <div className="meta">
                       {up.college && <><span>{up.college}</span> · </>}
                       {up.courseName && <><span>{up.courseName}</span>{up.chapterNumber ? ` Ch.${up.chapterNumber}` : ''} · </>}
-                      {up.fileName} · {fmtSize(up.sizeKB)} · Uploaded {fmtRelative(up.uploadedAt)}
+                      {metaJoin(up.fileName, fmtSize(up.sizeKB), 'Uploaded ' + fmtRelative(up.uploadedAt))}
                       {up.description ? <> · <span style={{ fontStyle: 'italic' }}>"{up.description}"</span></> : null}
                     </div>
                   </div>

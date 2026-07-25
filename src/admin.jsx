@@ -333,7 +333,7 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
                         <td data-l="Submission">
                           <div className="name-cell" style={{ maxWidth: 300 }}>
                             <span className="nm">{up.title}</span>
-                            <span className="em">{up.fileName} · {fmtSize(up.sizeKB)}</span>
+                            <span className="em">{metaJoin(up.fileName, fmtSize(up.sizeKB))}</span>
                           </div>
                         </td>
                         <td data-l="Uploader">
@@ -983,8 +983,10 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
                     <tr key={n.id}>
                       <td data-l="Note">
                         <div className="name-cell" style={{ maxWidth: 300 }}>
-                          <span className="nm">{n.title}</span>
-                          <span className="em">{n.fileName} · {fmtSize(n.sizeKB)}</span>
+                          <span className="nm">Chapter {n.chapterNumber}: {n.title}</span>
+                          {n.files && n.files.length > 0 && (
+                            <span className="em">{n.files.length} file{n.files.length === 1 ? '' : 's'}</span>
+                          )}
                         </div>
                       </td>
                       <td data-l="College · Course">
