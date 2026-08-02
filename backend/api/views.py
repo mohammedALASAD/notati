@@ -159,6 +159,12 @@ def _alert_admin_of_activity(kind, user, obj):
         pass  # alerts are best-effort; never block the student's action
 
 
+# Fingerprinting parses and rewrites the whole PDF in memory; for a very large
+# file that can exhaust a small instance and get the worker killed mid-download.
+# Above this size we serve the clean master (still logged) instead of risking it.
+FINGERPRINT_MAX_BYTES = 10 * 1024 * 1024   # 10 MB
+
+
 def _note_file_response(file_field, request, note):
     """Deliver a note's file. For an authenticated student we stamp the PDF with a
     per-(student, note) fingerprint and log the download, so a leaked copy can be
@@ -171,7 +177,11 @@ def _note_file_response(file_field, request, note):
     # non-PDF files can't be stamped.
     if user and user.role != 'admin' and pdfutils.is_pdf(content):
         code = tracing.code_for(user.id, note.id)
-        content = pdfutils.fingerprint_pdf(content, code)
+        # Skip watermarking an oversized PDF — it would parse the whole file in
+        # memory and can OOM a small instance. The download is still logged, so
+        # the open is counted; it just isn't fingerprinted.
+        if len(content) <= FINGERPRINT_MAX_BYTES:
+            content = pdfutils.fingerprint_pdf(content, code)
         content_type = 'application/pdf'
         try:
             DownloadLog.objects.create(user=user, note=note, code=code, ip=_client_ip(request))

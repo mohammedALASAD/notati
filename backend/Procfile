@@ -1,2 +1,2 @@
-web: gunicorn notati.wsgi --bind 0.0.0.0:$PORT --workers 2
+web: gunicorn notati.wsgi --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --max-requests 250 --max-requests-jitter 50
 release: python manage.py migrate --no-input && python manage.py seed
