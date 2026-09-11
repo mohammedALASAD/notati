@@ -2509,6 +2509,194 @@ function NoteViews() {
 }
 
 
+/* ============================================================
+   Sales record — download the whole history as a spreadsheet
+   Numbers opens .xlsx natively, so the file works on Mac, iPhone
+   and iPad without converting anything.
+   ============================================================ */
+function SalesRecord() {
+  const { toast } = useToast();
+  const [data,    setData]    = useStateAd({ current: null, semesters: [] });
+  const [loading, setLoading] = useStateAd(true);
+  const [busy,    setBusy]    = useStateAd(false);
+  const [adding,  setAdding]  = useStateAd('');
+  const [busyId,  setBusyId]  = useStateAd(null);
+
+  function load() {
+    return NotatiAPI.getSemesters()
+      .then(setData).catch(e => toast.error('Could not load semesters', e.message))
+      .finally(() => setLoading(false));
+  }
+  useEffectAd(() => { load(); }, []);
+
+  async function download() {
+    setBusy(true);
+    try {
+      await NotatiAPI.downloadSalesWorkbook();
+      toast.success('Downloaded', 'Open it in Numbers — every sheet is in there.');
+    } catch (e) {
+      toast.error('Could not build the workbook', e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setCurrent(s) {
+    setBusyId(s.id);
+    try {
+      await NotatiAPI.updateSemester(s.id, { is_current: true });
+      await load();
+      toast.success('Switched', `New sales now file under ${s.label}.`);
+    } catch (e) {
+      toast.error('Could not switch', e.message);
+    } finally { setBusyId(null); }
+  }
+
+  async function setStart(s, value) {
+    try {
+      await NotatiAPI.updateSemester(s.id, { starts_on: value || null });
+      await load();
+    } catch (e) { toast.error('Could not save the date', e.message); }
+  }
+
+  async function addSemester(e) {
+    e.preventDefault();
+    const label = adding.trim();
+    if (!label) return;
+    try {
+      await NotatiAPI.createSemester({ label, is_summer: /summer/i.test(label) });
+      setAdding('');
+      await load();
+      toast.success('Added', `${label} is ready to switch to.`);
+    } catch (e2) { toast.error('Could not add it', e2.message); }
+  }
+
+  async function remove(s) {
+    if (!confirm(`Delete ${s.label}? This only works if nothing was sold in it.`)) return;
+    setBusyId(s.id);
+    try {
+      await NotatiAPI.deleteSemester(s.id);
+      await load();
+    } catch (e) { toast.error('Could not delete', e.message); }
+    finally { setBusyId(null); }
+  }
+
+  if (loading) return <PageLoader rows={4}/>;
+  const current = data.current;
+
+  return (
+    <div>
+      {/* Download */}
+      <section className="panel" style={{ marginBottom: 20 }}>
+        <div className="panel-body" style={{ display: 'flex', gap: 20, alignItems: 'center',
+                                             flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 320px', minWidth: 260 }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 17 }}>Sales record workbook</h3>
+            <p style={{ margin: 0, color: 'var(--fg-2)', fontSize: 13, lineHeight: 1.6 }}>
+              Every sale, semester, course and chapter in one spreadsheet — plus your
+              original hand-kept record. Built fresh each time you download it, so it's
+              always current. Numbers opens it directly on Mac, iPhone and iPad.
+            </p>
+          </div>
+          <button className="btn btn-primary" onClick={download} disabled={busy}>
+            <Icons.Download size={16}/> {busy ? 'Building…' : 'Download workbook'}
+          </button>
+        </div>
+      </section>
+
+      {/* Current semester */}
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h3 style={{ margin: 0, fontSize: 16 }}>Semesters</h3>
+            <p className="sub" style={{ margin: '4px 0 0' }}>
+              New sales file under the semester marked <strong>Current</strong>. Set a start
+              date and the switch happens on its own that morning.
+            </p>
+          </div>
+        </div>
+        <div className="panel-body flush">
+          <div className="scroll-table">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Semester</th>
+                  <th style={{ width: 90 }}>Summer</th>
+                  <th className="r" style={{ width: 110 }}>Chapters sold</th>
+                  <th style={{ width: 170 }}>Starts on</th>
+                  <th style={{ width: 150 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.semesters.map(s => (
+                  <tr key={s.id} style={s.is_current ? { background: 'var(--bg-section)' } : null}>
+                    <td data-l="Semester">
+                      <span style={{ fontWeight: s.is_current ? 700 : 500,
+                                     color: 'var(--fg-1)' }}>{s.label}</span>
+                      {s.is_current && (
+                        <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700,
+                                       padding: '2px 8px', borderRadius: 999,
+                                       background: 'var(--notati-forest)', color: '#fff',
+                                       textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                          Current
+                        </span>
+                      )}
+                    </td>
+                    <td data-l="Summer" style={{ color: 'var(--fg-3)' }}>
+                      {s.is_summer ? 'Yes' : ''}
+                    </td>
+                    <td className="r" data-l="Chapters sold"
+                        style={{ color: s.sales_count ? 'var(--fg-1)' : 'var(--fg-3)',
+                                 fontWeight: s.sales_count ? 700 : 400 }}>
+                      {s.sales_count || ''}
+                    </td>
+                    <td data-l="Starts on">
+                      <input type="date" className="date-cell" value={s.starts_on || ''}
+                             onChange={e => setStart(s, e.target.value)}/>
+                    </td>
+                    <td data-l="">
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        {!s.is_current && (
+                          <button className="btn btn-soft btn-sm" disabled={busyId === s.id}
+                                  onClick={() => setCurrent(s)}>Make current</button>
+                        )}
+                        {!s.is_current && !s.sales_count && (
+                          <button className="btn btn-danger btn-sm" disabled={busyId === s.id}
+                                  onClick={() => remove(s)} title="Delete">
+                            <Icons.Trash size={15}/>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <form onSubmit={addSemester}
+                style={{ display: 'flex', gap: 8, padding: '14px 16px', flexWrap: 'wrap',
+                         borderTop: '1px solid var(--border-1)' }}>
+            <input className="date-cell" value={adding} onChange={e => setAdding(e.target.value)}
+                   placeholder="Semester 13" style={{ flex: '1 1 200px', maxWidth: 260 }}/>
+            <button className="btn btn-soft btn-sm" type="submit" disabled={!adding.trim()}>
+              <Icons.Plus size={15}/> Add semester
+            </button>
+          </form>
+        </div>
+      </section>
+
+      {current && (
+        <p style={{ marginTop: 14, fontSize: 13, color: 'var(--fg-3)', lineHeight: 1.7 }}>
+          Sales placed right now are filed under <strong>{current.label}</strong>. A sale keeps
+          the semester it was placed in — marking an old order paid never moves it into the
+          current term.
+        </p>
+      )}
+    </div>
+  );
+}
+
+
 function ChapterInsights() {
   const [insightsTab,  setInsightsTab]  = useStateAd('views');
   const [salesData,    setSalesData]    = useStateAd(null);
@@ -2534,6 +2722,7 @@ function ChapterInsights() {
             {[
               { id: 'views',  label: 'Views' },
               { id: 'sales',  label: 'Sales' },
+              { id: 'record', label: 'Record' },
               { id: 'trace',  label: 'Leak trace' },
             ].map(t => (
               <button key={t.id}
@@ -2553,6 +2742,8 @@ function ChapterInsights() {
       {insightsTab === 'sales' && (
         <SalesView salesData={salesData} loading={loadingSales}/>
       )}
+
+      {insightsTab === 'record' && <SalesRecord/>}
     </div>
   );
 }

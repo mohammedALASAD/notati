@@ -24,7 +24,7 @@ def health(request):
 from .models import (
     User, Course, Note, NoteFile, Access, Upload, UploadFile,
     Testimonial, BagItem, Order, OrderItem, DiscountCode, DiscountRedemption,
-    DownloadLog,
+    DownloadLog, Semester,
 )
 from .serializers import (
     RegisterSerializer, UserSerializer, UserAdminSerializer,
@@ -33,6 +33,7 @@ from .serializers import (
     AccessSerializer, UploadSerializer, UploadAdminSerializer,
     TestimonialSerializer, TestimonialAdminSerializer,
     BagItemSerializer, OrderSerializer, DiscountCodeSerializer,
+    SemesterSerializer,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
 from . import pdfutils, verification, emails, tracing
@@ -663,6 +664,11 @@ class AccessListCreateView(generics.ListCreateAPIView):
             return qs
         return Access.objects.filter(user=user).select_related('note__course')
 
+    def perform_create(self, serializer):
+        # Hand-granted access is filed under the running term too, so it lands in
+        # the right column of the sales record.
+        serializer.save(granted_by=self.request.user, semester=Semester.current())
+
 
 class AccessDetailView(generics.RetrieveDestroyAPIView):
     queryset = Access.objects.all()
@@ -896,6 +902,69 @@ def admin_note_views(request):
     return Response(data)
 
 
+# ── Sales workbook ────────────────────────────────────────────────────────────
+
+class SalesWorkbookView(APIView):
+    """Download the whole sales record as a spreadsheet.
+
+    Built fresh from the database on every request, so it is always current and
+    never needs merging. Numbers opens .xlsx natively on every Apple device."""
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        from . import workbook
+        filename, blob = workbook.build_sales_workbook()
+        response = HttpResponse(
+            blob,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response['Content-Length'] = str(len(blob))
+        return response
+
+
+class SemesterListView(generics.ListCreateAPIView):
+    """The semester list, and the one that new sales file under."""
+    serializer_class = SemesterSerializer
+    permission_classes = [IsAdmin]
+    queryset = Semester.objects.all()
+
+    def list(self, request, *args, **kwargs):
+        current = Semester.current()        # may advance itself past a start date
+        return Response({
+            'current': SemesterSerializer(current).data if current else None,
+            'semesters': SemesterSerializer(self.get_queryset(), many=True).data,
+        })
+
+    def perform_create(self, serializer):
+        # A new semester lands after the last one unless a position is given.
+        if not serializer.validated_data.get('position'):
+            last = Semester.objects.order_by('-position').first()
+            serializer.validated_data['position'] = (last.position + 1) if last else 1
+        serializer.save()
+
+
+class SemesterDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = SemesterSerializer
+    permission_classes = [IsAdmin]
+    queryset = Semester.objects.all()
+
+    def patch(self, request, *args, **kwargs):
+        semester = self.get_object()
+        if request.data.get('is_current'):
+            semester.make_current()
+            return Response(SemesterSerializer(semester).data)
+        return super().patch(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        semester = self.get_object()
+        if semester.orders.exists() or semester.access_grants.exists():
+            return Response(
+                {'detail': 'This semester has sales recorded against it and cannot be deleted.'},
+                status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
+
 # ── Leak tracing ──────────────────────────────────────────────────────────────
 
 @api_view(['GET'])
@@ -1030,7 +1099,10 @@ class OrderListCreateView(generics.ListCreateAPIView):
         code = (str(request.data.get('code') or '')).strip().upper()[:12]
 
         with transaction.atomic():
-            order = Order.objects.create(user=request.user, status='pending', code=code)
+            # File the order under the term that's running now. Stamped once, at
+            # checkout, and never moved — so a closed term's numbers stay put.
+            order = Order.objects.create(user=request.user, status='pending', code=code,
+                                         semester=Semester.current())
             subtotal = Decimal('0')
             for n in notes:
                 OrderItem.objects.create(
@@ -1094,7 +1166,10 @@ class AdminOrderDetailView(APIView):
                     if item.note_id:
                         Access.objects.get_or_create(
                             user=order.user, note_id=item.note_id,
-                            defaults={'granted_by': request.user},
+                            # The order's own term, not today's — marking an old
+                            # order paid must not move it into the current one.
+                            defaults={'granted_by': request.user,
+                                      'semester': order.semester},
                         )
                 order.status = 'paid'
                 order.paid_at = timezone.now()

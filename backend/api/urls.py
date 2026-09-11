@@ -54,6 +54,9 @@ urlpatterns = [
     path('admin/sales/',            views.admin_sales,             name='admin-sales'),
     path('admin/note-views/',       views.admin_note_views,        name='admin-note-views'),
     path('admin/trace/',            views.admin_trace,             name='admin-trace'),
+    path('admin/sales-workbook/',   views.SalesWorkbookView.as_view(),  name='admin-sales-workbook'),
+    path('admin/semesters/',        views.SemesterListView.as_view(),   name='admin-semesters'),
+    path('admin/semesters/<int:pk>/', views.SemesterDetailView.as_view(), name='admin-semester-detail'),
 
     # Bag
     path('bag/',       views.BagView.as_view(),      name='bag'),

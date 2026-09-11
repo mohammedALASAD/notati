@@ -4,7 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import (
     User, Course, Note, NoteFile, Access, Upload, UploadFile,
-    Testimonial, BagItem, Order, OrderItem, DiscountCode,
+    Testimonial, BagItem, Order, OrderItem, DiscountCode, Semester,
 )
 
 
@@ -376,3 +376,19 @@ class DiscountCodeSerializer(serializers.ModelSerializer):
         if vf and vu and vu < vf:
             raise serializers.ValidationError('“Valid until” must be after “valid from”.')
         return attrs
+
+
+class SemesterSerializer(serializers.ModelSerializer):
+    sales_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Semester
+        fields = ['id', 'label', 'position', 'is_summer', 'starts_on',
+                  'is_current', 'sales_count']
+        read_only_fields = ['id', 'sales_count']
+        extra_kwargs = {'position': {'required': False}}
+
+    def get_sales_count(self, obj):
+        """Paid chapters filed under this semester — shown so the admin can see
+        which terms carry real data before renaming or deleting one."""
+        return OrderItem.objects.filter(order__semester=obj, order__status='paid').count()

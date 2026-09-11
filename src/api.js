@@ -299,6 +299,30 @@
       return req('GET', '/admin/trace/?code=' + encodeURIComponent(code));
     },
 
+    // The whole sales record as an .xlsx. Goes through the proxy helper because
+    // the endpoint needs the auth header — a plain link can't carry one.
+    async downloadSalesWorkbook() {
+      const stamp = new Date().toISOString().slice(0, 10);
+      await _proxyDownload(BASE + '/admin/sales-workbook/', `Notati sales ${stamp}.xlsx`);
+    },
+
+    async getSemesters() {
+      const data = await req('GET', '/admin/semesters/');
+      return data || { current: null, semesters: [] };
+    },
+
+    async createSemester(body) {
+      return req('POST', '/admin/semesters/', body);
+    },
+
+    async updateSemester(id, body) {
+      return req('PATCH', `/admin/semesters/${id}/`, body);
+    },
+
+    async deleteSemester(id) {
+      return req('DELETE', `/admin/semesters/${id}/`);
+    },
+
     async grantAccess(userId, noteId) {
       return req('POST', '/access/', { user: Number(userId), note: Number(noteId) });
     },

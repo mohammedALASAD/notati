@@ -3,6 +3,7 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
+from django.utils import timezone
 
 
 class UserManager(BaseUserManager):
@@ -88,6 +89,11 @@ class Access(models.Model):
     granted_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, related_name='access_given'
     )
+    # Which term this unlock belongs to. Stamped on creation like Order.semester,
+    # so hand-granted access shows up in the right column of the sales record.
+    semester   = models.ForeignKey(
+        'Semester', on_delete=models.SET_NULL, null=True, blank=True, related_name='access_grants'
+    )
     granted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -172,6 +178,57 @@ class BagItem(models.Model):
         return f'{self.user.email} bag: {self.note}'
 
 
+class Semester(models.Model):
+    """The term a sale belongs to — the way the sales record has always been
+    organised. Deliberately a label, not a date range: the admin keeps the
+    numbering and there is no calendar to maintain.
+
+    `starts_on` is optional, and only a safety net. Setting it on the next
+    semester means the switch happens on its own on that day, so forgetting to
+    flip it manually can't misfile a week of sales. Leave it blank to stay
+    entirely manual."""
+
+    label      = models.CharField(max_length=60, unique=True)   # 'Semester 11'
+    position   = models.PositiveIntegerField(unique=True)       # sort + succession order
+    is_summer  = models.BooleanField(default=False)
+    starts_on  = models.DateField(null=True, blank=True)
+    is_current = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['position']
+
+    def __str__(self):
+        return self.label
+
+    @classmethod
+    def current(cls):
+        """The semester new sales file under.
+
+        Advances by itself if a later semester's start date has arrived, so the
+        answer is right even if nobody flipped the switch. Returns None only
+        when no semesters exist at all."""
+        today = timezone.localdate()
+        cur = cls.objects.filter(is_current=True).first()
+        due = (cls.objects
+               .filter(starts_on__isnull=False, starts_on__lte=today)
+               .order_by('-position').first())
+        if due and (cur is None or due.position > cur.position):
+            cls.objects.filter(is_current=True).update(is_current=False)
+            cls.objects.filter(pk=due.pk).update(is_current=True)
+            due.is_current = True
+            return due
+        return cur or cls.objects.order_by('-position').first()
+
+    def make_current(self):
+        """Switch to this semester, clearing whichever one held it before."""
+        type(self).objects.filter(is_current=True).exclude(pk=self.pk).update(is_current=False)
+        if not self.is_current:
+            self.is_current = True
+            self.save(update_fields=['is_current'])
+        return self
+
+
 class Order(models.Model):
     STATUS_CHOICES = [
         ('pending',   'Pending payment'),
@@ -180,6 +237,11 @@ class Order(models.Model):
     ]
 
     user             = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
+    # Stamped once, when the order is placed, and never moved afterwards — so the
+    # sales record for a closed term can't shift under you later.
+    semester         = models.ForeignKey(
+        Semester, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders'
+    )
     code             = models.CharField(max_length=12, blank=True, db_index=True)  # short ref shared with the student
     status           = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
     subtotal         = models.DecimalField(max_digits=8, decimal_places=3, default=0)  # before discount

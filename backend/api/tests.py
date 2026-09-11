@@ -13,7 +13,8 @@ from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from . import pdfutils, verification
 from .models import (User, Course, Note, NoteFile, Access, BagItem, VerificationCode,
-                     Order, DiscountCode, DiscountRedemption, Upload, UploadFile)
+                     Order, OrderItem, DiscountCode, DiscountRedemption, Upload,
+                     UploadFile, Semester)
 from .serializers import NoteSerializer, RegisterSerializer
 
 
@@ -1113,3 +1114,207 @@ class ChapterUpdateNotifyTests(TestCase):
     def test_students_cannot_trigger_notify(self):
         resp = self._c(self.owner1).post(f'/api/notes/{self.note.id}/notify-update/')
         self.assertEqual(resp.status_code, 403)
+
+
+class SemesterTests(TestCase):
+    """The term a sale is filed under — a label the admin controls, with an
+    optional start date as a safety net against forgetting to switch it."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='S')
+        self.course  = Course.objects.create(name='ITNE233', college='IT')
+        self.note    = Note.objects.create(course=self.course, chapter_number=1,
+                                           chapter_title='Intro', price=Decimal('1.500'))
+        self.s10 = Semester.objects.create(label='Semester 10 (Summer)', position=10,
+                                           is_summer=True, is_current=True)
+        self.s11 = Semester.objects.create(label='Semester 11', position=11)
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def test_current_is_the_flagged_one(self):
+        self.assertEqual(Semester.current(), self.s10)
+
+    def test_start_date_advances_the_current_semester_on_its_own(self):
+        # Forgetting to flip the switch must not misfile sales: a start date that
+        # has passed takes over by itself.
+        self.s11.starts_on = timezone.localdate() - timedelta(days=1)
+        self.s11.save()
+        self.assertEqual(Semester.current(), self.s11)
+        self.s10.refresh_from_db(); self.s11.refresh_from_db()
+        self.assertFalse(self.s10.is_current)
+        self.assertTrue(self.s11.is_current)
+
+    def test_a_future_start_date_does_not_advance_yet(self):
+        self.s11.starts_on = timezone.localdate() + timedelta(days=2)
+        self.s11.save()
+        self.assertEqual(Semester.current(), self.s10)
+
+    def test_new_orders_are_stamped_with_the_current_semester(self):
+        BagItem.objects.create(user=self.student, note=self.note)
+        resp = self._client(self.student).post('/api/orders/')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(Order.objects.get(pk=resp.data['id']).semester, self.s10)
+
+    def test_marking_an_old_order_paid_keeps_its_own_semester(self):
+        # A sale belongs to the term it was made in, not the term you happened to
+        # confirm the payment in.
+        order = Order.objects.create(user=self.student, status='pending', semester=self.s10)
+        OrderItem.objects.create(order=order, note=self.note, course_name='ITNE233',
+                                 chapter_number='1', chapter_title='Intro',
+                                 price=Decimal('1.500'))
+        self.s11.make_current()
+        self._client(self.admin).patch(f'/api/admin/orders/{order.id}/', {'status': 'paid'})
+        self.assertEqual(Access.objects.get(user=self.student, note=self.note).semester,
+                         self.s10)
+
+    def test_make_current_clears_the_previous_one(self):
+        self.s11.make_current()
+        self.s10.refresh_from_db()
+        self.assertFalse(self.s10.is_current)
+        self.assertEqual(Semester.objects.filter(is_current=True).count(), 1)
+
+    def test_semester_list_is_admin_only(self):
+        self.assertEqual(self._client(self.student).get('/api/admin/semesters/').status_code, 403)
+        resp = self._client(self.admin).get('/api/admin/semesters/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['current']['label'], 'Semester 10 (Summer)')
+
+    def test_switching_semester_through_the_api(self):
+        resp = self._client(self.admin).patch(f'/api/admin/semesters/{self.s11.id}/',
+                                              {'is_current': True})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(Semester.current(), self.s11)
+
+    def test_a_semester_with_sales_cannot_be_deleted(self):
+        Order.objects.create(user=self.student, status='paid', semester=self.s10)
+        resp = self._client(self.admin).delete(f'/api/admin/semesters/{self.s10.id}/')
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(Semester.objects.filter(pk=self.s10.pk).exists())
+
+
+class SalesWorkbookTests(TestCase):
+    """The .xlsx sales record: what lands in it, and what deliberately doesn't."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 10 (Summer)', position=10,
+                                               is_summer=True, is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara', college='IT')
+        self.other   = User.objects.create_user('o@x.com', 'pw', name='Omar')
+        self.course  = Course.objects.create(name='ITNE233', college='IT')
+        self.note    = Note.objects.create(course=self.course, chapter_number=3,
+                                           chapter_title='Transport', price=Decimal('2.000'))
+        self.free    = Note.objects.create(course=self.course, chapter_number=1,
+                                           chapter_title='Intro', price=Decimal('0'))
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def _paid_order(self, user, discount_percent=0):
+        order = Order.objects.create(user=user, status='paid', semester=self.sem,
+                                     discount_percent=discount_percent,
+                                     discount_code='SAVE' if discount_percent else '',
+                                     paid_at=timezone.now())
+        OrderItem.objects.create(order=order, note=self.note, course_name='ITNE233',
+                                 chapter_number='3', chapter_title='Transport',
+                                 price=Decimal('2.000'))
+        return order
+
+    def _build(self):
+        from . import workbook
+        import openpyxl
+        name, blob = workbook.build_sales_workbook()
+        return name, openpyxl.load_workbook(BytesIO(blob))
+
+    def _column(self, ws, header, limit=40):
+        """Values under a named header, so tests don't hardcode cell addresses."""
+        for row in ws.iter_rows(min_row=1, max_row=12):
+            for cell in row:
+                if cell.value == header:
+                    return [ws.cell(row=r, column=cell.column).value
+                            for r in range(cell.row + 1, cell.row + 1 + limit)]
+        raise AssertionError(f'header {header!r} not found in {ws.title!r}')
+
+    def test_workbook_has_every_sheet(self):
+        _, wb = self._build()
+        self.assertEqual(wb.sheetnames, [
+            'Summary', 'Sales ledger', 'By semester', 'By course', 'By chapter',
+            'By month', 'Pending', 'Cancelled', 'Manual unlocks', 'History (hand-kept)',
+        ])
+
+    def test_paid_items_reach_the_ledger_with_the_semester(self):
+        self._paid_order(self.student)
+        _, wb = self._build()
+        ws = wb['Sales ledger']
+        self.assertIn('Sara', self._column(ws, 'Student'))
+        self.assertIn('Semester 10 (Summer)', self._column(ws, 'Semester'))
+        self.assertIn('Transport', self._column(ws, 'Chapter title'))
+
+    def test_discount_is_spread_across_the_lines_so_net_is_what_landed(self):
+        self._paid_order(self.student, discount_percent=25)
+        _, wb = self._build()
+        ws = wb['Sales ledger']
+        self.assertIn(2.0, self._column(ws, 'Price'))
+        self.assertIn(1.5, self._column(ws, 'Net'))          # 2.000 less 25%
+        self.assertIn(0.5, self._column(ws, 'Discount amount'))
+
+    def test_pending_and_cancelled_never_reach_the_ledger(self):
+        Order.objects.create(user=self.student, status='pending', semester=self.sem,
+                             total=Decimal('2.000'))
+        Order.objects.create(user=self.other, status='cancelled', semester=self.sem,
+                             total=Decimal('9.000'))
+        _, wb = self._build()
+        self.assertIsNone(self._column(wb['Sales ledger'], 'Student')[0])
+        self.assertIn('Sara', self._column(wb['Pending'], 'Student'))
+        self.assertIn('Omar', self._column(wb['Cancelled'], 'Student'))
+
+    def test_a_hand_granted_unlock_is_a_manual_unlock(self):
+        Access.objects.create(user=self.other, note=self.note,
+                              granted_by=self.admin, semester=self.sem)
+        _, wb = self._build()
+        self.assertIn('Omar', self._column(wb['Manual unlocks'], 'Student'))
+
+    def test_access_that_came_from_a_paid_order_is_not_a_manual_unlock(self):
+        # Both are Access rows granted by the admin; only the unpaid one is a gift.
+        order = self._paid_order(self.student)
+        Access.objects.create(user=order.user, note=self.note,
+                              granted_by=self.admin, semester=self.sem)
+        _, wb = self._build()
+        self.assertNotIn('Sara', self._column(wb['Manual unlocks'], 'Student'))
+
+    def test_history_sheet_carries_the_hand_kept_record(self):
+        _, wb = self._build()
+        ws = wb['History (hand-kept)']
+        labels = self._column(ws, 'Semester')
+        self.assertIn('Semester 1', labels)
+        self.assertIn('Semester 8', labels)
+        # 'No Pay' is preserved as text — it is not a zero.
+        flat = [c.value for row in ws.iter_rows() for c in row]
+        self.assertIn('No Pay', flat)
+
+    def test_by_course_counts_copies_per_semester(self):
+        self._paid_order(self.student)
+        self._paid_order(self.other)
+        _, wb = self._build()
+        self.assertIn(2, self._column(wb['By course'], 'ITNE233'))
+
+    def test_endpoint_returns_a_spreadsheet_to_the_admin(self):
+        self._paid_order(self.student)
+        resp = self._client(self.admin).get('/api/admin/sales-workbook/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('spreadsheetml', resp['Content-Type'])
+        self.assertIn('.xlsx', resp['Content-Disposition'])
+        self.assertTrue(resp.content.startswith(b'PK'))     # a real zip/xlsx
+
+    def test_students_cannot_download_the_sales_workbook(self):
+        resp = self._client(self.student).get('/api/admin/sales-workbook/')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_builds_cleanly_with_no_sales_at_all(self):
+        name, wb = self._build()
+        self.assertTrue(name.endswith('.xlsx'))
+        self.assertEqual(wb['Summary']['B5'].value, 0)      # chapters sold

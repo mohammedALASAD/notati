@@ -442,6 +442,23 @@ input, textarea, select { font-family: inherit; }
 /* Safari on iOS shrinks an empty date input; keep the two halves even. */
 .date-range input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
+/* An input sitting inside a table row or a compact form — quieter than a full
+   .field, but still obviously editable on hover. */
+.date-cell {
+  font: var(--type-body); font-size: 13px;
+  padding: 6px 10px;
+  border-radius: var(--r-3);
+  border: 1px solid var(--border-1);
+  background: var(--notati-paper);
+  color: var(--fg-1);
+}
+.date-cell:hover  { border-color: var(--notati-walnut); }
+.date-cell:focus  { outline: none; border-color: var(--notati-walnut); border-width: 1.5px; }
+[data-theme="dark"] .date-cell { background: var(--bg-section); }
+[data-theme="dark"] .date-cell::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(.65);
+}
+
 /* ---------- Scrollable table wrapper ---------- */
 .scroll-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
