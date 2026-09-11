@@ -1318,3 +1318,78 @@ class SalesWorkbookTests(TestCase):
         name, wb = self._build()
         self.assertTrue(name.endswith('.xlsx'))
         self.assertEqual(wb['Summary']['B5'].value, 0)      # chapters sold
+
+
+class WorkbookCourseHistoryTests(TestCase):
+    """The By course sheet must carry the hand-kept years as well as the live
+    ones, and a renamed course must not split into two columns."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 10 (Summer)', position=10,
+                                               is_summer=True, is_current=True)
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+
+    def _sell(self, course_name, price='2.000'):
+        course = Course.objects.get_or_create(name=course_name, defaults={'college': 'IT'})[0]
+        # A fresh chapter each time — (course, chapter_number) is unique.
+        chapter = course.notes.count() + 1
+        note = Note.objects.create(course=course, chapter_number=chapter,
+                                   chapter_title='Ch', price=Decimal(price))
+        order = Order.objects.create(user=self.student, status='paid', semester=self.sem,
+                                     paid_at=timezone.now())
+        OrderItem.objects.create(order=order, note=note, course_name=course_name,
+                                 chapter_number=str(chapter), chapter_title='Ch',
+                                 price=Decimal(price))
+
+    def _by_course(self):
+        from . import workbook
+        import openpyxl
+        _, blob = workbook.build_sales_workbook()
+        return openpyxl.load_workbook(BytesIO(blob))['By course']
+
+    def _header_row(self, ws):
+        for row in ws.iter_rows(min_row=1, max_row=8):
+            if row[0].value == 'Semester':
+                return row
+        raise AssertionError('no header row on By course')
+
+    def test_course_key_folds_renames_onto_one_code(self):
+        from .workbook import _course_key
+        self.assertEqual(_course_key('ACC112 / ACA112'), 'ACC112')
+        self.assertEqual(_course_key('ACC112'), 'ACC112')
+        self.assertEqual(_course_key('ITNE231 / ITCE314'), 'ITNE231')
+        self.assertEqual(_course_key('ITIS204 (BIS202)'), 'ITIS204')
+        self.assertEqual(_course_key('ITIS204'), 'ITIS204')
+
+    def test_hand_kept_semesters_appear_on_the_by_course_sheet(self):
+        self._sell('ITIS103')
+        labels = [c.value for c in self._by_course()['A']]
+        self.assertIn('Semester 1', labels)             # hand-kept
+        self.assertIn('Semester 8', labels)             # hand-kept
+        self.assertIn('Semester 10 (Summer)', labels)   # website
+        self.assertIn('Total copies sold — all time', labels)
+
+    def test_a_renamed_course_keeps_a_single_column(self):
+        # The old record called it ACC112; today it is 'ACC112 / ACA112'.
+        self._sell('ACC112 / ACA112')
+        headers = [c.value for c in self._header_row(self._by_course()) if c.value]
+        acc = [h for h in headers if h and h.upper().startswith('ACC112')]
+        self.assertEqual(acc, ['ACC112 / ACA112'])      # one column, today's name
+
+    def test_all_time_total_adds_both_eras(self):
+        self._sell('ITIS103')
+        self._sell('ITIS103')
+        ws = self._by_course()
+        rows = {r[0].value: r for r in ws.iter_rows()}
+        hand = rows['Hand-kept subtotal'][-1].value
+        web  = rows['Website subtotal'][-1].value
+        both = rows['Total copies sold — all time'][-1].value
+        self.assertEqual(web, 2)
+        self.assertEqual(hand, 4452)                    # the figure in the old record
+        self.assertEqual(both, hand + web)
+
+    def test_no_pay_markers_survive_as_text(self):
+        self._sell('ITIS103')
+        flat = [c.value for row in self._by_course().iter_rows() for c in row]
+        self.assertIn('No Pay', flat)                   # not turned into a zero

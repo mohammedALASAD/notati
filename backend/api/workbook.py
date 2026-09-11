@@ -18,6 +18,7 @@ Sheet layout:
   History         the hand-kept record from before the website, as recorded
 """
 import json
+import re
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -215,52 +216,124 @@ def _sheet_by_semester(wb, items, history):
     return ws
 
 
-def _sheet_by_course(wb, items):
-    """Course x semester copies, the shape the record has always been read in."""
+def _course_key(name):
+    """The bare course code, used to line a course up with its older self.
+
+    Courses get renamed as they merge or get recoded — 'ACC112' became
+    'ACC112 / ACA112', 'ITIS204 (BIS202)' is now 'ITIS204'. Matching on the first
+    code means the history lands in the same column instead of opening a second
+    one for what is really the same course."""
+    head = re.split(r'[/(]', name or '', maxsplit=1)[0]
+    return head.strip().upper().replace(' ', '') or (name or '').strip().upper()
+
+
+def _sheet_by_course(wb, items, history):
+    """Course x semester copies — the whole history, hand-kept years included, in
+    one grid. This is the sheet the record has always been read in."""
     ws = wb.create_sheet('By course')
     top = _title(ws, 'By course',
-                 'Copies sold per course, per semester — website sales only.')
+                 'Copies sold per course, per semester. The earlier rows are your '
+                 'hand-kept record, shown in grey; the rest the website counted itself.')
 
-    grid, courses, sem_labels = {}, [], []
+    # Column identity is the course code, so a renamed course keeps one column.
+    # The label shown is the newest name we have seen for that code.
+    names, order = {}, []
+    def register(name):
+        key = _course_key(name)
+        if key not in names:
+            names[key] = name
+            order.append(key)
+        return key
+
+    hist_rows = (history or {}).get('course_rows', [])
+    for entry in hist_rows:
+        for course in entry['copies']:
+            register(course)
+    # Live names are registered second so they win — today's name is the one to show.
+    live_grid, live_sems = {}, []
     for item in items:
+        key = register(item.course_name or '(unknown course)')
+        names[key] = item.course_name or '(unknown course)'
         label = item.order.semester.label if item.order.semester else 'Unassigned'
-        course = item.course_name or '(unknown course)'
-        if course not in courses:
-            courses.append(course)
-        if label not in sem_labels:
-            sem_labels.append(label)
-        cellkey = (label, course)
-        grid[cellkey] = grid.get(cellkey, 0) + 1
-    courses.sort()
+        if label not in live_sems:
+            live_sems.append(label)
+        live_grid[(label, key)] = live_grid.get((label, key), 0) + 1
 
-    _header(ws, top, ['Semester'] + courses + ['Total'],
-            [22] + [13] * len(courses) + [11])
+    keys = sorted(order, key=lambda k: names[k])
+    _header(ws, top, ['Semester'] + [names[k] for k in keys] + ['Total'],
+            [22] + [13] * len(keys) + [11])
+
     row = top + 1
-    col_totals = {c: 0 for c in courses}
-    for label in sem_labels:
+    hist_totals = {k: 0 for k in keys}
+    live_totals = {k: 0 for k in keys}
+    grey = Font(italic=True, color='9A9A9A')
+
+    # ── the hand-kept years ──
+    for entry in hist_rows:
+        cell = ws.cell(row=row, column=1, value=entry['semester'])
+        cell.border, cell.font = BOX, grey
+        for idx, key in enumerate(keys, start=2):
+            value = entry['copies'].get(names[key])
+            if value is None:                       # try the older name for this code
+                value = next((v for c, v in entry['copies'].items()
+                              if _course_key(c) == key), None)
+            cell = ws.cell(row=row, column=idx, value=value)
+            cell.border = BOX
+            cell.font = grey
+            if isinstance(value, (int, float)):
+                hist_totals[key] += value
+        cell = ws.cell(row=row, column=len(keys) + 2, value=entry.get('total_copies'))
+        cell.border, cell.font = BOX, Font(bold=True, color='9A9A9A')
+        row += 1
+
+    if hist_rows:
+        _totals_row(ws, row, 'Hand-kept subtotal',
+                    {**{i: hist_totals[k] or None for i, k in enumerate(keys, start=2)},
+                     len(keys) + 2: sum(hist_totals.values())})
+        row += 1
+
+    # ── what the website counted ──
+    for label in live_sems:
         ws.cell(row=row, column=1, value=label).border = BOX
         line = 0
-        for idx, course in enumerate(courses, start=2):
-            count = grid.get((label, course), 0)
+        for idx, key in enumerate(keys, start=2):
+            count = live_grid.get((label, key), 0)
             cell = ws.cell(row=row, column=idx, value=count or None)
             cell.border = BOX
             line += count
-            col_totals[course] += count
-        cell = ws.cell(row=row, column=len(courses) + 2, value=line)
+            live_totals[key] += count
+        cell = ws.cell(row=row, column=len(keys) + 2, value=line)
         cell.border, cell.font = BOX, Font(bold=True)
         row += 1
 
-    _totals_row(ws, row, 'Total copies sold',
-                {**{i: col_totals[c] for i, c in enumerate(courses, start=2)},
-                 len(courses) + 2: sum(col_totals.values())})
-    cell = ws.cell(row=row, column=len(courses) + 2)
-    cell.fill = GRAND_FILL
+    _totals_row(ws, row, 'Website subtotal',
+                {**{i: live_totals[k] or None for i, k in enumerate(keys, start=2)},
+                 len(keys) + 2: sum(live_totals.values())})
+    row += 1
+    _totals_row(ws, row, 'Total copies sold — all time',
+                {**{i: (hist_totals[k] + live_totals[k]) or None
+                    for i, k in enumerate(keys, start=2)},
+                 len(keys) + 2: sum(hist_totals.values()) + sum(live_totals.values())})
+    for idx in range(2, len(keys) + 3):
+        ws.cell(row=row, column=idx).fill = GRAND_FILL
+    ws.cell(row=row, column=1).fill = GRAND_FILL
+
+    note = ws.cell(row=row + 2, column=1,
+                   value='“No Pay” means the course was not on sale that semester and '
+                         '“Summer” that it was not offered — neither is a zero. Courses '
+                         'that were renamed (ACC112 → ACC112 / ACA112) share one column, '
+                         'matched on the course code.')
+    note.fill = NOTE_FILL
+    note.alignment = Alignment(wrap_text=True, vertical='top')
     return ws
 
 
 def _sheet_by_chapter(wb, items):
     ws = wb.create_sheet('By chapter')
-    top = _title(ws, 'By chapter', 'Which chapters actually sell, across all time.')
+    top = _title(ws, 'By chapter',
+                 'Which chapters actually sell. Website sales only — the hand-kept '
+                 'record was never broken down below course level, so there is nothing '
+                 'older to show here.')
     _header(ws, top, ['Course', 'Ch.', 'Chapter title', 'Copies sold', 'Revenue (BHD)'],
             [22, 6, 34, 12, 14])
 
@@ -290,7 +363,10 @@ def _sheet_by_chapter(wb, items):
 
 def _sheet_by_month(wb, items):
     ws = wb.create_sheet('By month')
-    top = _title(ws, 'By month', 'Calendar months, for trend across semesters.')
+    top = _title(ws, 'By month',
+                 'Calendar months, for trend across semesters. Website sales only — the '
+                 'hand-kept record counted months within a semester rather than calendar '
+                 'months, so it is on the History sheet in its own shape.')
     _header(ws, top, ['Month', 'Copies sold', 'Gross (BHD)', 'Net (BHD)', 'Students'],
             [14, 12, 14, 14, 10])
 
@@ -542,7 +618,7 @@ def build_sales_workbook():
     wb.remove(wb.active)                     # drop the default empty sheet
     _sheet_ledger(wb, items)
     _sheet_by_semester(wb, items, history)
-    _sheet_by_course(wb, items)
+    _sheet_by_course(wb, items, history)
     _sheet_by_chapter(wb, items)
     _sheet_by_month(wb, items)
     _sheet_orders(wb, 'Pending', pending,
