@@ -2340,6 +2340,7 @@ function NoteViews() {
                     <th className="r" style={{ width: 110 }}>Opens</th>
                     <th className="r" style={{ width: 90 }}>Students</th>
                     <th className="r" style={{ width: 90 }}>Guests</th>
+                    <th className="r" style={{ width: 100 }}>Purchases</th>
                     <th className="r" style={{ width: 130 }}>Last opened</th>
                   </tr>
                 </thead>
@@ -2376,6 +2377,12 @@ function NoteViews() {
                           style={{ color: r.guest_opens ? 'var(--notati-amber)' : 'var(--fg-3)', fontWeight: r.guest_opens ? 700 : 400 }}>
                         {r.guest_opens || 0}
                       </td>
+                      {/* Free chapters are never bought, so their cell stays blank. */}
+                      <td className="r" data-l="Purchases"
+                          style={{ color: r.purchases ? 'var(--fg-1)' : 'var(--fg-3)',
+                                   fontWeight: r.purchases ? 700 : 400 }}>
+                        {r.purchases == null ? '' : r.purchases}
+                      </td>
                       <td className="r" data-l="Last opened" style={{ color: 'var(--fg-3)', fontSize: 13 }}>
                         {r.last_seen ? fmtDate(r.last_seen) : '-'}
                       </td>
@@ -2393,18 +2400,7 @@ function NoteViews() {
 
 
 function ChapterInsights() {
-  const { toast } = useToast();
-  const [notes,         setNotes]         = useStateAd([]);
-  const [chapterQ,      setChapterQ]      = useStateAd('');
-  const [dropOpen,      setDropOpen]      = useStateAd(false);
-  const [selectedNote,  setSelectedNote]  = useStateAd(null);
-  const [chapterAccess, setChapterAccess] = useStateAd([]);
-  const [loadingAccess, setLoadingAccess] = useStateAd(false);
-  const [rankings,         setRankings]         = useStateAd([]);
-  const [loadingRanks,     setLoadingRanks]     = useStateAd(true);
-  const [rankPriceFilter,  setRankPriceFilter]  = useStateAd('all');
-  const [rankCollegeFilter,setRankCollegeFilter]= useStateAd('all');
-  const [insightsTab,  setInsightsTab]  = useStateAd('access');
+  const [insightsTab,  setInsightsTab]  = useStateAd('views');
   const [salesData,    setSalesData]    = useStateAd(null);
   const [loadingSales, setLoadingSales] = useStateAd(false);
 
@@ -2416,69 +2412,16 @@ function ChapterInsights() {
       .finally(() => setLoadingSales(false));
   }, [insightsTab]);
 
-  useEffectAd(() => {
-    NotatiAPI.getNotes().then(setNotes).catch(() => {});
-    NotatiAPI.getChapterRankings()
-      .then(setRankings).catch(() => {})
-      .finally(() => setLoadingRanks(false));
-  }, []);
-
-  const rankingColleges = useMemoAd(() => {
-    const seen = new Set();
-    rankings.forEach(r => { if (r.college) seen.add(r.college); });
-    return Array.from(seen).sort();
-  }, [rankings]);
-
-  const filteredRankings = useMemoAd(() => {
-    return rankings.filter(r => {
-      if (rankPriceFilter === 'free' && Number(r.price) !== 0) return false;
-      if (rankPriceFilter === 'paid' && Number(r.price) === 0) return false;
-      if (rankCollegeFilter !== 'all' && r.college !== rankCollegeFilter) return false;
-      return true;
-    });
-  }, [rankings, rankPriceFilter, rankCollegeFilter]);
-
-  const filteredNotes = useMemoAd(() => {
-    const q = chapterQ.trim().toLowerCase();
-    if (!q) return [];
-    return notes.filter(n =>
-      [n.courseName, n.chapterTitle, String(n.chapterNumber)].some(s =>
-        (s || '').toLowerCase().includes(q)
-      )
-    ).slice(0, 20);
-  }, [notes, chapterQ]);
-
-  async function selectChapter(note) {
-    setChapterQ('');
-    setDropOpen(false);
-    setSelectedNote(note);
-    setChapterAccess([]);
-    setLoadingAccess(true);
-    try {
-      const access = await NotatiAPI.getAccessListByNote(note._numId);
-      setChapterAccess(access);
-    } catch (e2) {
-      toast.error('Could not load access list', e2.message);
-    }
-    setLoadingAccess(false);
-  }
-
-  const topCount = filteredRankings.length > 0 ? filteredRankings[0].access_count : 1;
-
-  const medalColor = i => i === 0 ? 'var(--notati-amber)' : i === 1 ? '#9CA3AF' : i === 2 ? 'var(--notati-walnut)' : 'var(--fg-3)';
-  const bubbleBg   = i => i === 0 ? 'var(--notati-amber)' : 'var(--notati-walnut)';
-
   return (
     <div>
       <div className="page-head">
         <div className="ttl">
           <h1>Insights</h1>
-          <p className="sub">Look up who has access to any chapter, see how often each is opened, track revenue, and see which chapters are selling best.</p>
+          <p className="sub">See how often each chapter is opened, how many students bought it, and track revenue.</p>
         </div>
         <div className="actions">
           <div className="filters" style={{ margin: 0 }}>
             {[
-              { id: 'access', label: 'Access & Rankings' },
               { id: 'views',  label: 'Views' },
               { id: 'sales',  label: 'Sales' },
               { id: 'trace',  label: 'Leak trace' },
@@ -2496,309 +2439,6 @@ function ChapterInsights() {
       {insightsTab === 'trace' && <LeakTrace/>}
 
       {insightsTab === 'views' && <NoteViews/>}
-
-      {insightsTab === 'access' && (<>
-      {/* ── Chapter access lookup ── */}
-      <section className="panel" style={{ marginBottom: 20 }}>
-        <div className="panel-head">
-          <h3>Chapter access lookup</h3>
-          <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-            Search a chapter to see every student with access
-          </span>
-        </div>
-        <div className="panel-body">
-
-          {/* Search */}
-          <div className="search-mini" style={{ fontSize: 14 }}>
-            <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
-            <input
-              value={chapterQ}
-              onChange={e => { setChapterQ(e.target.value); setDropOpen(true); }}
-              onFocus={() => setDropOpen(true)}
-              placeholder="Search by course name or chapter title…"
-            />
-            {chapterQ && (
-              <button onClick={() => { setChapterQ(''); setDropOpen(false); setSelectedNote(null); }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer',
-                               color: 'var(--fg-3)', padding: '0 4px', lineHeight: 1 }}>
-                <Icons.Close size={14}/>
-              </button>
-            )}
-          </div>
-
-          {/* Inline scrollable results — no absolute positioning to avoid panel clipping */}
-          {dropOpen && filteredNotes.length > 0 && (
-            <div style={{
-              marginTop: 8,
-              border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)',
-              overflow: 'hidden', maxHeight: 300, overflowY: 'auto'
-            }}>
-              {filteredNotes.map((n, i) => (
-                <div key={n.id}
-                     onClick={() => selectChapter(n)}
-                     style={{
-                       padding: '10px 14px', cursor: 'pointer',
-                       borderBottom: i < filteredNotes.length - 1 ? '1px solid var(--border-1)' : 'none',
-                       display: 'flex', alignItems: 'center', gap: 12,
-                       background: 'var(--bg-card)'
-                     }}
-                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-section)'}
-                     onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-card)'}>
-                  <div style={{
-                    width: 34, height: 34, borderRadius: 'var(--r-3)', flexShrink: 0,
-                    background: Number(n.price) === 0 ? 'var(--notati-sage)' : 'var(--notati-walnut)',
-                    color: 'var(--notati-paper)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 13, fontWeight: 700
-                  }}>
-                    {n.chapterNumber}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)',
-                                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      Ch.{n.chapterNumber}: {n.chapterTitle}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{n.courseName}</div>
-                  </div>
-                  <span className={`tag ${Number(n.price) === 0 ? 'tag-soft' : 'tag-bark'}`} style={{ fontSize: 10, flexShrink: 0 }}>
-                    {Number(n.price) === 0 ? 'Free' : `BD ${Number(n.price).toFixed(3)}`}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Empty hint */}
-          {!selectedNote && !chapterQ && (
-            <p style={{ marginTop: 14, font: 'var(--type-caption)', fontStyle: 'normal',
-                        color: 'var(--fg-3)', fontSize: 13 }}>
-              Start typing to search across all published chapters.
-            </p>
-          )}
-
-          {/* Result */}
-          {selectedNote && (
-            <div style={{ marginTop: 20 }}>
-
-              {/* Chapter banner */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 16,
-                padding: '16px 20px',
-                background: 'var(--bg-section)',
-                border: '1px solid var(--border-1)',
-                borderLeft: '4px solid var(--notati-walnut)',
-                borderRadius: 'var(--r-5)',
-                marginBottom: 16
-              }}>
-                <div style={{
-                  width: 48, height: 48, borderRadius: 'var(--r-3)', flexShrink: 0,
-                  background: 'var(--notati-walnut)', color: 'var(--notati-paper)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 18, fontWeight: 800
-                }}>
-                  {selectedNote.chapterNumber}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg-1)', marginBottom: 3 }}>
-                    Ch.{selectedNote.chapterNumber}: {selectedNote.chapterTitle}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>{selectedNote.courseName}</span>
-                    <span className={`tag ${Number(selectedNote.price) === 0 ? 'tag-soft' : 'tag-bark'}`} style={{ fontSize: 10 }}>
-                      {Number(selectedNote.price) === 0 ? 'Free' : `BD ${Number(selectedNote.price).toFixed(3)}`}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center', flexShrink: 0,
-                              background: 'var(--bg-card)', border: '1px solid var(--border-1)',
-                              borderRadius: 'var(--r-5)', padding: '10px 18px' }}>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--notati-walnut)', lineHeight: 1 }}>
-                    {loadingAccess ? '…' : chapterAccess.length}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 4 }}>
-                    {chapterAccess.length === 1 ? 'student' : 'students'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Student list */}
-              {loadingAccess ? <PageLoader rows={3}/> : chapterAccess.length === 0 ? (
-                <EmptyState title="No access grants yet"
-                            message="No student has been granted access to this chapter."/>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {chapterAccess.map((a, i) => (
-                    <div key={a.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '10px 14px', borderRadius: 'var(--r-5)',
-                      border: '1px solid var(--border-1)', background: 'var(--bg-card)'
-                    }}>
-                      <div style={{ width: 20, flexShrink: 0, textAlign: 'center',
-                                    fontSize: 11, color: 'var(--fg-3)', fontWeight: 600 }}>
-                        {i + 1}
-                      </div>
-                      <span className="avatar-sm" style={{ width: 34, height: 34, fontSize: 15, flexShrink: 0 }}>
-                        {(a.user_name || '?').charAt(0)}
-                      </span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-1)' }}>
-                          {a.user_name || '-'}
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{a.user_email}</div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                        <Icons.Check size={13} style={{ color: 'var(--notati-sage)' }}/>
-                        <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
-                          {fmtDate(a.granted_at)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ── Chapter rankings ── */}
-      <section className="panel" style={{ marginTop: 20 }}>
-        <div className="panel-head">
-          <h3>Most accessed chapters</h3>
-          <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-            Ranked by total access grants
-          </span>
-        </div>
-        <div className="panel-body">
-
-          {/* Filter bar */}
-          {!loadingRanks && rankings.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-              {/* Price filter */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12, color: 'var(--fg-3)', fontWeight: 600, minWidth: 48 }}>Price</span>
-                <div className="filters" style={{ margin: 0 }}>
-                  {[
-                    { id: 'all',  label: 'All' },
-                    { id: 'paid', label: 'Paid' },
-                    { id: 'free', label: 'Free' },
-                  ].map(o => (
-                    <button key={o.id}
-                            className={`btn btn-sm ${rankPriceFilter === o.id ? 'btn-primary' : 'btn-soft'}`}
-                            onClick={() => setRankPriceFilter(o.id)}>
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* College filter */}
-              {rankingColleges.length > 1 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, color: 'var(--fg-3)', fontWeight: 600, minWidth: 48 }}>College</span>
-                  <div className="filters" style={{ margin: 0, flexWrap: 'wrap' }}>
-                    <button className={`btn btn-sm ${rankCollegeFilter === 'all' ? 'btn-primary' : 'btn-soft'}`}
-                            onClick={() => setRankCollegeFilter('all')}>
-                      All
-                    </button>
-                    {rankingColleges.map(c => (
-                      <button key={c}
-                              className={`btn btn-sm ${rankCollegeFilter === c ? 'btn-primary' : 'btn-soft'}`}
-                              onClick={() => setRankCollegeFilter(c)}
-                              style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {c}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {loadingRanks ? <PageLoader rows={5}/> : rankings.length === 0 ? (
-            <EmptyState title="No sales data yet"
-                        message="Rankings will appear here once students start unlocking paid chapters."/>
-          ) : filteredRankings.length === 0 ? (
-            <EmptyState title="No matches"
-                        message="No chapters match the selected filters."/>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {filteredRankings.map((r, idx) => (
-                <div key={r.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 14,
-                  padding: idx < 3 ? '14px 16px' : '11px 16px',
-                  borderRadius: 'var(--r-5)',
-                  border: `1px solid ${idx === 0 ? 'var(--notati-amber)' : 'var(--border-1)'}`,
-                  background: idx === 0 ? 'color-mix(in srgb, var(--notati-amber) 8%, var(--bg-card))' : 'var(--bg-card)',
-                }}>
-
-                  {/* Rank badge */}
-                  <div style={{
-                    width: 32, flexShrink: 0, textAlign: 'center',
-                    fontSize: idx < 3 ? 16 : 13, fontWeight: 800,
-                    color: medalColor(idx)
-                  }}>
-                    #{idx + 1}
-                  </div>
-
-                  {/* Chapter bubble */}
-                  <div style={{
-                    width: idx < 3 ? 42 : 36, height: idx < 3 ? 42 : 36,
-                    borderRadius: 'var(--r-3)', flexShrink: 0,
-                    background: bubbleBg(idx), color: 'var(--notati-paper)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: idx < 3 ? 15 : 13, fontWeight: 700
-                  }}>
-                    {r.chapter_number}
-                  </div>
-
-                  {/* Info */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontWeight: idx < 3 ? 700 : 600,
-                      fontSize: idx < 3 ? 14 : 13,
-                      color: 'var(--fg-1)',
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                    }}>
-                      Ch.{r.chapter_number}: {r.chapter_title}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 2 }}>
-                      {r.course_name}
-                    </div>
-                  </div>
-
-                  {/* Progress bar */}
-                  <div style={{ width: 120, flexShrink: 0 }}>
-                    <div style={{ height: 8, borderRadius: 4, background: 'var(--border-2)', overflow: 'hidden' }}>
-                      <div style={{
-                        height: '100%', borderRadius: 4,
-                        background: idx === 0 ? 'var(--notati-amber)' : 'var(--notati-walnut)',
-                        width: `${Math.max(6, Math.round(100 * r.access_count / topCount))}%`,
-                        transition: 'width .4s ease-out'
-                      }}/>
-                    </div>
-                  </div>
-
-                  {/* Sales count */}
-                  <div style={{ flexShrink: 0, textAlign: 'right', minWidth: 56 }}>
-                    <span style={{
-                      fontWeight: 800,
-                      fontSize: idx < 3 ? 18 : 15,
-                      color: idx === 0 ? 'var(--notati-amber)' : 'var(--fg-1)'
-                    }}>
-                      {r.access_count}
-                    </span>
-                    <div style={{ fontSize: 10, color: 'var(--fg-3)', marginTop: 1 }}>
-                      {r.access_count === 1 ? 'sale' : 'sales'}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-      </>)}
 
       {insightsTab === 'sales' && (
         <SalesView salesData={salesData} loading={loadingSales}/>

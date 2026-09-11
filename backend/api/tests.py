@@ -669,6 +669,23 @@ class LeakTracingTests(TestCase):
         self.assertEqual(resp.status_code, 401)
         self.assertFalse(self.DownloadLog.objects.filter(user__isnull=True).exists())
 
+    def test_note_views_reports_purchases_and_leaves_free_blank(self):
+        # A paid chapter reports how many students own it; a free one reports null
+        # so the admin table leaves the cell blank.
+        other = User.objects.create_user('buyer2@x.com', 'pw', name='B2')
+        Access.objects.create(user=other, note=self.note)   # self.student already owns it
+        free = Note.objects.create(course=self.course, chapter_number=7,
+                                   chapter_title='Free intro', price=Decimal('0'))
+        self.DownloadLog.objects.create(
+            user=self.student, note=self.note,
+            code=self.tracing.code_for(self.student.id, self.note.id))
+        self.DownloadLog.objects.create(user=None, note=free, code='', ip='1.1.1.1')
+        resp = self._client(self.admin).get('/api/admin/note-views/')
+        paid_row = next(r for r in resp.data if r['id'] == self.note.id)
+        free_row = next(r for r in resp.data if r['id'] == free.id)
+        self.assertEqual(paid_row['purchases'], 2)   # student + other own it
+        self.assertIsNone(free_row['purchases'])     # free chapters are never bought
+
     def test_note_views_reports_guest_opens(self):
         free = Note.objects.create(course=self.course, chapter_number=8,
                                    chapter_title='Basics', price=Decimal('0'))

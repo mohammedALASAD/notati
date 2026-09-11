@@ -279,11 +279,6 @@
       return list(data);
     },
 
-    async getChapterRankings() {
-      const data = await req('GET', '/admin/chapter-rankings/');
-      return Array.isArray(data) ? data : [];
-    },
-
     async getSalesData() {
       const data = await req('GET', '/admin/sales/');
       return data || { total_revenue: '0.000', total_sales: 0, rows: [] };

@@ -51,7 +51,6 @@ urlpatterns = [
     path('admin/users/',        views.AdminUserListView.as_view(),    name='admin-users'),
     path('admin/users/<int:pk>/', views.AdminUserDetailView.as_view(), name='admin-user-detail'),
     path('admin/stats/',             views.admin_stats,             name='admin-stats'),
-    path('admin/chapter-rankings/', views.admin_chapter_rankings,  name='chapter-rankings'),
     path('admin/sales/',            views.admin_sales,             name='admin-sales'),
     path('admin/note-views/',       views.admin_note_views,        name='admin-note-views'),
     path('admin/trace/',            views.admin_trace,             name='admin-trace'),

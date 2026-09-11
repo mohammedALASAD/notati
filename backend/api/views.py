@@ -743,31 +743,6 @@ def admin_stats(request):
 
 @api_view(['GET'])
 @permission_classes([IsAdmin])
-def admin_chapter_rankings(request):
-    from django.db.models import Count
-    notes = (
-        Note.objects.select_related('course')
-        .annotate(access_count=Count('access_grants'))
-        .filter(access_count__gt=0)
-        .order_by('-access_count')[:20]
-    )
-    data = [
-        {
-            'id': n.id,
-            'chapter_number': n.chapter_number,
-            'chapter_title': n.chapter_title,
-            'course_name': n.course.name,
-            'college': n.course.college,
-            'price': str(n.price),
-            'access_count': n.access_count,
-        }
-        for n in notes
-    ]
-    return Response(data)
-
-
-@api_view(['GET'])
-@permission_classes([IsAdmin])
 def admin_sales(request):
     from collections import defaultdict
 
@@ -857,7 +832,9 @@ def admin_note_views(request):
     )
     notes = {
         n.id: n for n in
-        Note.objects.select_related('course').filter(id__in=[r['note_id'] for r in rows])
+        Note.objects.select_related('course')
+        .annotate(purchase_count=Count('access_grants'))
+        .filter(id__in=[r['note_id'] for r in rows])
     }
     data = []
     for r in rows:
@@ -875,6 +852,9 @@ def admin_note_views(request):
             'opens': r['opens'],
             'students': r['students'],
             'guest_opens': r['guest_opens'],
+            # How many students own this chapter. Free chapters are never bought,
+            # so they report null and the UI leaves the cell blank.
+            'purchases': None if n.is_free else n.purchase_count,
             'last_seen': r['last_seen'],
         })
     return Response(data)
