@@ -1196,200 +1196,167 @@ class SemesterTests(TestCase):
 
 
 class SalesWorkbookTests(TestCase):
-    """The .xlsx sales record: what lands in it, and what deliberately doesn't."""
+    """The workbook keeps the two tables the record has always been kept in:
+    a Courses grid and a semsters grid, with the hand-kept years merged into
+    the same cells as the website's own counts."""
 
     def setUp(self):
         Semester.objects.all().delete()
-        self.sem     = Semester.objects.create(label='Semester 10 (Summer)', position=10,
-                                               is_summer=True, is_current=True)
+        self.s9  = Semester.objects.create(label='Semester 9', position=9)
+        self.s10 = Semester.objects.create(label='Semester 10 (Summer)', position=10,
+                                           is_summer=True, is_current=True)
         self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
         self.student = User.objects.create_user('s@x.com', 'pw', name='Sara', college='IT')
-        self.other   = User.objects.create_user('o@x.com', 'pw', name='Omar')
-        self.course  = Course.objects.create(name='ITNE233', college='IT')
-        self.note    = Note.objects.create(course=self.course, chapter_number=3,
-                                           chapter_title='Transport', price=Decimal('2.000'))
-        self.free    = Note.objects.create(course=self.course, chapter_number=1,
-                                           chapter_title='Intro', price=Decimal('0'))
 
     def _client(self, user):
         c = APIClient(); c.force_authenticate(user); return c
 
-    def _paid_order(self, user, discount_percent=0):
-        order = Order.objects.create(user=user, status='paid', semester=self.sem,
-                                     discount_percent=discount_percent,
-                                     discount_code='SAVE' if discount_percent else '',
-                                     paid_at=timezone.now())
-        OrderItem.objects.create(order=order, note=self.note, course_name='ITNE233',
-                                 chapter_number='3', chapter_title='Transport',
-                                 price=Decimal('2.000'))
+    def _sell(self, course_name, semester=None, price='2.000', discount=0, when=None):
+        course = Course.objects.get_or_create(name=course_name, defaults={'college': 'IT'})[0]
+        chapter = course.notes.count() + 1
+        note = Note.objects.create(course=course, chapter_number=chapter,
+                                   chapter_title='Ch', price=Decimal(price))
+        order = Order.objects.create(user=self.student, status='paid',
+                                     semester=semester or self.s10,
+                                     discount_percent=discount,
+                                     discount_code='SAVE' if discount else '',
+                                     paid_at=when or timezone.now())
+        OrderItem.objects.create(order=order, note=note, course_name=course_name,
+                                 chapter_number=str(chapter), chapter_title='Ch',
+                                 price=Decimal(price))
         return order
 
-    def _build(self):
+    def _wb(self):
         from . import workbook
         import openpyxl
-        name, blob = workbook.build_sales_workbook()
-        return name, openpyxl.load_workbook(BytesIO(blob))
+        _, blob = workbook.build_sales_workbook()
+        return openpyxl.load_workbook(BytesIO(blob))
 
-    def _column(self, ws, header, limit=40):
-        """Values under a named header, so tests don't hardcode cell addresses."""
-        for row in ws.iter_rows(min_row=1, max_row=12):
-            for cell in row:
-                if cell.value == header:
-                    return [ws.cell(row=r, column=cell.column).value
-                            for r in range(cell.row + 1, cell.row + 1 + limit)]
-        raise AssertionError(f'header {header!r} not found in {ws.title!r}')
+    def _row(self, ws, label):
+        for row in ws.iter_rows():
+            if row[0].value == label:
+                return [c.value for c in row]
+        raise AssertionError(f'no row {label!r} in {ws.title!r}')
 
-    def test_workbook_has_every_sheet(self):
-        _, wb = self._build()
-        self.assertEqual(wb.sheetnames, [
-            'Summary', 'Sales ledger', 'By semester', 'By course', 'By chapter',
-            'By month', 'Pending', 'Cancelled', 'Manual unlocks', 'History (hand-kept)',
-        ])
+    def _headers(self, ws):
+        return [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
 
-    def test_paid_items_reach_the_ledger_with_the_semester(self):
-        self._paid_order(self.student)
-        _, wb = self._build()
-        ws = wb['Sales ledger']
-        self.assertIn('Sara', self._column(ws, 'Student'))
-        self.assertIn('Semester 10 (Summer)', self._column(ws, 'Semester'))
-        self.assertIn('Transport', self._column(ws, 'Chapter title'))
+    # ── shape ──
+    def test_only_the_three_sheets(self):
+        self.assertEqual(self._wb().sheetnames, ['semsters', 'Courses', 'Sales ledger'])
 
-    def test_discount_is_spread_across_the_lines_so_net_is_what_landed(self):
-        self._paid_order(self.student, discount_percent=25)
-        _, wb = self._build()
-        ws = wb['Sales ledger']
-        self.assertIn(2.0, self._column(ws, 'Price'))
-        self.assertIn(1.5, self._column(ws, 'Net'))          # 2.000 less 25%
-        self.assertIn(0.5, self._column(ws, 'Discount amount'))
+    def test_courses_sheet_matches_the_old_layout(self):
+        ws = self._wb()['Courses']
+        heads = self._headers(ws)
+        self.assertEqual(heads[0], 'Semester')
+        self.assertEqual(heads[-1], 'Number Of Copies')
+        self.assertIn('ITIS103', heads)                 # from the old record
+        labels = [r[0].value for r in ws.iter_rows()]
+        self.assertIn('Total copies sold', labels)
+        self.assertIn('Total value of copies sold', labels)
 
-    def test_pending_and_cancelled_never_reach_the_ledger(self):
-        Order.objects.create(user=self.student, status='pending', semester=self.sem,
-                             total=Decimal('2.000'))
-        Order.objects.create(user=self.other, status='cancelled', semester=self.sem,
-                             total=Decimal('9.000'))
-        _, wb = self._build()
-        self.assertIsNone(self._column(wb['Sales ledger'], 'Student')[0])
-        self.assertIn('Sara', self._column(wb['Pending'], 'Student'))
-        self.assertIn('Omar', self._column(wb['Cancelled'], 'Student'))
+    def test_semsters_sheet_matches_the_old_layout(self):
+        ws = self._wb()['semsters']
+        heads = self._headers(ws)
+        self.assertEqual(heads[0], 'Month')
+        self.assertIn('Semester 1', heads)
+        labels = [r[0].value for r in ws.iter_rows()]
+        self.assertEqual(labels[1:7], [f'Month {n}' for n in range(1, 7)])
+        self.assertIn('Total', labels)
+        self.assertIn('Per month', labels)
 
-    def test_a_hand_granted_unlock_is_a_manual_unlock(self):
-        Access.objects.create(user=self.other, note=self.note,
-                              granted_by=self.admin, semester=self.sem)
-        _, wb = self._build()
-        self.assertIn('Omar', self._column(wb['Manual unlocks'], 'Student'))
+    # ── merging ──
+    def test_old_and_new_copies_land_in_the_same_column(self):
+        # The old record has 472 ITIS103 copies; two more sell through the site.
+        self._sell('ITIS103'); self._sell('ITIS103')
+        ws = self._wb()['Courses']
+        col = self._headers(ws).index('ITIS103')
+        self.assertEqual(self._row(ws, 'Total copies sold')[col], 474)
 
-    def test_access_that_came_from_a_paid_order_is_not_a_manual_unlock(self):
-        # Both are Access rows granted by the admin; only the unpaid one is a gift.
-        order = self._paid_order(self.student)
-        Access.objects.create(user=order.user, note=self.note,
-                              granted_by=self.admin, semester=self.sem)
-        _, wb = self._build()
-        self.assertNotIn('Sara', self._column(wb['Manual unlocks'], 'Student'))
+    def test_a_renamed_course_keeps_one_column(self):
+        self._sell('ACC112 / ACA112')                   # was plain ACC112 back then
+        ws = self._wb()['Courses']
+        heads = [h for h in self._headers(ws) if h and h.upper().startswith('ACC112')]
+        self.assertEqual(heads, ['ACC112 / ACA112'])
+        col = self._headers(ws).index('ACC112 / ACA112')
+        self.assertEqual(self._row(ws, 'Total copies sold')[col], 301)   # 300 + 1
 
-    def test_history_sheet_carries_the_hand_kept_record(self):
-        _, wb = self._build()
-        ws = wb['History (hand-kept)']
-        labels = self._column(ws, 'Semester')
-        self.assertIn('Semester 1', labels)
-        self.assertIn('Semester 8', labels)
-        # 'No Pay' is preserved as text — it is not a zero.
+    def test_old_semester_rows_survive_untouched(self):
+        ws = self._wb()['Courses']
+        col = self._headers(ws).index('ITIS103')
+        self.assertEqual(self._row(ws, 'Semester 1')[col], 46)
+
+    def test_no_pay_stays_text_not_zero(self):
+        ws = self._wb()['Courses']
+        self.assertIn('No Pay', self._row(ws, 'Semester 1'))
+
+    def test_a_website_sale_shows_in_its_semester_row(self):
+        self._sell('ITIS103', semester=self.s10)
+        ws = self._wb()['Courses']
+        col = self._headers(ws).index('ITIS103')
+        self.assertEqual(self._row(ws, 'Semester 10 (Summer)')[col], 1)
+
+    def test_value_row_adds_old_value_and_new_revenue(self):
+        self._sell('ITIS103', price='2.000')
+        ws = self._wb()['Courses']
+        col = self._headers(ws).index('ITIS103')
+        self.assertAlmostEqual(self._row(ws, 'Total value of copies sold')[col],
+                               560.5 + 2.0, places=3)   # old 560.5 + this sale
+
+    def test_discount_comes_off_the_value(self):
+        self._sell('ITIS103', price='2.000', discount=25)
+        ws = self._wb()['Courses']
+        col = self._headers(ws).index('ITIS103')
+        self.assertAlmostEqual(self._row(ws, 'Total value of copies sold')[col],
+                               560.5 + 1.5, places=3)
+
+    # ── semsters ──
+    def test_website_revenue_is_numbered_by_month_within_the_semester(self):
+        now = timezone.now()
+        self._sell('ITIS103', semester=self.s10, price='2.000', when=now - timedelta(days=70))
+        self._sell('ITIS103', semester=self.s10, price='3.000', when=now)
+        ws = self._wb()['semsters']
+        col = self._headers(ws).index('Semester 10 (Summer)')
+        self.assertEqual(self._row(ws, 'Month 1')[col], 2.0)    # first selling month
+        self.assertEqual(self._row(ws, 'Total')[col], 5.0)
+
+    def test_old_monthly_revenue_is_preserved(self):
+        ws = self._wb()['semsters']
+        col = self._headers(ws).index('Semester 2')
+        self.assertEqual(self._row(ws, 'Month 1')[col], 274.0)
+        self.assertEqual(self._row(ws, 'Total')[col], 780.0)
+
+    def test_old_and_new_revenue_add_up_in_the_same_semester(self):
+        self._sell('ITIS103', semester=self.s9, price='2.000')
+        ws = self._wb()['semsters']
+        col = self._headers(ws).index('Semester 9')
+        self.assertEqual(self._row(ws, 'Total')[col], 709.5 + 2.0)
+
+    # ── ledger + endpoint ──
+    def test_ledger_carries_the_detail(self):
+        self._sell('ITIS103')
+        ws = self._wb()['Sales ledger']
         flat = [c.value for row in ws.iter_rows() for c in row]
-        self.assertIn('No Pay', flat)
+        self.assertIn('Sara', flat)
+        self.assertIn('Semester 10 (Summer)', flat)
 
-    def test_by_course_counts_copies_per_semester(self):
-        self._paid_order(self.student)
-        self._paid_order(self.other)
-        _, wb = self._build()
-        self.assertIn(2, self._column(wb['By course'], 'ITNE233'))
+    def test_pending_and_cancelled_are_never_counted(self):
+        Order.objects.create(user=self.student, status='pending', semester=self.s10)
+        Order.objects.create(user=self.student, status='cancelled', semester=self.s10)
+        ws = self._wb()['Courses']
+        self.assertEqual(self._row(ws, 'Semester 10 (Summer)')[-1], None)
 
     def test_endpoint_returns_a_spreadsheet_to_the_admin(self):
-        self._paid_order(self.student)
+        self._sell('ITIS103')
         resp = self._client(self.admin).get('/api/admin/sales-workbook/')
         self.assertEqual(resp.status_code, 200)
         self.assertIn('spreadsheetml', resp['Content-Type'])
-        self.assertIn('.xlsx', resp['Content-Disposition'])
-        self.assertTrue(resp.content.startswith(b'PK'))     # a real zip/xlsx
+        self.assertTrue(resp.content.startswith(b'PK'))
 
     def test_students_cannot_download_the_sales_workbook(self):
         resp = self._client(self.student).get('/api/admin/sales-workbook/')
         self.assertEqual(resp.status_code, 403)
 
     def test_builds_cleanly_with_no_sales_at_all(self):
-        name, wb = self._build()
-        self.assertTrue(name.endswith('.xlsx'))
-        self.assertEqual(wb['Summary']['B5'].value, 0)      # chapters sold
-
-
-class WorkbookCourseHistoryTests(TestCase):
-    """The By course sheet must carry the hand-kept years as well as the live
-    ones, and a renamed course must not split into two columns."""
-
-    def setUp(self):
-        Semester.objects.all().delete()
-        self.sem     = Semester.objects.create(label='Semester 10 (Summer)', position=10,
-                                               is_summer=True, is_current=True)
-        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
-
-    def _sell(self, course_name, price='2.000'):
-        course = Course.objects.get_or_create(name=course_name, defaults={'college': 'IT'})[0]
-        # A fresh chapter each time — (course, chapter_number) is unique.
-        chapter = course.notes.count() + 1
-        note = Note.objects.create(course=course, chapter_number=chapter,
-                                   chapter_title='Ch', price=Decimal(price))
-        order = Order.objects.create(user=self.student, status='paid', semester=self.sem,
-                                     paid_at=timezone.now())
-        OrderItem.objects.create(order=order, note=note, course_name=course_name,
-                                 chapter_number=str(chapter), chapter_title='Ch',
-                                 price=Decimal(price))
-
-    def _by_course(self):
-        from . import workbook
-        import openpyxl
-        _, blob = workbook.build_sales_workbook()
-        return openpyxl.load_workbook(BytesIO(blob))['By course']
-
-    def _header_row(self, ws):
-        for row in ws.iter_rows(min_row=1, max_row=8):
-            if row[0].value == 'Semester':
-                return row
-        raise AssertionError('no header row on By course')
-
-    def test_course_key_folds_renames_onto_one_code(self):
-        from .workbook import _course_key
-        self.assertEqual(_course_key('ACC112 / ACA112'), 'ACC112')
-        self.assertEqual(_course_key('ACC112'), 'ACC112')
-        self.assertEqual(_course_key('ITNE231 / ITCE314'), 'ITNE231')
-        self.assertEqual(_course_key('ITIS204 (BIS202)'), 'ITIS204')
-        self.assertEqual(_course_key('ITIS204'), 'ITIS204')
-
-    def test_hand_kept_semesters_appear_on_the_by_course_sheet(self):
-        self._sell('ITIS103')
-        labels = [c.value for c in self._by_course()['A']]
-        self.assertIn('Semester 1', labels)             # hand-kept
-        self.assertIn('Semester 8', labels)             # hand-kept
-        self.assertIn('Semester 10 (Summer)', labels)   # website
-        self.assertIn('Total copies sold — all time', labels)
-
-    def test_a_renamed_course_keeps_a_single_column(self):
-        # The old record called it ACC112; today it is 'ACC112 / ACA112'.
-        self._sell('ACC112 / ACA112')
-        headers = [c.value for c in self._header_row(self._by_course()) if c.value]
-        acc = [h for h in headers if h and h.upper().startswith('ACC112')]
-        self.assertEqual(acc, ['ACC112 / ACA112'])      # one column, today's name
-
-    def test_all_time_total_adds_both_eras(self):
-        self._sell('ITIS103')
-        self._sell('ITIS103')
-        ws = self._by_course()
-        rows = {r[0].value: r for r in ws.iter_rows()}
-        hand = rows['Hand-kept subtotal'][-1].value
-        web  = rows['Website subtotal'][-1].value
-        both = rows['Total copies sold — all time'][-1].value
-        self.assertEqual(web, 2)
-        self.assertEqual(hand, 4452)                    # the figure in the old record
-        self.assertEqual(both, hand + web)
-
-    def test_no_pay_markers_survive_as_text(self):
-        self._sell('ITIS103')
-        flat = [c.value for row in self._by_course().iter_rows() for c in row]
-        self.assertIn('No Pay', flat)                   # not turned into a zero
+        wb = self._wb()
+        self.assertEqual(self._row(wb['Courses'], 'Total copies sold')[-1], 4452)

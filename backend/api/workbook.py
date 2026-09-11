@@ -1,21 +1,22 @@
 """Builds the sales workbook — an .xlsx that Numbers opens natively on Mac,
 iPhone, iPad and iCloud.com.
 
-The database is the record; this file is a view of it, regenerated from scratch
-every time. Nothing is ever appended, so the workbook can't drift from the
-truth and there is no merge step. The flip side: never edit the generated file
-by hand, because the next download replaces it.
+Deliberately the same two tables the record has always been kept in, so it reads
+exactly like the old Notes_selling file:
 
-Sheet layout:
-  Sales ledger    one row per chapter sold on a paid order — the raw truth
-  By semester     the term-by-term totals, live and historical side by side
-  By course       course x semester copies grid, shaped like the old record
-  By chapter      which chapters actually sell
-  By month        calendar months, for trend rather than term
-  Pending         placed but not yet paid — what is owed
-  Cancelled       kept for the record, never counted
-  Manual unlocks  access granted by hand, at no charge
-  History         the hand-kept record from before the website, as recorded
+  Courses    semester x course, copies sold, with the two totals rows underneath
+  semsters   month x semester, revenue, with Total and Per month underneath
+
+The old hand-kept years and the website's own counts go in the same cells — the
+semesters before the website are filled from sales_history.json, the ones since
+are counted from the database. A semester with both simply adds them.
+
+  Sales ledger   one row per chapter sold — the detail the old file never had
+
+The database is the record; this file is a view of it, rebuilt from scratch every
+time it is downloaded, so it can never drift and never needs merging. The flip
+side: never edit the generated file by hand, because the next download replaces
+it completely.
 """
 import json
 import re
@@ -29,18 +30,18 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from .models import Access, Order, OrderItem, Semester
+from .models import OrderItem, Semester
 
 HISTORY_PATH = Path(__file__).resolve().parent / 'sales_history.json'
 
-# Picked to match the old record: olive headers, peach totals, green grand total.
-HEAD_FILL  = PatternFill('solid', fgColor='A8B770')
-TOTAL_FILL = PatternFill('solid', fgColor='F4C7A8')
-GRAND_FILL = PatternFill('solid', fgColor='7DC242')
-NOTE_FILL  = PatternFill('solid', fgColor='FFF3CD')
-HEAD_FONT  = Font(bold=True, color='1B1B1B')
-TITLE_FONT = Font(bold=True, size=13)
-THIN = Side(style='thin', color='C9C4BC')
+# The colours the old record used, so the file still looks like itself.
+LABEL_FILL = PatternFill('solid', fgColor='C3D69B')   # olive semester/month labels
+TOTAL_FILL = PatternFill('solid', fgColor='F4C7A8')   # peach totals strip
+GRAND_FILL = PatternFill('solid', fgColor='7DC242')   # green grand total
+COUNT_FILL = PatternFill('solid', fgColor='FF6D6D')   # red copies grand total
+HEAD_FONT  = Font(bold=True, size=10)
+GREY       = Font(italic=True, color='9A9A9A', size=10)
+THIN = Side(style='thin', color='9A9A9A')
 BOX  = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 
 
@@ -49,70 +50,263 @@ def _load_history():
         with open(HISTORY_PATH, encoding='utf-8') as fh:
             return json.load(fh)
     except (OSError, ValueError):
-        return None
+        return {}
 
 
-def _header(ws, row, labels, widths=None):
-    for col, label in enumerate(labels, start=1):
-        cell = ws.cell(row=row, column=col, value=label)
-        cell.fill, cell.font, cell.border = HEAD_FILL, HEAD_FONT, BOX
-        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    if widths:
-        for col, width in enumerate(widths, start=1):
-            ws.column_dimensions[get_column_letter(col)].width = width
-    ws.freeze_panes = ws.cell(row=row + 1, column=1)
+def _course_key(name):
+    """The bare course code, used to line a course up with its older self.
+
+    Courses get renamed as they merge or are recoded — 'ACC112' became
+    'ACC112 / ACA112', 'ITIS204 (BIS202)' is now 'ITIS204'. Matching on the first
+    code keeps one column per course instead of opening a second one for what is
+    really the same course."""
+    head = re.split(r'[/(]', name or '', maxsplit=1)[0]
+    return head.strip().upper().replace(' ', '') or (name or '').strip().upper()
 
 
-def _title(ws, text, sub=''):
-    """A title line above the table, so each sheet says what it is."""
-    ws.cell(row=1, column=1, value=text).font = TITLE_FONT
-    if sub:
-        cell = ws.cell(row=2, column=1, value=sub)
-        cell.font = Font(size=10, italic=True, color='6B6B6B')
-    return 4 if sub else 3
-
-
-def _money(cell):
-    cell.number_format = '0.000'
+def _put(ws, row, col, value, *, fill=None, font=None, money=False):
+    cell = ws.cell(row=row, column=col, value=value)
+    cell.border = BOX
+    if fill:
+        cell.fill = fill
+    if font:
+        cell.font = font
+    if money:
+        cell.number_format = '0.###'
     return cell
 
 
-def _totals_row(ws, row, first_label, cells):
-    """A totals strip across the bottom, in the peach the old record used."""
-    cell = ws.cell(row=row, column=1, value=first_label)
-    cell.fill, cell.font, cell.border = TOTAL_FILL, Font(bold=True), BOX
-    for col, value in cells.items():
-        cell = ws.cell(row=row, column=col, value=value)
-        cell.fill, cell.font, cell.border = TOTAL_FILL, Font(bold=True), BOX
-        if isinstance(value, float):
-            _money(cell)
+def _net(item):
+    """A line's share of its order's discount taken off, so revenue is what
+    actually landed rather than list price."""
+    price = item.price or Decimal('0')
+    pct = Decimal(item.order.discount_percent or 0)
+    return price - (price * pct / Decimal(100)).quantize(Decimal('0.001'))
 
 
-# ── Sheets ────────────────────────────────────────────────────────────────────
+# ── Gathering ─────────────────────────────────────────────────────────────────
 
-def _sheet_ledger(wb, items):
-    """One row per chapter sold. Everything else in the file is a view of this."""
-    ws = wb.create_sheet('Sales ledger')
-    top = _title(ws, 'Sales ledger',
-                 'One row per chapter on a paid order. The raw record — every other sheet '
-                 'is a summary of these rows.')
-    _header(ws, top, [
-        'Date paid', 'Semester', 'Order', 'Student', 'Email', 'College',
-        'Course', 'Ch.', 'Chapter title', 'Price', 'Discount', 'Discount amount',
-        'Net', 'Payment ref',
-    ], [12, 20, 11, 22, 28, 18, 20, 6, 30, 10, 12, 15, 10, 18])
+def _semester_labels(history):
+    """Every semester, in order — the seeded list, plus any label that only the
+    old record knows about."""
+    labels = [s.label for s in Semester.objects.all()]
+    for label in history.get('semesters', []):
+        if label not in labels:
+            labels.append(label)
+    return labels
 
-    row = top + 1
-    gross_total = net_total = Decimal('0')
+
+def _course_columns(history, items):
+    """Course columns in the order the old record had them, with anything new
+    appended. The newest name seen for a code is the one shown."""
+    names, order = {}, []
+
+    def register(name):
+        key = _course_key(name)
+        if key not in names:
+            names[key] = name
+            order.append(key)
+        return key
+
+    for name in history.get('courses', []):
+        register(name)
+    for item in items:
+        key = register(item.course_name or '(unknown)')
+        names[key] = item.course_name or '(unknown)'   # today's name wins
+    return order, names
+
+
+# ── Sheet: Courses ────────────────────────────────────────────────────────────
+
+def _sheet_courses(wb, items, history):
+    ws = wb.create_sheet('Courses')
+    keys, names = _course_columns(history, items)
+    labels = _semester_labels(history)
+
+    # Hand-kept copies, keyed the same way as the live ones.
+    hist = {}
+    for entry in history.get('course_rows', []):
+        for name, value in entry['copies'].items():
+            hist[(entry['semester'], _course_key(name))] = value
+    hist_value = {_course_key(n): v
+                  for n, v in (history.get('course_total_value') or {}).items()}
+
+    live_copies, live_value = {}, {}
+    for item in items:
+        key = _course_key(item.course_name or '(unknown)')
+        label = item.order.semester.label if item.order.semester else 'Unassigned'
+        if label not in labels:
+            labels.append(label)
+        live_copies[(label, key)] = live_copies.get((label, key), 0) + 1
+        live_value[key] = live_value.get(key, Decimal('0')) + _net(item)
+
+    ws.column_dimensions['A'].width = 22
+    for idx in range(len(keys)):
+        ws.column_dimensions[get_column_letter(idx + 2)].width = 13
+    ws.column_dimensions[get_column_letter(len(keys) + 2)].width = 16
+
+    row = 1
+    _put(ws, row, 1, 'Semester', fill=LABEL_FILL, font=HEAD_FONT)
+    for idx, key in enumerate(keys, start=2):
+        _put(ws, row, idx, names[key], fill=LABEL_FILL, font=HEAD_FONT).alignment = \
+            Alignment(horizontal='center', wrap_text=True)
+    _put(ws, row, len(keys) + 2, 'Number Of Copies',
+         fill=LABEL_FILL, font=HEAD_FONT).alignment = Alignment(horizontal='center',
+                                                                wrap_text=True)
+    ws.freeze_panes = 'B2'
+    row += 1
+
+    col_copies = {k: 0 for k in keys}
+    for label in labels:
+        _put(ws, row, 1, label, fill=LABEL_FILL, font=Font(size=10))
+        line = 0
+        for idx, key in enumerate(keys, start=2):
+            old = hist.get((label, key))
+            new = live_copies.get((label, key), 0)
+            old_num = old if isinstance(old, (int, float)) else 0
+            if isinstance(old, str) and not new:
+                # 'No Pay' / 'Summer' — not on sale, not offered. Never a zero.
+                _put(ws, row, idx, old, font=GREY)
+                continue
+            total = old_num + new
+            _put(ws, row, idx, total if (old is not None or new) else None)
+            col_copies[key] += total
+            line += total
+        _put(ws, row, len(keys) + 2, line or None, font=Font(bold=True, size=10))
+        row += 1
+
+    _put(ws, row, 1, 'Total copies sold', fill=TOTAL_FILL, font=HEAD_FONT)
+    for idx, key in enumerate(keys, start=2):
+        _put(ws, row, idx, col_copies[key], fill=TOTAL_FILL, font=HEAD_FONT)
+    _put(ws, row, len(keys) + 2, sum(col_copies.values()),
+         fill=COUNT_FILL, font=Font(bold=True, size=10))
+    row += 1
+
+    _put(ws, row, 1, 'Total value of copies sold', fill=TOTAL_FILL, font=HEAD_FONT)
+    grand_value = 0.0
+    for idx, key in enumerate(keys, start=2):
+        value = float(hist_value.get(key) or 0) + float(live_value.get(key, 0))
+        grand_value += value
+        _put(ws, row, idx, round(value, 3) or None, fill=TOTAL_FILL, font=HEAD_FONT,
+             money=True)
+    _put(ws, row, len(keys) + 2, round(grand_value, 3),
+         fill=GRAND_FILL, font=Font(bold=True, size=10), money=True)
+    return ws
+
+
+# ── Sheet: semsters ───────────────────────────────────────────────────────────
+
+def _month_index(items):
+    """Revenue per (semester, month-number-within-that-semester).
+
+    The old record counted 'Month 1..6' inside a term rather than calendar
+    months, so the website's sales are numbered the same way: the first calendar
+    month a semester sold anything is Month 1, and gaps stay gaps."""
+    by_sem = {}
     for item in items:
         order = item.order
-        pct = Decimal(order.discount_percent or 0)
-        price = item.price or Decimal('0')
-        # Spread the order's discount across its lines, so the net column sums to
-        # what actually landed rather than to the pre-discount price.
-        cut = (price * pct / Decimal(100)).quantize(Decimal('0.001'))
-        net = price - cut
-        gross_total += price
+        when = order.paid_at or order.created_at
+        if not when:
+            continue
+        label = order.semester.label if order.semester else 'Unassigned'
+        stamp = timezone.localtime(when)
+        by_sem.setdefault(label, {})
+        key = (stamp.year, stamp.month)
+        by_sem[label][key] = by_sem[label].get(key, Decimal('0')) + _net(item)
+
+    out = {}
+    for label, months in by_sem.items():
+        first = min(months)
+        for (year, month), value in months.items():
+            offset = (year - first[0]) * 12 + (month - first[1]) + 1
+            out[(label, offset)] = out.get((label, offset), Decimal('0')) + value
+    return out
+
+
+def _sheet_semesters(wb, items, history):
+    ws = wb.create_sheet('semsters')
+    labels = _semester_labels(history)
+
+    hist = {}
+    for entry in history.get('month_rows', []):
+        number = int(re.sub(r'\D', '', entry['month']) or 0)
+        for label, value in entry['revenue'].items():
+            hist[(label, number)] = value
+
+    live = _month_index(items)
+    for label, _ in live:
+        if label not in labels:
+            labels.append(label)
+    months = max([n for _, n in list(hist) + list(live)] + [6])
+
+    ws.column_dimensions['A'].width = 14
+    for idx in range(len(labels)):
+        ws.column_dimensions[get_column_letter(idx + 2)].width = 15
+    ws.column_dimensions[get_column_letter(len(labels) + 2)].width = 13
+
+    row = 1
+    _put(ws, row, 1, 'Month', fill=LABEL_FILL, font=HEAD_FONT)
+    for idx, label in enumerate(labels, start=2):
+        _put(ws, row, idx, label, fill=LABEL_FILL, font=HEAD_FONT).alignment = \
+            Alignment(horizontal='center', wrap_text=True)
+    ws.freeze_panes = 'B2'
+    row += 1
+
+    totals = {label: 0.0 for label in labels}
+    filled = {label: 0 for label in labels}
+    for number in range(1, months + 1):
+        _put(ws, row, 1, f'Month {number}', fill=LABEL_FILL, font=Font(size=10))
+        for idx, label in enumerate(labels, start=2):
+            old = hist.get((label, number))
+            new = live.get((label, number))
+            if old is None and new is None:
+                _put(ws, row, idx, None)
+                continue
+            value = round(float(old or 0) + float(new or 0), 3)
+            _put(ws, row, idx, value, money=True)
+            totals[label] += value
+            filled[label] += 1
+        row += 1
+
+    _put(ws, row, 1, 'Total', fill=TOTAL_FILL, font=HEAD_FONT)
+    for idx, label in enumerate(labels, start=2):
+        _put(ws, row, idx, round(totals[label], 3), fill=TOTAL_FILL, font=HEAD_FONT,
+             money=True)
+    _put(ws, row, len(labels) + 2, round(sum(totals.values()), 3),
+         fill=GRAND_FILL, font=Font(bold=True, size=10), money=True)
+    row += 1
+
+    _put(ws, row, 1, 'Per month', fill=TOTAL_FILL, font=HEAD_FONT)
+    months_used = 0
+    for idx, label in enumerate(labels, start=2):
+        count = filled[label]
+        months_used += count
+        _put(ws, row, idx, round(totals[label] / count, 3) if count else None,
+             fill=TOTAL_FILL, font=HEAD_FONT, money=True)
+    _put(ws, row, len(labels) + 2,
+         round(sum(totals.values()) / months_used, 3) if months_used else None,
+         font=Font(bold=True, size=10), money=True)
+    return ws
+
+
+# ── Sheet: Sales ledger ───────────────────────────────────────────────────────
+
+def _sheet_ledger(wb, items):
+    """The detail the old file never had: who bought what, and when."""
+    ws = wb.create_sheet('Sales ledger')
+    heads = ['Date paid', 'Semester', 'Order', 'Student', 'Email', 'College',
+             'Course', 'Ch.', 'Chapter title', 'Price', 'Discount', 'Net', 'Ref']
+    for idx, (head, width) in enumerate(
+            zip(heads, [12, 20, 11, 22, 26, 14, 20, 6, 28, 9, 14, 9, 16]), start=1):
+        _put(ws, 1, idx, head, fill=LABEL_FILL, font=HEAD_FONT)
+        ws.column_dimensions[get_column_letter(idx)].width = width
+    ws.freeze_panes = 'A2'
+
+    row, gross, net_total = 2, Decimal('0'), Decimal('0')
+    for item in items:
+        order = item.order
+        net = _net(item)
+        gross += item.price or Decimal('0')
         net_total += net
         paid = order.paid_at or order.created_at
         values = [
@@ -121,465 +315,22 @@ def _sheet_ledger(wb, items):
             order.code or f'#{order.pk}',
             order.user.name, order.user.email, order.user.college or '',
             item.course_name, item.chapter_number, item.chapter_title,
-            float(price),
-            f'{order.discount_code} ({pct}%)' if order.discount_code else '',
-            float(cut) if cut else None,
+            float(item.price or 0),
+            f'{order.discount_code} ({order.discount_percent}%)'
+            if order.discount_code else '',
             float(net),
             order.note or '',
         ]
-        for col, value in enumerate(values, start=1):
-            cell = ws.cell(row=row, column=col, value=value)
-            cell.border = BOX
-            if col in (10, 12, 13):
-                _money(cell)
+        for idx, value in enumerate(values, start=1):
+            _put(ws, row, idx, value, money=idx in (10, 12))
         row += 1
 
-    if row > top + 1:
-        _totals_row(ws, row, 'Total', {
-            9: f'{row - top - 1} chapters',
-            10: float(gross_total),
-            12: float(gross_total - net_total),
-            13: float(net_total),
-        })
-    return ws
-
-
-def _sheet_by_semester(wb, items, history):
-    """Term-by-term totals, with the hand-kept history kept visibly separate."""
-    ws = wb.create_sheet('By semester')
-    top = _title(ws, 'By semester',
-                 'Website sales and the older hand-kept record, side by side. '
-                 'They are never added together — the old figures were entered by hand.')
-    _header(ws, top, ['Semester', 'Summer', 'Copies sold', 'Gross (BHD)',
-                      'Discounts', 'Net (BHD)', 'Students', 'Hand-kept record (BHD)'],
-            [22, 9, 12, 13, 11, 13, 10, 22])
-
-    live = {}
-    for item in items:
-        order = item.order
-        label = order.semester.label if order.semester else 'Unassigned'
-        agg = live.setdefault(label, {'copies': 0, 'gross': Decimal('0'),
-                                      'net': Decimal('0'), 'students': set()})
-        price = item.price or Decimal('0')
-        cut = (price * Decimal(order.discount_percent or 0) / Decimal(100)).quantize(Decimal('0.001'))
-        agg['copies'] += 1
-        agg['gross'] += price
-        agg['net'] += price - cut
-        agg['students'].add(order.user_id)
-
-    hist_rev = (history or {}).get('semester_revenue', {})
-    semesters = list(Semester.objects.all())
-    labels = [s.label for s in semesters]
-    for extra in list(hist_rev) + list(live):
-        if extra not in labels:
-            labels.append(extra)
-    summer = {s.label: s.is_summer for s in semesters}
-
-    row = top + 1
-    tot_copies, tot_gross, tot_net, tot_hist = 0, Decimal('0'), Decimal('0'), 0.0
-    for label in labels:
-        agg = live.get(label)
-        hist = hist_rev.get(label)
-        if not agg and not hist:
-            continue
-        values = [
-            label,
-            'Yes' if summer.get(label) else '',
-            agg['copies'] if agg else None,
-            float(agg['gross']) if agg else None,
-            float(agg['gross'] - agg['net']) if agg else None,
-            float(agg['net']) if agg else None,
-            len(agg['students']) if agg else None,
-            hist,
-        ]
-        for col, value in enumerate(values, start=1):
-            cell = ws.cell(row=row, column=col, value=value)
-            cell.border = BOX
-            if col in (4, 5, 6, 8):
-                _money(cell)
-        if agg:
-            tot_copies += agg['copies']
-            tot_gross += agg['gross']
-            tot_net += agg['net']
-        if hist:
-            tot_hist += hist
-        row += 1
-
-    _totals_row(ws, row, 'Total', {
-        3: tot_copies, 4: float(tot_gross),
-        5: float(tot_gross - tot_net), 6: float(tot_net), 8: round(tot_hist, 3),
-    })
-    ws.cell(row=row + 2, column=1,
-            value='The last column is your original hand-kept record, shown for '
-                  'comparison only. Website figures are exact; the hand-kept ones '
-                  'are as they were entered.').fill = NOTE_FILL
-    return ws
-
-
-def _course_key(name):
-    """The bare course code, used to line a course up with its older self.
-
-    Courses get renamed as they merge or get recoded — 'ACC112' became
-    'ACC112 / ACA112', 'ITIS204 (BIS202)' is now 'ITIS204'. Matching on the first
-    code means the history lands in the same column instead of opening a second
-    one for what is really the same course."""
-    head = re.split(r'[/(]', name or '', maxsplit=1)[0]
-    return head.strip().upper().replace(' ', '') or (name or '').strip().upper()
-
-
-def _sheet_by_course(wb, items, history):
-    """Course x semester copies — the whole history, hand-kept years included, in
-    one grid. This is the sheet the record has always been read in."""
-    ws = wb.create_sheet('By course')
-    top = _title(ws, 'By course',
-                 'Copies sold per course, per semester. The earlier rows are your '
-                 'hand-kept record, shown in grey; the rest the website counted itself.')
-
-    # Column identity is the course code, so a renamed course keeps one column.
-    # The label shown is the newest name we have seen for that code.
-    names, order = {}, []
-    def register(name):
-        key = _course_key(name)
-        if key not in names:
-            names[key] = name
-            order.append(key)
-        return key
-
-    hist_rows = (history or {}).get('course_rows', [])
-    for entry in hist_rows:
-        for course in entry['copies']:
-            register(course)
-    # Live names are registered second so they win — today's name is the one to show.
-    live_grid, live_sems = {}, []
-    for item in items:
-        key = register(item.course_name or '(unknown course)')
-        names[key] = item.course_name or '(unknown course)'
-        label = item.order.semester.label if item.order.semester else 'Unassigned'
-        if label not in live_sems:
-            live_sems.append(label)
-        live_grid[(label, key)] = live_grid.get((label, key), 0) + 1
-
-    keys = sorted(order, key=lambda k: names[k])
-    _header(ws, top, ['Semester'] + [names[k] for k in keys] + ['Total'],
-            [22] + [13] * len(keys) + [11])
-
-    row = top + 1
-    hist_totals = {k: 0 for k in keys}
-    live_totals = {k: 0 for k in keys}
-    grey = Font(italic=True, color='9A9A9A')
-
-    # ── the hand-kept years ──
-    for entry in hist_rows:
-        cell = ws.cell(row=row, column=1, value=entry['semester'])
-        cell.border, cell.font = BOX, grey
-        for idx, key in enumerate(keys, start=2):
-            value = entry['copies'].get(names[key])
-            if value is None:                       # try the older name for this code
-                value = next((v for c, v in entry['copies'].items()
-                              if _course_key(c) == key), None)
-            cell = ws.cell(row=row, column=idx, value=value)
-            cell.border = BOX
-            cell.font = grey
-            if isinstance(value, (int, float)):
-                hist_totals[key] += value
-        cell = ws.cell(row=row, column=len(keys) + 2, value=entry.get('total_copies'))
-        cell.border, cell.font = BOX, Font(bold=True, color='9A9A9A')
-        row += 1
-
-    if hist_rows:
-        _totals_row(ws, row, 'Hand-kept subtotal',
-                    {**{i: hist_totals[k] or None for i, k in enumerate(keys, start=2)},
-                     len(keys) + 2: sum(hist_totals.values())})
-        row += 1
-
-    # ── what the website counted ──
-    for label in live_sems:
-        ws.cell(row=row, column=1, value=label).border = BOX
-        line = 0
-        for idx, key in enumerate(keys, start=2):
-            count = live_grid.get((label, key), 0)
-            cell = ws.cell(row=row, column=idx, value=count or None)
-            cell.border = BOX
-            line += count
-            live_totals[key] += count
-        cell = ws.cell(row=row, column=len(keys) + 2, value=line)
-        cell.border, cell.font = BOX, Font(bold=True)
-        row += 1
-
-    _totals_row(ws, row, 'Website subtotal',
-                {**{i: live_totals[k] or None for i, k in enumerate(keys, start=2)},
-                 len(keys) + 2: sum(live_totals.values())})
-    row += 1
-    _totals_row(ws, row, 'Total copies sold — all time',
-                {**{i: (hist_totals[k] + live_totals[k]) or None
-                    for i, k in enumerate(keys, start=2)},
-                 len(keys) + 2: sum(hist_totals.values()) + sum(live_totals.values())})
-    for idx in range(2, len(keys) + 3):
-        ws.cell(row=row, column=idx).fill = GRAND_FILL
-    ws.cell(row=row, column=1).fill = GRAND_FILL
-
-    note = ws.cell(row=row + 2, column=1,
-                   value='“No Pay” means the course was not on sale that semester and '
-                         '“Summer” that it was not offered — neither is a zero. Courses '
-                         'that were renamed (ACC112 → ACC112 / ACA112) share one column, '
-                         'matched on the course code.')
-    note.fill = NOTE_FILL
-    note.alignment = Alignment(wrap_text=True, vertical='top')
-    return ws
-
-
-def _sheet_by_chapter(wb, items):
-    ws = wb.create_sheet('By chapter')
-    top = _title(ws, 'By chapter',
-                 'Which chapters actually sell. Website sales only — the hand-kept '
-                 'record was never broken down below course level, so there is nothing '
-                 'older to show here.')
-    _header(ws, top, ['Course', 'Ch.', 'Chapter title', 'Copies sold', 'Revenue (BHD)'],
-            [22, 6, 34, 12, 14])
-
-    rows = {}
-    for item in items:
-        key = (item.course_name, item.chapter_number, item.chapter_title)
-        agg = rows.setdefault(key, {'copies': 0, 'revenue': Decimal('0')})
-        agg['copies'] += 1
-        agg['revenue'] += item.price or Decimal('0')
-
-    row = top + 1
-    for key, agg in sorted(rows.items(), key=lambda kv: -kv[1]['copies']):
-        for col, value in enumerate([key[0], key[1], key[2], agg['copies'],
-                                     float(agg['revenue'])], start=1):
-            cell = ws.cell(row=row, column=col, value=value)
-            cell.border = BOX
-            if col == 5:
-                _money(cell)
-        row += 1
-
-    _totals_row(ws, row, 'Total', {
-        4: sum(a['copies'] for a in rows.values()),
-        5: float(sum(a['revenue'] for a in rows.values())),
-    })
-    return ws
-
-
-def _sheet_by_month(wb, items):
-    ws = wb.create_sheet('By month')
-    top = _title(ws, 'By month',
-                 'Calendar months, for trend across semesters. Website sales only — the '
-                 'hand-kept record counted months within a semester rather than calendar '
-                 'months, so it is on the History sheet in its own shape.')
-    _header(ws, top, ['Month', 'Copies sold', 'Gross (BHD)', 'Net (BHD)', 'Students'],
-            [14, 12, 14, 14, 10])
-
-    months = {}
-    for item in items:
-        order = item.order
-        when = order.paid_at or order.created_at
-        if not when:
-            continue
-        key = timezone.localtime(when).strftime('%Y-%m')
-        agg = months.setdefault(key, {'copies': 0, 'gross': Decimal('0'),
-                                      'net': Decimal('0'), 'students': set()})
-        price = item.price or Decimal('0')
-        cut = (price * Decimal(order.discount_percent or 0) / Decimal(100)).quantize(Decimal('0.001'))
-        agg['copies'] += 1
-        agg['gross'] += price
-        agg['net'] += price - cut
-        agg['students'].add(order.user_id)
-
-    row = top + 1
-    for key in sorted(months):
-        agg = months[key]
-        for col, value in enumerate([key, agg['copies'], float(agg['gross']),
-                                     float(agg['net']), len(agg['students'])], start=1):
-            cell = ws.cell(row=row, column=col, value=value)
-            cell.border = BOX
-            if col in (3, 4):
-                _money(cell)
-        row += 1
-
-    _totals_row(ws, row, 'Total', {
-        2: sum(a['copies'] for a in months.values()),
-        3: float(sum(a['gross'] for a in months.values())),
-        4: float(sum(a['net'] for a in months.values())),
-    })
-    return ws
-
-
-def _sheet_orders(wb, name, orders, blurb):
-    """Pending and cancelled orders — visible, never counted in revenue."""
-    ws = wb.create_sheet(name)
-    top = _title(ws, name, blurb)
-    _header(ws, top, ['Placed', 'Semester', 'Order', 'Student', 'Email',
-                      'Chapters', 'Subtotal', 'Discount', 'Total (BHD)'],
-            [12, 20, 11, 22, 28, 10, 11, 14, 13])
-    row = top + 1
-    total = Decimal('0')
-    for order in orders:
-        total += order.total or Decimal('0')
-        values = [
-            timezone.localtime(order.created_at).strftime('%Y-%m-%d'),
-            order.semester.label if order.semester else '',
-            order.code or f'#{order.pk}',
-            order.user.name, order.user.email,
-            order.items.count(),
-            float(order.subtotal or 0),
-            f'{order.discount_code} ({order.discount_percent}%)' if order.discount_code else '',
-            float(order.total or 0),
-        ]
-        for col, value in enumerate(values, start=1):
-            cell = ws.cell(row=row, column=col, value=value)
-            cell.border = BOX
-            if col in (7, 9):
-                _money(cell)
-        row += 1
-    _totals_row(ws, row, 'Total', {6: row - top - 1, 9: float(total)})
-    return ws
-
-
-def _sheet_manual_unlocks(wb, grants):
-    ws = wb.create_sheet('Manual unlocks')
-    top = _title(ws, 'Manual unlocks',
-                 'Chapters you unlocked by hand, with no order behind them. Listed at '
-                 'their list price so you can see what was given away, but never counted '
-                 'as revenue.')
-    _header(ws, top, ['Granted', 'Semester', 'Student', 'Email', 'Course', 'Ch.',
-                      'Chapter title', 'List price', 'Granted by'],
-            [12, 20, 22, 28, 20, 6, 30, 12, 22])
-    row = top + 1
-    given = Decimal('0')
-    for grant in grants:
-        note = grant.note
-        price = note.price if note else Decimal('0')
-        given += price
-        values = [
-            timezone.localtime(grant.granted_at).strftime('%Y-%m-%d'),
-            grant.semester.label if grant.semester else '',
-            grant.user.name, grant.user.email,
-            note.course.name if note and note.course else '',
-            note.chapter_number if note else '',
-            note.chapter_title if note else '(chapter deleted)',
-            float(price),
-            grant.granted_by.name if grant.granted_by else '',
-        ]
-        for col, value in enumerate(values, start=1):
-            cell = ws.cell(row=row, column=col, value=value)
-            cell.border = BOX
-            if col == 8:
-                _money(cell)
-        row += 1
-    _totals_row(ws, row, 'Total', {7: f'{row - top - 1} unlocks', 8: float(given)})
-    return ws
-
-
-def _sheet_history(wb, history):
-    """The hand-kept record, reproduced as recorded — including its own caveats."""
-    ws = wb.create_sheet('History (hand-kept)')
-    top = _title(ws, 'History — hand-kept record',
-                 'Your original Notes_selling record, from before the website tracked '
-                 'sales. Reproduced exactly as entered, including its gaps.')
-
-    for offset, caveat in enumerate((history.get('_caveats') or [])):
-        cell = ws.cell(row=top + offset, column=1, value='• ' + caveat)
-        cell.fill = NOTE_FILL
-        cell.alignment = Alignment(wrap_text=True, vertical='top')
-    top += len(history.get('_caveats') or []) + 1
-
-    courses = history.get('courses', [])
-    _header(ws, top, ['Semester'] + courses + ['Copies'],
-            [22] + [13] * len(courses) + [11])
-    row = top + 1
-    for entry in history.get('course_rows', []):
-        ws.cell(row=row, column=1, value=entry['semester']).border = BOX
-        for idx, course in enumerate(courses, start=2):
-            value = entry['copies'].get(course)
-            cell = ws.cell(row=row, column=idx, value=value)
-            cell.border = BOX
-            if isinstance(value, str):       # 'No Pay' / 'Summer' — not a zero
-                cell.font = Font(italic=True, color='9A9A9A')
-        cell = ws.cell(row=row, column=len(courses) + 2, value=entry.get('total_copies'))
-        cell.border, cell.font = BOX, Font(bold=True)
-        row += 1
-
-    totals = history.get('course_total_copies', {})
-    values = history.get('course_total_value', {})
-    _totals_row(ws, row, 'Total copies sold',
-                {**{i: totals.get(c) for i, c in enumerate(courses, start=2)},
-                 len(courses) + 2: history.get('grand_total_copies')})
-    _totals_row(ws, row + 1, 'Total value of copies sold',
-                {**{i: values.get(c) for i, c in enumerate(courses, start=2)},
-                 len(courses) + 2: history.get('grand_total_value')})
-    ws.cell(row=row, column=len(courses) + 2).fill = GRAND_FILL
-    ws.cell(row=row + 1, column=len(courses) + 2).fill = GRAND_FILL
-
-    # The monthly grid underneath, as its own block.
-    row += 4
-    ws.cell(row=row, column=1, value='Revenue by month within each semester').font = TITLE_FONT
-    row += 1
-    semesters = history.get('semesters', [])
-    _header(ws, row, ['Month'] + semesters)
-    row += 1
-    for entry in history.get('month_rows', []):
-        ws.cell(row=row, column=1, value=entry['month']).border = BOX
-        for idx, label in enumerate(semesters, start=2):
-            cell = ws.cell(row=row, column=idx, value=entry['revenue'].get(label))
-            cell.border = BOX
-            _money(cell)
-        row += 1
-    rev = history.get('semester_revenue', {})
-    _totals_row(ws, row, 'Total',
-                {i: rev.get(s) for i, s in enumerate(semesters, start=2)})
-    cell = ws.cell(row=row, column=len(semesters) + 2,
-                   value=history.get('semester_revenue_grand_total'))
-    cell.fill, cell.font, cell.border = GRAND_FILL, Font(bold=True), BOX
-    return ws
-
-
-def _sheet_cover(wb, items, history, generated):
-    """First thing you see: what this file is, and the headline numbers."""
-    ws = wb.create_sheet('Summary', 0)
-    ws.column_dimensions['A'].width = 34
-    ws.column_dimensions['B'].width = 26
-    ws.cell(row=1, column=1, value='Notati — sales record').font = Font(bold=True, size=16)
-    ws.cell(row=2, column=1,
-            value=f'Generated {generated:%d %B %Y, %H:%M}').font = Font(size=10, color='6B6B6B')
-
-    gross = sum((i.price or Decimal('0')) for i in items)
-    net = sum(((i.price or Decimal('0'))
-               * (Decimal(100) - Decimal(i.order.discount_percent or 0)) / Decimal(100))
-              for i in items)
-    current = Semester.current()
-    lines = [
-        ('Current semester', current.label if current else '—'),
-        ('Chapters sold', len(items)),
-        ('Students who bought', len({i.order.user_id for i in items})),
-        ('Gross revenue (BHD)', float(gross)),
-        ('Net revenue (BHD)', float(round(net, 3))),
-        ('', ''),
-        ('Hand-kept record (BHD)', (history or {}).get('semester_revenue_grand_total')),
-        ('Hand-kept copies', (history or {}).get('grand_total_copies')),
-    ]
-    row = 4
-    for label, value in lines:
-        if not label:
-            row += 1
-            continue
-        cell = ws.cell(row=row, column=1, value=label)
-        cell.font, cell.fill, cell.border = HEAD_FONT, HEAD_FILL, BOX
-        cell = ws.cell(row=row, column=2, value=value)
-        cell.border = BOX
-        if isinstance(value, float):
-            _money(cell)
-        row += 1
-
-    row += 1
-    for text in (
-        'This file is generated from the website\'s database every time you download it.',
-        'Never edit it by hand — the next download replaces it completely.',
-        'To change something, change it in the admin panel and download again.',
-    ):
-        cell = ws.cell(row=row, column=1, value=text)
-        cell.fill = NOTE_FILL
-        row += 1
+    _put(ws, row, 1, 'Total', fill=TOTAL_FILL, font=HEAD_FONT)
+    for idx in range(2, 14):
+        _put(ws, row, idx, None, fill=TOTAL_FILL)
+    _put(ws, row, 9, f'{row - 2} chapters', fill=TOTAL_FILL, font=HEAD_FONT)
+    _put(ws, row, 10, float(gross), fill=TOTAL_FILL, font=HEAD_FONT, money=True)
+    _put(ws, row, 12, float(net_total), fill=TOTAL_FILL, font=HEAD_FONT, money=True)
     return ws
 
 
@@ -596,39 +347,12 @@ def build_sales_workbook():
         .select_related('order', 'order__user', 'order__semester')
         .order_by('order__paid_at', 'order_id', 'id')
     )
-    pending = list(
-        Order.objects.filter(status='pending')
-        .select_related('user', 'semester').prefetch_related('items').order_by('created_at')
-    )
-    cancelled = list(
-        Order.objects.filter(status='cancelled')
-        .select_related('user', 'semester').prefetch_related('items').order_by('created_at')
-    )
-    # An unlock is "manual" when the student has no paid order for that chapter —
-    # access granted from a paid order looks identical otherwise.
-    paid_pairs = {(i.order.user_id, i.note_id) for i in items if i.note_id}
-    grants = [
-        g for g in Access.objects
-        .select_related('user', 'note__course', 'granted_by', 'semester')
-        .order_by('granted_at')
-        if (g.user_id, g.note_id) not in paid_pairs
-    ]
 
     wb = Workbook()
-    wb.remove(wb.active)                     # drop the default empty sheet
+    wb.remove(wb.active)
+    _sheet_semesters(wb, items, history)
+    _sheet_courses(wb, items, history)
     _sheet_ledger(wb, items)
-    _sheet_by_semester(wb, items, history)
-    _sheet_by_course(wb, items, history)
-    _sheet_by_chapter(wb, items)
-    _sheet_by_month(wb, items)
-    _sheet_orders(wb, 'Pending', pending,
-                  'Orders placed but not yet marked paid — what is owed. Never counted as revenue.')
-    _sheet_orders(wb, 'Cancelled', cancelled,
-                  'Cancelled orders, kept for the record only.')
-    _sheet_manual_unlocks(wb, grants)
-    if history:
-        _sheet_history(wb, history)
-    _sheet_cover(wb, items, history, generated)
 
     buf = BytesIO()
     wb.save(buf)
