@@ -416,6 +416,32 @@ input, textarea, select { font-family: inherit; }
 .filter-select:focus { outline: none; border-color: var(--notati-walnut); border-width: 1.5px; }
 .filter-select:hover { border-color: var(--border-1); }
 
+/* Date-range picker — two native date inputs sharing one pill, so they read as
+   a single "from → to" control. No custom chevron: the browser draws its own
+   calendar button, which is what opens the picker. */
+.date-range {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-1);
+  background: var(--notati-paper);
+  transition: border-color var(--dur-base) var(--ease-out);
+}
+.date-range:focus-within { border-color: var(--notati-walnut); }
+.date-range .dr-label {
+  font-size: 11px; font-weight: 700; color: var(--fg-3);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.date-range input[type="date"] {
+  font: var(--type-body); font-size: 13px;
+  color: var(--fg-1);
+  border: 0; background: none; padding: 4px 0;
+  cursor: pointer; min-width: 116px;
+}
+.date-range input[type="date"]:focus { outline: none; }
+/* Safari on iOS shrinks an empty date input; keep the two halves even. */
+.date-range input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+
 /* ---------- Scrollable table wrapper ---------- */
 .scroll-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
@@ -1094,6 +1120,11 @@ input, textarea, select { font-family: inherit; }
 [data-theme="dark"] .field textarea,
 [data-theme="dark"] .field select { background: var(--bg-section); }
 [data-theme="dark"] .filter-select { background: var(--bg-card); }
+[data-theme="dark"] .date-range { background: var(--bg-card); }
+/* The native calendar glyph is a dark bitmap — invert it so it stays visible. */
+[data-theme="dark"] .date-range input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(.65);
+}
 
 /* Auth page */
 [data-theme="dark"] .auth-page { background: var(--bg-page); }
@@ -1140,6 +1171,8 @@ input, textarea, select { font-family: inherit; }
   .filter-bar { gap: 8px; }
   .filter-select { width: 100%; }
   .search-mini { min-width: 0 !important; width: 100%; }
+  .date-range { width: 100%; }
+  .date-range input[type="date"] { min-width: 0; flex: 1; }
 
   /* Modal mobile — slide up from bottom */
   .modal-bg { padding: 0; align-items: flex-end; }

@@ -8,7 +8,7 @@
    All persist via NotatiStore.
    ============================================================ */
 
-const { useState: useStateAd, useMemo: useMemoAd, useEffect: useEffectAd } = React;
+const { useState: useStateAd, useMemo: useMemoAd, useEffect: useEffectAd, useRef: useRefAd } = React;
 
 const COLLEGES_AD = [
   'College of Arts',
@@ -2259,19 +2259,34 @@ function NoteViews() {
   const [loading, setLoading] = useStateAd(true);
   const [college, setCollege] = useStateAd('all');
   const [priceF,  setPriceF]  = useStateAd('all');
-  const [days,    setDays]    = useStateAd('all');   // server-side time window
+  // Server-side time window: YYYY-MM-DD calendar days, both ends inclusive.
+  // Either can be left blank for an open-ended range; both blank = all time.
+  const [from,    setFrom]    = useStateAd('');
+  const [to,      setTo]      = useStateAd('');
   const [q,       setQ]       = useStateAd('');
   const [sortKey, setSortKey] = useStateAd('opens');
   const [sortDir, setSortDir] = useStateAd('desc');
 
-  // Refetches whenever the time window changes — the counts are re-aggregated
-  // on the server, so this is a real time filter, not a client-side hide.
+  const hasRange = !!(from || to);
+  // Today in the admin's own timezone — toISOString() would shift the date.
+  const today = useMemoAd(() => {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }, []);
+
+  // Refetches whenever the range changes — the counts are re-aggregated on the
+  // server, so this is a real time filter, not a client-side hide. Typing into
+  // a date field can fire several times, so a sequence number makes sure a slow
+  // earlier response can't overwrite the newest one.
+  const reqSeq = useRefAd(0);
   useEffectAd(() => {
+    const seq = ++reqSeq.current;
     setLoading(true);
-    NotatiAPI.getNoteViews(days === 'all' ? null : days)
-      .then(setRows).catch(e => toast.error('Could not load views', e.message))
-      .finally(() => setLoading(false));
-  }, [days]);
+    NotatiAPI.getNoteViews(from, to)
+      .then(data => { if (seq === reqSeq.current) setRows(data); })
+      .catch(e   => { if (seq === reqSeq.current) toast.error('Could not load views', e.message); })
+      .finally(() => { if (seq === reqSeq.current) setLoading(false); });
+  }, [from, to]);
 
   const colleges = useMemoAd(() => {
     const seen = new Set();
@@ -2330,7 +2345,8 @@ function NoteViews() {
       {/* Summary cards */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
         {[
-          { label: 'Total opens',      value: String(totalOpens),    sub: 'reads + downloads', color: 'var(--notati-walnut)' },
+          { label: 'Total opens',      value: String(totalOpens),
+            sub: hasRange ? 'in the selected dates' : 'reads + downloads', color: 'var(--notati-walnut)' },
           { label: 'Guest opens',      value: String(totalGuests),   sub: 'no account (free only)', color: 'var(--notati-amber)' },
           { label: 'Chapters opened',  value: String(shown.length),  sub: 'distinct chapters', color: 'var(--notati-forest)' },
           { label: 'Most opened',      value: topRow ? String(topRow.opens) : '0',
@@ -2352,12 +2368,20 @@ function NoteViews() {
 
       {/* Filter bar */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
-        <select className="filter-select" value={days} onChange={e => setDays(e.target.value)}>
-          <option value="all">All time</option>
-          <option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-        </select>
+        <div className="date-range">
+          <span className="dr-label">From</span>
+          <input type="date" value={from} max={to || today} aria-label="Opens from date"
+                 onChange={e => setFrom(e.target.value)}/>
+          <span style={{ color: 'var(--fg-3)' }}>→</span>
+          <span className="dr-label">To</span>
+          <input type="date" value={to} min={from || undefined} max={today} aria-label="Opens to date"
+                 onChange={e => setTo(e.target.value)}/>
+        </div>
+        {hasRange && (
+          <button className="btn btn-ghost btn-sm" onClick={() => { setFrom(''); setTo(''); }}>
+            All time
+          </button>
+        )}
         <select className="filter-select" value={college} onChange={e => setCollege(e.target.value)}>
           <option value="all">All colleges</option>
           {colleges.map(c => <option key={c} value={c}>{c}</option>)}
@@ -2385,10 +2409,10 @@ function NoteViews() {
         <PageLoader rows={4}/>
       ) : rows.length === 0 ? (
         <EmptyState
-          title={days === 'all' ? 'No opens yet' : 'No opens in this period'}
-          message={days === 'all'
-            ? 'This fills in as chapters get opened. Every read or download is counted here — by logged-in students and by guests with no account (guests can only open free chapters).'
-            : 'Nothing was opened in the selected time window. Try a wider range.'}/>
+          title={hasRange ? 'No opens in this period' : 'No opens yet'}
+          message={hasRange
+            ? 'Nothing was opened between those dates. Try a wider range, or "All time".'
+            : 'This fills in as chapters get opened. Every read or download is counted here — by logged-in students and by guests with no account (guests can only open free chapters).'}/>
       ) : shown.length === 0 ? (
         <EmptyState title="No matches" message="Try a different filter or search term."/>
       ) : (

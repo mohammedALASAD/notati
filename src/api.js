@@ -284,9 +284,13 @@
       return data || { total_revenue: '0.000', total_sales: 0, rows: [] };
     },
 
-    // days: limit the counts to the last N days; falsy = all time.
-    async getNoteViews(days) {
-      const qs = days ? `?days=${encodeURIComponent(days)}` : '';
+    // from/to: YYYY-MM-DD calendar days, both ends inclusive. Either can be
+    // omitted for an open-ended range; omit both for all time.
+    async getNoteViews(from, to) {
+      const p = [];
+      if (from) p.push('from=' + encodeURIComponent(from));
+      if (to)   p.push('to='   + encodeURIComponent(to));
+      const qs = p.length ? '?' + p.join('&') : '';
       const data = await req('GET', `/admin/note-views/${qs}`);
       return Array.isArray(data) ? data : [];
     },

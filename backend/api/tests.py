@@ -692,6 +692,51 @@ class LeakTracingTests(TestCase):
         self.assertEqual(resp.status_code, 200)   # falls back to all time, no crash
         self.assertEqual(next(r for r in resp.data if r['id'] == self.note.id)['opens'], 1)
 
+    # ── ?from= / ?to= date range ──────────────────────────────────────────────
+
+    def _open_days_ago(self, n):
+        """One logged open on self.note, n days back. Returns its local date."""
+        code = self.tracing.code_for(self.student.id, self.note.id)
+        log = self.DownloadLog.objects.create(user=self.student, note=self.note, code=code)
+        when = timezone.now() - timedelta(days=n)
+        self.DownloadLog.objects.filter(pk=log.pk).update(created_at=when)
+        return timezone.localtime(when).date().isoformat()
+
+    def _opens(self, qs=''):
+        resp = self._client(self.admin).get(f'/api/admin/note-views/{qs}')
+        self.assertEqual(resp.status_code, 200)
+        row = next((r for r in resp.data if r['id'] == self.note.id), None)
+        return row['opens'] if row else 0
+
+    def test_note_views_date_range_includes_both_end_days(self):
+        d10 = self._open_days_ago(10)
+        self._open_days_ago(5)
+        self._open_days_ago(0)
+        self.assertEqual(self._opens(), 3)                      # all time
+        d5 = timezone.localtime(timezone.now() - timedelta(days=5)).date().isoformat()
+        # Both boundary days count, so the 10-day-old and 5-day-old opens are in
+        # and today's is out.
+        self.assertEqual(self._opens(f'?from={d10}&to={d5}'), 2)
+
+    def test_note_views_accepts_an_open_ended_range(self):
+        self._open_days_ago(10)
+        self._open_days_ago(0)
+        d3 = timezone.localtime(timezone.now() - timedelta(days=3)).date().isoformat()
+        self.assertEqual(self._opens(f'?to={d3}'), 1)           # everything up to d3
+        self.assertEqual(self._opens(f'?from={d3}'), 1)         # everything from d3 on
+
+    def test_note_views_tolerates_a_backwards_range(self):
+        d10 = self._open_days_ago(10)
+        self._open_days_ago(0)
+        today = timezone.localtime().date().isoformat()
+        # from later than to — swapped rather than returning nothing.
+        self.assertEqual(self._opens(f'?from={today}&to={d10}'), 2)
+
+    def test_note_views_ignores_unparseable_dates(self):
+        self._open_days_ago(0)
+        self.assertEqual(self._opens('?from=nonsense&to='), 1)   # falls back to all time
+        self.assertEqual(self._opens('?from=2026-02-31'), 1)     # well-formed, not a real day
+
     def test_note_views_reports_purchases_and_leaves_free_blank(self):
         # A paid chapter reports how many students own it; a free one reports null
         # so the admin table leaves the cell blank.

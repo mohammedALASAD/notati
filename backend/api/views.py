@@ -16,6 +16,7 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q, Exists, OuterRef
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 def health(request):
@@ -819,17 +820,40 @@ def admin_note_views(request):
     in-app read/download by a logged-in student is one log row, so 'opens' means
     times accessed, and 'students' is the unique-student count.
 
-    Pass ?days=N to count only opens from the last N days; omit it for all time.
+    Pass ?from=YYYY-MM-DD and/or ?to=YYYY-MM-DD to count only opens inside that
+    date range — both ends inclusive and read as calendar days in the site's
+    timezone, so 'to' covers the whole of that day. Either end can be left out
+    for an open-ended range. ?days=N (last N days) is the older form; it is
+    still honoured so a not-yet-redeployed frontend keeps filtering correctly.
     Note that 'purchases' is always the all-time owner count — a time window
     narrows the reading activity, not who owns the chapter."""
     from django.db.models import Count
     logs = DownloadLog.objects.filter(note__isnull=False)
-    try:
-        days = int(request.query_params.get('days') or 0)
-    except (TypeError, ValueError):
-        days = 0
-    if days > 0:
-        logs = logs.filter(created_at__gte=timezone.now() - timedelta(days=days))
+
+    def _day(param):
+        """A ?from=/?to= value as a date, or None if absent or unparseable."""
+        raw = (request.query_params.get(param) or '').strip()
+        if not raw:
+            return None
+        try:
+            return parse_date(raw)
+        except ValueError:      # well-formed but not a real date, e.g. 2026-02-31
+            return None
+
+    day_from, day_to = _day('from'), _day('to')
+    if day_from and day_to and day_from > day_to:
+        day_from, day_to = day_to, day_from     # tolerate a back-to-front range
+    if day_from:
+        logs = logs.filter(created_at__date__gte=day_from)
+    if day_to:
+        logs = logs.filter(created_at__date__lte=day_to)
+    if not (day_from or day_to):
+        try:
+            days = int(request.query_params.get('days') or 0)
+        except (TypeError, ValueError):
+            days = 0
+        if days > 0:
+            logs = logs.filter(created_at__gte=timezone.now() - timedelta(days=days))
     rows = (
         logs.values('note_id')
         .annotate(
