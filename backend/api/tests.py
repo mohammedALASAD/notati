@@ -1241,6 +1241,24 @@ class SalesWorkbookTests(TestCase):
     def _headers(self, ws):
         return [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
 
+    def _calc(self, ws, row_label, col):
+        """Resolve a =SUM(range) total cell by adding up the cells it points at.
+
+        This checks the range is right — an off-by-one there is the whole risk
+        of writing formulas instead of answers, and openpyxl hands back the
+        formula text rather than a computed value."""
+        import openpyxl.utils
+        value = self._row(ws, row_label)[col]
+        self.assertTrue(isinstance(value, str) and value.startswith('=SUM('),
+                        f'{row_label!r} col {col} is not a SUM formula: {value!r}')
+        ref = value[len('=SUM('):].rstrip(')')
+        total = 0
+        for line in ws[ref]:
+            for cell in (line if isinstance(line, tuple) else (line,)):
+                if isinstance(cell.value, (int, float)):
+                    total += cell.value
+        return round(total, 3)
+
     # ── shape ──
     def test_only_the_three_sheets(self):
         self.assertEqual(self._wb().sheetnames, ['semsters', 'Courses', 'Sales ledger'])
@@ -1271,7 +1289,7 @@ class SalesWorkbookTests(TestCase):
         self._sell('ITIS103'); self._sell('ITIS103')
         ws = self._wb()['Courses']
         col = self._headers(ws).index('ITIS103')
-        self.assertEqual(self._row(ws, 'Total copies sold')[col], 474)
+        self.assertEqual(self._calc(ws, 'Total copies sold', col), 474)
 
     def test_a_renamed_course_keeps_one_column(self):
         self._sell('ACC112 / ACA112')                   # was plain ACC112 back then
@@ -1279,7 +1297,7 @@ class SalesWorkbookTests(TestCase):
         heads = [h for h in self._headers(ws) if h and h.upper().startswith('ACC112')]
         self.assertEqual(heads, ['ACC112 / ACA112'])
         col = self._headers(ws).index('ACC112 / ACA112')
-        self.assertEqual(self._row(ws, 'Total copies sold')[col], 301)   # 300 + 1
+        self.assertEqual(self._calc(ws, 'Total copies sold', col), 301)   # 300 + 1
 
     def test_old_semester_rows_survive_untouched(self):
         ws = self._wb()['Courses']
@@ -1318,19 +1336,19 @@ class SalesWorkbookTests(TestCase):
         ws = self._wb()['semsters']
         col = self._headers(ws).index('Semester 10 (Summer)')
         self.assertEqual(self._row(ws, 'Month 1')[col], 2.0)    # first selling month
-        self.assertEqual(self._row(ws, 'Total')[col], 5.0)
+        self.assertEqual(self._calc(ws, 'Total', col), 5.0)
 
     def test_old_monthly_revenue_is_preserved(self):
         ws = self._wb()['semsters']
         col = self._headers(ws).index('Semester 2')
         self.assertEqual(self._row(ws, 'Month 1')[col], 274.0)
-        self.assertEqual(self._row(ws, 'Total')[col], 780.0)
+        self.assertEqual(self._calc(ws, 'Total', col), 780.0)
 
     def test_old_and_new_revenue_add_up_in_the_same_semester(self):
         self._sell('ITIS103', semester=self.s9, price='2.000')
         ws = self._wb()['semsters']
         col = self._headers(ws).index('Semester 9')
-        self.assertEqual(self._row(ws, 'Total')[col], 709.5 + 2.0)
+        self.assertEqual(self._calc(ws, 'Total', col), 709.5 + 2.0)
 
     # ── ledger + endpoint ──
     def test_ledger_carries_the_detail(self):
@@ -1344,7 +1362,7 @@ class SalesWorkbookTests(TestCase):
         Order.objects.create(user=self.student, status='pending', semester=self.s10)
         Order.objects.create(user=self.student, status='cancelled', semester=self.s10)
         ws = self._wb()['Courses']
-        self.assertEqual(self._row(ws, 'Semester 10 (Summer)')[-1], None)
+        self.assertEqual(self._calc(ws, 'Semester 10 (Summer)', -1), 0)
 
     def test_endpoint_returns_a_spreadsheet_to_the_admin(self):
         self._sell('ITIS103')
@@ -1359,4 +1377,4 @@ class SalesWorkbookTests(TestCase):
 
     def test_builds_cleanly_with_no_sales_at_all(self):
         wb = self._wb()
-        self.assertEqual(self._row(wb['Courses'], 'Total copies sold')[-1], 4452)
+        self.assertEqual(self._calc(wb['Courses'], 'Total copies sold', -1), 4452)

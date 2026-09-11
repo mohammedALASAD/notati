@@ -156,40 +156,46 @@ def _sheet_courses(wb, items, history):
     ws.freeze_panes = 'B2'
     row += 1
 
-    col_copies = {k: 0 for k in keys}
+    first, last_col = row, get_column_letter(len(keys) + 1)
     for label in labels:
         _put(ws, row, 1, label, fill=LABEL_FILL, font=Font(size=10))
-        line = 0
         for idx, key in enumerate(keys, start=2):
             old = hist.get((label, key))
             new = live_copies.get((label, key), 0)
-            old_num = old if isinstance(old, (int, float)) else 0
             if isinstance(old, str) and not new:
                 # 'No Pay' / 'Summer' — not on sale, not offered. Never a zero.
                 _put(ws, row, idx, old, font=GREY)
                 continue
-            total = old_num + new
+            total = (old if isinstance(old, (int, float)) else 0) + new
             _put(ws, row, idx, total if (old is not None or new) else None)
-            col_copies[key] += total
-            line += total
-        _put(ws, row, len(keys) + 2, line or None, font=Font(bold=True, size=10))
+        # Live row total, so editing a cell updates it. SUM skips the text
+        # markers by itself, which is exactly what we want.
+        _put(ws, row, len(keys) + 2, f'=SUM(B{row}:{last_col}{row})',
+             font=Font(bold=True, size=10))
         row += 1
+    last = row - 1
 
     _put(ws, row, 1, 'Total copies sold', fill=TOTAL_FILL, font=HEAD_FONT)
-    for idx, key in enumerate(keys, start=2):
-        _put(ws, row, idx, col_copies[key], fill=TOTAL_FILL, font=HEAD_FONT)
-    _put(ws, row, len(keys) + 2, sum(col_copies.values()),
+    for idx in range(2, len(keys) + 2):
+        col = get_column_letter(idx)
+        _put(ws, row, idx, f'=SUM({col}{first}:{col}{last})',
+             fill=TOTAL_FILL, font=HEAD_FONT)
+    # Sums the grid itself rather than the subtotals above it — one less layer
+    # to go wrong, and still right if a subtotal is ever overtyped.
+    _put(ws, row, len(keys) + 2, f'=SUM(B{first}:{last_col}{last})',
          fill=COUNT_FILL, font=Font(bold=True, size=10))
     row += 1
 
+    # Value can't be a formula over the grid above: the grid holds copies, and
+    # chapters have never all cost the same. Each course's figure is its
+    # hand-kept value plus what the website actually took; only the grand total
+    # sums the row.
     _put(ws, row, 1, 'Total value of copies sold', fill=TOTAL_FILL, font=HEAD_FONT)
-    grand_value = 0.0
     for idx, key in enumerate(keys, start=2):
         value = float(hist_value.get(key) or 0) + float(live_value.get(key, 0))
-        grand_value += value
         _put(ws, row, idx, round(value, 3) or None, fill=TOTAL_FILL, font=HEAD_FONT,
              money=True)
-    _put(ws, row, len(keys) + 2, round(grand_value, 3),
+    _put(ws, row, len(keys) + 2, f'=SUM(B{row}:{last_col}{row})',
          fill=GRAND_FILL, font=Font(bold=True, size=10), money=True)
     return ws
 
@@ -252,39 +258,41 @@ def _sheet_semesters(wb, items, history):
     ws.freeze_panes = 'B2'
     row += 1
 
-    totals = {label: 0.0 for label in labels}
-    filled = {label: 0 for label in labels}
+    first, last_col = row, get_column_letter(len(labels) + 1)
     for number in range(1, months + 1):
         _put(ws, row, 1, f'Month {number}', fill=LABEL_FILL, font=Font(size=10))
         for idx, label in enumerate(labels, start=2):
             old = hist.get((label, number))
             new = live.get((label, number))
             if old is None and new is None:
-                _put(ws, row, idx, None)
+                _put(ws, row, idx, None)          # a month with no sales stays blank
                 continue
-            value = round(float(old or 0) + float(new or 0), 3)
-            _put(ws, row, idx, value, money=True)
-            totals[label] += value
-            filled[label] += 1
+            _put(ws, row, idx, round(float(old or 0) + float(new or 0), 3), money=True)
         row += 1
+    last = row - 1
 
+    total_row = row
     _put(ws, row, 1, 'Total', fill=TOTAL_FILL, font=HEAD_FONT)
-    for idx, label in enumerate(labels, start=2):
-        _put(ws, row, idx, round(totals[label], 3), fill=TOTAL_FILL, font=HEAD_FONT,
-             money=True)
-    _put(ws, row, len(labels) + 2, round(sum(totals.values()), 3),
+    for idx in range(2, len(labels) + 2):
+        col = get_column_letter(idx)
+        _put(ws, row, idx, f'=SUM({col}{first}:{col}{last})',
+             fill=TOTAL_FILL, font=HEAD_FONT, money=True)
+    _put(ws, row, len(labels) + 2, f'=SUM(B{first}:{last_col}{last})',
          fill=GRAND_FILL, font=Font(bold=True, size=10), money=True)
     row += 1
 
+    # Per month = the term's total over the months it actually sold in, and the
+    # figure on the end is the average of those — the same way the old record
+    # worked it out.
     _put(ws, row, 1, 'Per month', fill=TOTAL_FILL, font=HEAD_FONT)
-    months_used = 0
-    for idx, label in enumerate(labels, start=2):
-        count = filled[label]
-        months_used += count
-        _put(ws, row, idx, round(totals[label] / count, 3) if count else None,
+    for idx in range(2, len(labels) + 2):
+        col = get_column_letter(idx)
+        _put(ws, row, idx,
+             f'=IF(COUNT({col}{first}:{col}{last})=0,"",'
+             f'{col}{total_row}/COUNT({col}{first}:{col}{last}))',
              fill=TOTAL_FILL, font=HEAD_FONT, money=True)
     _put(ws, row, len(labels) + 2,
-         round(sum(totals.values()) / months_used, 3) if months_used else None,
+         f'=IF(COUNT(B{row}:{last_col}{row})=0,"",AVERAGE(B{row}:{last_col}{row}))',
          font=Font(bold=True, size=10), money=True)
     return ws
 
@@ -302,12 +310,10 @@ def _sheet_ledger(wb, items):
         ws.column_dimensions[get_column_letter(idx)].width = width
     ws.freeze_panes = 'A2'
 
-    row, gross, net_total = 2, Decimal('0'), Decimal('0')
+    row = 2
     for item in items:
         order = item.order
         net = _net(item)
-        gross += item.price or Decimal('0')
-        net_total += net
         paid = order.paid_at or order.created_at
         values = [
             timezone.localtime(paid).strftime('%Y-%m-%d') if paid else '',
@@ -328,9 +334,13 @@ def _sheet_ledger(wb, items):
     _put(ws, row, 1, 'Total', fill=TOTAL_FILL, font=HEAD_FONT)
     for idx in range(2, 14):
         _put(ws, row, idx, None, fill=TOTAL_FILL)
-    _put(ws, row, 9, f'{row - 2} chapters', fill=TOTAL_FILL, font=HEAD_FONT)
-    _put(ws, row, 10, float(gross), fill=TOTAL_FILL, font=HEAD_FONT, money=True)
-    _put(ws, row, 12, float(net_total), fill=TOTAL_FILL, font=HEAD_FONT, money=True)
+    if row > 2:
+        _put(ws, row, 9, f'=COUNTA(I2:I{row - 1})&" chapters"',
+             fill=TOTAL_FILL, font=HEAD_FONT)
+        _put(ws, row, 10, f'=SUM(J2:J{row - 1})', fill=TOTAL_FILL, font=HEAD_FONT,
+             money=True)
+        _put(ws, row, 12, f'=SUM(L2:L{row - 1})', fill=TOTAL_FILL, font=HEAD_FONT,
+             money=True)
     return ws
 
 
