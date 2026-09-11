@@ -1378,3 +1378,144 @@ class SalesWorkbookTests(TestCase):
     def test_builds_cleanly_with_no_sales_at_all(self):
         wb = self._wb()
         self.assertEqual(self._calc(wb['Courses'], 'Total copies sold', -1), 4452)
+
+
+class WorkbookStaysCurrentTests(TestCase):
+    """End-to-end: a student buys, the admin marks it paid, the admin downloads
+    the workbook — and the new numbers are in it. Everything goes through the
+    real HTTP endpoints, so this proves the whole chain, not just the builder."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 10 (Summer)', position=10,
+                                               is_summer=True, is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara', college='IT')
+        self.course  = Course.objects.create(name='ITIS103', college='IT')
+        self.note    = Note.objects.create(course=self.course, chapter_number=2,
+                                           chapter_title='Layers', price=Decimal('2.000'))
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def _download(self):
+        """Download the workbook exactly as the admin does, and read it back."""
+        import openpyxl
+        resp = self._client(self.admin).get('/api/admin/sales-workbook/')
+        self.assertEqual(resp.status_code, 200)
+        return openpyxl.load_workbook(BytesIO(resp.content))
+
+    def _headers(self, ws):
+        return [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
+
+    def _cell(self, ws, row_label, column_label):
+        col = self._headers(ws).index(column_label)
+        for row in ws.iter_rows():
+            if row[0].value == row_label:
+                return row[col].value
+        raise AssertionError(f'no row {row_label!r}')
+
+    def _buy(self, note):
+        """The student places a real order through the API."""
+        resp = self._client(self.student).post('/api/orders/', {'note_ids': [note.id]},
+                                               format='json')
+        self.assertEqual(resp.status_code, 201)
+        return resp.data['id']
+
+    def _mark_paid(self, order_id):
+        resp = self._client(self.admin).patch(f'/api/admin/orders/{order_id}/',
+                                              {'status': 'paid'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+
+    # ── a sale reaching the file ──
+    def test_a_paid_sale_shows_up_in_the_next_download(self):
+        before = self._cell(self._download()['Courses'], 'Semester 10 (Summer)', 'ITIS103')
+        self.assertIsNone(before)                       # nothing sold yet
+
+        self._mark_paid(self._buy(self.note))
+
+        after = self._cell(self._download()['Courses'], 'Semester 10 (Summer)', 'ITIS103')
+        self.assertEqual(after, 1)
+
+    def test_a_pending_order_is_invisible_until_it_is_marked_paid(self):
+        order_id = self._buy(self.note)
+        # Buying alone is not revenue — the admin confirms payment by hand.
+        self.assertIsNone(
+            self._cell(self._download()['Courses'], 'Semester 10 (Summer)', 'ITIS103'))
+        self._mark_paid(order_id)
+        self.assertEqual(
+            self._cell(self._download()['Courses'], 'Semester 10 (Summer)', 'ITIS103'), 1)
+
+    def test_each_further_sale_moves_the_number(self):
+        for expected in (1, 2, 3):
+            note = Note.objects.create(course=self.course, chapter_number=10 + expected,
+                                       chapter_title='Ch', price=Decimal('1.000'))
+            self._mark_paid(self._buy(note))
+            self.assertEqual(
+                self._cell(self._download()['Courses'], 'Semester 10 (Summer)', 'ITIS103'),
+                expected)
+
+    def test_revenue_reaches_the_semsters_sheet(self):
+        self._mark_paid(self._buy(self.note))
+        ws = self._download()['semsters']
+        self.assertEqual(self._cell(ws, 'Month 1', 'Semester 10 (Summer)'), 2.0)
+
+    # ── a new course appearing ──
+    def test_adding_a_course_puts_it_in_the_file_before_it_has_sold(self):
+        Course.objects.create(name='ITCY999', college='IT')
+        # No sale yet — the column is still there, just empty.
+        self.assertIn('ITCY999', self._headers(self._download()['Courses']))
+
+    def test_a_brand_new_course_fills_in_once_it_sells(self):
+        new = Course.objects.create(name='ITCY999', college='IT')
+        note = Note.objects.create(course=new, chapter_number=1, chapter_title='New',
+                                   price=Decimal('3.000'))
+        self._mark_paid(self._buy(note))
+
+        ws = self._download()['Courses']
+        self.assertEqual(self._cell(ws, 'Semester 10 (Summer)', 'ITCY999'), 1)
+        self.assertEqual(self._cell(ws, 'Total value of copies sold', 'ITCY999'), 3.0)
+
+    def test_a_deleted_course_keeps_its_column_for_past_sales(self):
+        new = Course.objects.create(name='ITOLD100', college='IT')
+        note = Note.objects.create(course=new, chapter_number=1, chapter_title='Old',
+                                   price=Decimal('1.000'))
+        self._mark_paid(self._buy(note))
+        new.delete()                                    # course retired afterwards
+        ws = self._download()['Courses']
+        self.assertIn('ITOLD100', self._headers(ws))    # the sale keeps its column
+        self.assertEqual(self._cell(ws, 'Semester 10 (Summer)', 'ITOLD100'), 1)
+
+    def test_a_new_course_is_added_after_the_ones_the_old_record_had(self):
+        Course.objects.create(name='ZZZ100', college='IT')
+        heads = [h for h in self._headers(self._download()['Courses']) if h]
+        self.assertLess(heads.index('ITIS103'), heads.index('ZZZ100'))
+
+    # ── a new semester appearing ──
+    def test_a_new_semester_becomes_a_row_and_a_column(self):
+        resp = self._client(self.admin).post('/api/admin/semesters/',
+                                             {'label': 'Semester 11'}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self._client(self.admin).patch(f'/api/admin/semesters/{resp.data["id"]}/',
+                                       {'is_current': True}, format='json')
+        self._mark_paid(self._buy(self.note))
+
+        wb = self._download()
+        self.assertEqual(self._cell(wb['Courses'], 'Semester 11', 'ITIS103'), 1)
+        self.assertIn('Semester 11', self._headers(wb['semsters']))
+        self.assertEqual(self._cell(wb['semsters'], 'Month 1', 'Semester 11'), 2.0)
+
+    # ── history is never rewritten ──
+    def test_changing_a_price_later_does_not_rewrite_past_sales(self):
+        self._mark_paid(self._buy(self.note))
+        self.note.price = Decimal('9.000')              # put the price up afterwards
+        self.note.save()
+        ws = self._download()['Courses']
+        self.assertEqual(self._cell(ws, 'Total value of copies sold', 'ITIS103'),
+                         560.5 + 2.0)                   # still what was actually paid
+
+    def test_the_hand_kept_years_never_move(self):
+        self._mark_paid(self._buy(self.note))
+        ws = self._download()['Courses']
+        self.assertEqual(self._cell(ws, 'Semester 1', 'ITIS103'), 46)
+        self.assertEqual(self._cell(ws, 'Semester 8', 'ITIS103'), 129)

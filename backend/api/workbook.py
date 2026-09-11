@@ -30,7 +30,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from .models import OrderItem, Semester
+from .models import Course, OrderItem, Semester
 
 HISTORY_PATH = Path(__file__).resolve().parent / 'sales_history.json'
 
@@ -98,7 +98,12 @@ def _semester_labels(history):
 
 def _course_columns(history, items):
     """Course columns in the order the old record had them, with anything new
-    appended. The newest name seen for a code is the one shown."""
+    appended. The newest name seen for a code is the one shown.
+
+    Every course in the catalogue gets a column, not just the ones that have
+    sold — add a course today and it is in the file straight away, with an empty
+    column until its first sale. The old record worked the same way, listing
+    courses before they were on sale."""
     names, order = {}, []
 
     def register(name):
@@ -110,9 +115,17 @@ def _course_columns(history, items):
 
     for name in history.get('courses', []):
         register(name)
+    live = set()
+    for name in Course.objects.values_list('name', flat=True):
+        key = register(name)
+        names[key] = name                   # the catalogue name is today's name
+        live.add(key)
+    # Finally anything an order still remembers whose course has since been
+    # deleted — an old sale must never lose its column.
     for item in items:
         key = register(item.course_name or '(unknown)')
-        names[key] = item.course_name or '(unknown)'   # today's name wins
+        if key not in live:
+            names.setdefault(key, item.course_name or '(unknown)')
     return order, names
 
 
