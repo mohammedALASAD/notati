@@ -669,6 +669,29 @@ class LeakTracingTests(TestCase):
         self.assertEqual(resp.status_code, 401)
         self.assertFalse(self.DownloadLog.objects.filter(user__isnull=True).exists())
 
+    def test_note_views_days_filter_limits_to_recent_opens(self):
+        # Two opens on the same chapter: one now, one 30 days ago.
+        code = self.tracing.code_for(self.student.id, self.note.id)
+        self.DownloadLog.objects.create(user=self.student, note=self.note, code=code)
+        old = self.DownloadLog.objects.create(user=self.student, note=self.note, code=code)
+        self.DownloadLog.objects.filter(pk=old.pk).update(
+            created_at=timezone.now() - timedelta(days=30))
+
+        all_time = self._client(self.admin).get('/api/admin/note-views/')
+        self.assertEqual(next(r for r in all_time.data if r['id'] == self.note.id)['opens'], 2)
+
+        week = self._client(self.admin).get('/api/admin/note-views/?days=7')
+        # The 30-day-old open falls outside the window.
+        self.assertEqual(next(r for r in week.data if r['id'] == self.note.id)['opens'], 1)
+
+    def test_note_views_ignores_a_bad_days_value(self):
+        self.DownloadLog.objects.create(
+            user=self.student, note=self.note,
+            code=self.tracing.code_for(self.student.id, self.note.id))
+        resp = self._client(self.admin).get('/api/admin/note-views/?days=abc')
+        self.assertEqual(resp.status_code, 200)   # falls back to all time, no crash
+        self.assertEqual(next(r for r in resp.data if r['id'] == self.note.id)['opens'], 1)
+
     def test_note_views_reports_purchases_and_leaves_free_blank(self):
         # A paid chapter reports how many students own it; a free one reports null
         # so the admin table leaves the cell blank.

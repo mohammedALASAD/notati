@@ -2259,35 +2259,71 @@ function NoteViews() {
   const [loading, setLoading] = useStateAd(true);
   const [college, setCollege] = useStateAd('all');
   const [priceF,  setPriceF]  = useStateAd('all');
+  const [days,    setDays]    = useStateAd('all');   // server-side time window
+  const [q,       setQ]       = useStateAd('');
+  const [sortKey, setSortKey] = useStateAd('opens');
+  const [sortDir, setSortDir] = useStateAd('desc');
 
+  // Refetches whenever the time window changes — the counts are re-aggregated
+  // on the server, so this is a real time filter, not a client-side hide.
   useEffectAd(() => {
-    NotatiAPI.getNoteViews()
+    setLoading(true);
+    NotatiAPI.getNoteViews(days === 'all' ? null : days)
       .then(setRows).catch(e => toast.error('Could not load views', e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [days]);
 
   const colleges = useMemoAd(() => {
     const seen = new Set();
     rows.forEach(r => { if (r.college) seen.add(r.college); });
+    if (college !== 'all') seen.add(college);   // keep the active choice selectable
     return Array.from(seen).sort();
-  }, [rows]);
+  }, [rows, college]);
 
-  const shown = useMemoAd(() => rows.filter(r => {
-    if (priceF === 'free' && !r.is_free) return false;
-    if (priceF === 'paid' && r.is_free) return false;
-    if (college !== 'all' && r.college !== college) return false;
-    return true;
-  }), [rows, college, priceF]);
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+    else { setSortKey(key); setSortDir(key === 'course_name' ? 'asc' : 'desc'); }
+  }
+
+  const shown = useMemoAd(() => {
+    const needle = q.trim().toLowerCase();
+    const list = rows.filter(r => {
+      if (priceF === 'free' && !r.is_free) return false;
+      if (priceF === 'paid' && r.is_free) return false;
+      if (college !== 'all' && r.college !== college) return false;
+      if (needle && ![r.course_name, r.chapter_title, r.college]
+            .some(s => (s || '').toLowerCase().includes(needle))) return false;
+      return true;
+    });
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return list.slice().sort((a, b) => {
+      // Free chapters have no purchase count — sort them below the numbers.
+      const av = a[sortKey] == null ? -1 : a[sortKey];
+      const bv = b[sortKey] == null ? -1 : b[sortKey];
+      if (av === bv) return 0;
+      return (av < bv ? -1 : 1) * dir;
+    });
+  }, [rows, college, priceF, q, sortKey, sortDir]);
 
   const totalOpens  = useMemoAd(() => shown.reduce((s, r) => s + r.opens, 0), [shown]);
   const totalGuests = useMemoAd(() => shown.reduce((s, r) => s + (r.guest_opens || 0), 0), [shown]);
-  const topOpens    = shown.length > 0 ? shown[0].opens : 1;
+  // Highest-opens row, found independently of the sort, so the bar scale and the
+  // "most opened" card stay right when you sort by another column.
+  const topRow   = useMemoAd(() => shown.reduce((best, r) => (!best || r.opens > best.opens ? r : best), null), [shown]);
+  const topOpens = topRow ? topRow.opens : 1;
 
-  if (loading) return <PageLoader rows={5}/>;
-  if (rows.length === 0) return (
-    <EmptyState title="No opens yet"
-                message="This fills in as chapters get opened. Every read or download is counted here — by logged-in students and by guests with no account (guests can only open free chapters)."/>
-  );
+  const sortArrow = key => (sortKey === key ? (sortDir === 'desc' ? ' ↓' : ' ↑') : '');
+  const thSort = (key, width) => ({
+    className: 'r',
+    onClick: () => toggleSort(key),
+    title: 'Click to sort',
+    style: { width, cursor: 'pointer', userSelect: 'none',
+             color: sortKey === key ? 'var(--fg-1)' : undefined },
+  });
+
+  // Only block the whole panel on the very first load. After that the filter bar
+  // stays on screen, so a window that returns nothing can always be widened again.
+  if (loading && rows.length === 0) return <PageLoader rows={5}/>;
 
   return (
     <div>
@@ -2297,8 +2333,8 @@ function NoteViews() {
           { label: 'Total opens',      value: String(totalOpens),    sub: 'reads + downloads', color: 'var(--notati-walnut)' },
           { label: 'Guest opens',      value: String(totalGuests),   sub: 'no account (free only)', color: 'var(--notati-amber)' },
           { label: 'Chapters opened',  value: String(shown.length),  sub: 'distinct chapters', color: 'var(--notati-forest)' },
-          { label: 'Most opened',      value: shown.length > 0 ? String(shown[0].opens) : '0',
-            sub: shown.length > 0 ? `${shown[0].course_name} Ch.${shown[0].chapter_number}` : '-', color: 'var(--fg-1)' },
+          { label: 'Most opened',      value: topRow ? String(topRow.opens) : '0',
+            sub: topRow ? `${topRow.course_name} Ch.${topRow.chapter_number}` : '-', color: 'var(--fg-1)' },
         ].map(card => (
           <div key={card.label} style={{ flex: 1, minWidth: 160, background: 'var(--bg-section)',
                         border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)', padding: '16px 20px' }}>
@@ -2316,6 +2352,12 @@ function NoteViews() {
 
       {/* Filter bar */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
+        <select className="filter-select" value={days} onChange={e => setDays(e.target.value)}>
+          <option value="all">All time</option>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
         <select className="filter-select" value={college} onChange={e => setCollege(e.target.value)}>
           <option value="all">All colleges</option>
           {colleges.map(c => <option key={c} value={c}>{c}</option>)}
@@ -2325,10 +2367,30 @@ function NoteViews() {
           <option value="free">Free only</option>
           <option value="paid">Paid only</option>
         </select>
+        <div className="search-mini" style={{ fontSize: 14, flex: '1 1 220px', minWidth: 190 }}>
+          <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+          <input value={q} onChange={e => setQ(e.target.value)}
+                 placeholder="Search chapter or course…"/>
+          {q && (
+            <button onClick={() => setQ('')}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer',
+                             color: 'var(--fg-3)', padding: '0 4px', lineHeight: 1 }}>
+              <Icons.Close size={14}/>
+            </button>
+          )}
+        </div>
       </div>
 
-      {shown.length === 0 ? (
-        <EmptyState title="No matches" message="Try a different filter."/>
+      {loading ? (
+        <PageLoader rows={4}/>
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title={days === 'all' ? 'No opens yet' : 'No opens in this period'}
+          message={days === 'all'
+            ? 'This fills in as chapters get opened. Every read or download is counted here — by logged-in students and by guests with no account (guests can only open free chapters).'
+            : 'Nothing was opened in the selected time window. Try a wider range.'}/>
+      ) : shown.length === 0 ? (
+        <EmptyState title="No matches" message="Try a different filter or search term."/>
       ) : (
         <section className="panel">
           <div className="panel-body flush">
@@ -2336,12 +2398,15 @@ function NoteViews() {
               <table className="tbl">
                 <thead>
                   <tr>
-                    <th>Chapter</th>
-                    <th className="r" style={{ width: 110 }}>Opens</th>
-                    <th className="r" style={{ width: 90 }}>Students</th>
-                    <th className="r" style={{ width: 90 }}>Guests</th>
-                    <th className="r" style={{ width: 100 }}>Purchases</th>
-                    <th className="r" style={{ width: 130 }}>Last opened</th>
+                    <th onClick={() => toggleSort('course_name')} title="Click to sort"
+                        style={{ cursor: 'pointer', userSelect: 'none',
+                                 color: sortKey === 'course_name' ? 'var(--fg-1)' : undefined }}>
+                      Chapter{sortArrow('course_name')}
+                    </th>
+                    <th {...thSort('opens', 110)}>Opens{sortArrow('opens')}</th>
+                    <th {...thSort('students', 90)}>Students{sortArrow('students')}</th>
+                    <th {...thSort('guest_opens', 90)}>Guests{sortArrow('guest_opens')}</th>
+                    <th {...thSort('purchases', 100)}>Purchases{sortArrow('purchases')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2382,9 +2447,6 @@ function NoteViews() {
                           style={{ color: r.purchases ? 'var(--fg-1)' : 'var(--fg-3)',
                                    fontWeight: r.purchases ? 700 : 400 }}>
                         {r.purchases == null ? '' : r.purchases}
-                      </td>
-                      <td className="r" data-l="Last opened" style={{ color: 'var(--fg-3)', fontSize: 13 }}>
-                        {r.last_seen ? fmtDate(r.last_seen) : '-'}
                       </td>
                     </tr>
                   ))}

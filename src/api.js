@@ -284,8 +284,10 @@
       return data || { total_revenue: '0.000', total_sales: 0, rows: [] };
     },
 
-    async getNoteViews() {
-      const data = await req('GET', '/admin/note-views/');
+    // days: limit the counts to the last N days; falsy = all time.
+    async getNoteViews(days) {
+      const qs = days ? `?days=${encodeURIComponent(days)}` : '';
+      const data = await req('GET', `/admin/note-views/${qs}`);
       return Array.isArray(data) ? data : [];
     },
 

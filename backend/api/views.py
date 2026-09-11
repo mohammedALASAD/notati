@@ -817,16 +817,25 @@ def admin_note_views(request):
     """Per-chapter open counts from the download log — how many times each note
     (free or paid) was opened/read, and by how many distinct students. Every
     in-app read/download by a logged-in student is one log row, so 'opens' means
-    times accessed, and 'students' is the unique-student count."""
-    from django.db.models import Count, Max
+    times accessed, and 'students' is the unique-student count.
+
+    Pass ?days=N to count only opens from the last N days; omit it for all time.
+    Note that 'purchases' is always the all-time owner count — a time window
+    narrows the reading activity, not who owns the chapter."""
+    from django.db.models import Count
+    logs = DownloadLog.objects.filter(note__isnull=False)
+    try:
+        days = int(request.query_params.get('days') or 0)
+    except (TypeError, ValueError):
+        days = 0
+    if days > 0:
+        logs = logs.filter(created_at__gte=timezone.now() - timedelta(days=days))
     rows = (
-        DownloadLog.objects.filter(note__isnull=False)
-        .values('note_id')
+        logs.values('note_id')
         .annotate(
             opens=Count('id'),
             students=Count('user_id', distinct=True),
             guest_opens=Count('id', filter=Q(user_id__isnull=True)),
-            last_seen=Max('created_at'),
         )
         .order_by('-opens')[:50]
     )
@@ -855,7 +864,6 @@ def admin_note_views(request):
             # How many students own this chapter. Free chapters are never bought,
             # so they report null and the UI leaves the cell blank.
             'purchases': None if n.is_free else n.purchase_count,
-            'last_seen': r['last_seen'],
         })
     return Response(data)
 
