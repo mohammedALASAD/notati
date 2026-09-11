@@ -2327,6 +2327,26 @@ function NoteViews() {
   const topRow   = useMemoAd(() => shown.reduce((best, r) => (!best || r.opens > best.opens ? r : best), null), [shown]);
   const topOpens = topRow ? topRow.opens : 1;
 
+  // Exports exactly what is on screen: the same date range, filters, search and
+  // sort order. What you see is what lands in the spreadsheet.
+  function exportCSV() {
+    const range = from || to ? `${from || 'start'}_to_${to || today}` : 'all-time';
+    downloadCSV(
+      `notati-chapter-views-${range}.csv`,
+      ['Course', 'Chapter', 'Title', 'College', 'Access', 'Price (BHD)',
+       'Opens', 'Students', 'Guest opens', 'Purchases'],
+      shown.map(r => [
+        r.course_name, r.chapter_number, r.chapter_title, r.college,
+        r.is_free ? 'Free' : 'Paid',
+        r.is_free ? 0 : Number(r.price),
+        r.opens, r.students, r.guest_opens || 0,
+        // Free chapters are never bought — blank, not 0, so it reads as "n/a".
+        r.purchases == null ? '' : r.purchases,
+      ]),
+    );
+    toast.success('Exported', `${shown.length} chapter${shown.length === 1 ? '' : 's'} saved as CSV.`);
+  }
+
   const sortArrow = key => (sortKey === key ? (sortDir === 'desc' ? ' ↓' : ' ↑') : '');
   const thSort = (key, width) => ({
     className: 'r',
@@ -2403,6 +2423,10 @@ function NoteViews() {
             </button>
           )}
         </div>
+        <button className="btn btn-soft btn-sm" onClick={exportCSV} disabled={!shown.length}
+                title="Download these rows as a spreadsheet">
+          <Icons.Download size={15}/> Export CSV
+        </button>
       </div>
 
       {loading ? (

@@ -861,7 +861,11 @@ def admin_note_views(request):
             students=Count('user_id', distinct=True),
             guest_opens=Count('id', filter=Q(user_id__isnull=True)),
         )
-        .order_by('-opens')[:50]
+        # Capped so a runaway log can't build a huge response. 200 is well clear
+        # of the catalogue size; the admin table is searchable and sortable, and
+        # the CSV export takes these rows, so truncating early would quietly
+        # hand back an incomplete spreadsheet.
+        .order_by('-opens')[:200]
     )
     notes = {
         n.id: n for n in

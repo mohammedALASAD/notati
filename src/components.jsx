@@ -455,6 +455,40 @@ class ErrorBoundary extends React.Component {
 }
 
 /* ============================================================
+   CSV export — builds a file in the browser from rows already on
+   screen, so it needs no backend and always matches what the
+   admin is looking at.
+   ============================================================ */
+
+function csvCell(v) {
+  if (v == null || v === '') return '';
+  // Plain numbers go out unquoted so the spreadsheet can sum and sort them.
+  if (typeof v === 'number') return isFinite(v) ? String(v) : '';
+  let s = String(v);
+  // Excel runs a cell starting with = + - @ as a formula. Prefixing an
+  // apostrophe forces it to stay text — matters for anything a student typed.
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  // Any field can hold a comma, quote or newline, so quote them all and
+  // double up the internal quotes.
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+
+function downloadCSV(filename, headers, rows) {
+  const lines = [headers.map(csvCell).join(',')];
+  rows.forEach(r => lines.push(r.map(csvCell).join(',')));
+  // \uFEFF is the UTF-8 BOM: without it Excel mangles non-ASCII titles.
+  // \r\n line endings are what Excel expects.
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+/* ============================================================
    Export to window so other Babel scripts can use these
    ============================================================ */
 Object.assign(window, {
@@ -462,5 +496,5 @@ Object.assign(window, {
   ToastProvider, useToast, ToastContext,
   Modal, EmptyState, FileTypeChip, StatusBadge, Avatar,
   Sidebar, Topbar, Stat, PageLoader, ErrorBoundary,
-  fmtDate, fmtRelative, fmtSize
+  fmtDate, fmtRelative, fmtSize, downloadCSV
 });
