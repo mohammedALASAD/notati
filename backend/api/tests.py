@@ -14,7 +14,7 @@ from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 from . import pdfutils, verification
 from .models import (User, Course, Note, NoteFile, Access, BagItem, VerificationCode,
                      Order, OrderItem, DiscountCode, DiscountRedemption, Upload,
-                     UploadFile, Semester)
+                     UploadFile, Semester, DownloadLog)
 from .serializers import NoteSerializer, RegisterSerializer
 
 
@@ -1519,3 +1519,191 @@ class WorkbookStaysCurrentTests(TestCase):
         ws = self._download()['Courses']
         self.assertEqual(self._cell(ws, 'Semester 1', 'ITIS103'), 46)
         self.assertEqual(self._cell(ws, 'Semester 8', 'ITIS103'), 129)
+
+
+class ManualUnlockCountsTests(TestCase):
+    """A chapter unlocked by hand is a copy in a student's possession, and the
+    Insights Sales page has always counted it. The workbook must agree."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.s10 = Semester.objects.create(label='Semester 10 (Summer)', position=10,
+                                           is_summer=True)
+        self.s11 = Semester.objects.create(label='Semester 11', position=11,
+                                           is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara', college='IT')
+        self.course  = Course.objects.create(name='ITNE233', college='IT')
+        self.note    = Note.objects.create(course=self.course, chapter_number=3,
+                                           chapter_title='Transport', price=Decimal('2.000'))
+        self.free    = Note.objects.create(course=self.course, chapter_number=1,
+                                           chapter_title='Intro', price=Decimal('0'))
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def _wb(self):
+        import openpyxl
+        resp = self._client(self.admin).get('/api/admin/sales-workbook/')
+        self.assertEqual(resp.status_code, 200)
+        return openpyxl.load_workbook(BytesIO(resp.content))
+
+    def _cell(self, ws, row_label, column_label):
+        col = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))].index(column_label)
+        for row in ws.iter_rows():
+            if row[0].value == row_label:
+                return row[col].value
+        raise AssertionError(f'no row {row_label!r}')
+
+    def _history_value(self, course):
+        """What the hand-kept record already holds for a course. The value row
+        merges old and new, so a test about a new sale has to start from it."""
+        import json, pathlib
+        from api.workbook import _course_key
+        path = pathlib.Path(__file__).resolve().parent / 'sales_history.json'
+        values = json.loads(path.read_text())['course_total_value']
+        return next((v for k, v in values.items()
+                     if _course_key(k) == _course_key(course)), 0) or 0
+
+    def _unlock(self, note, user=None):
+        """Unlock a chapter by hand, exactly as the Unlock access page does."""
+        resp = self._client(self.admin).post(
+            '/api/access/', {'user': (user or self.student).id, 'note': note.id},
+            format='json')
+        self.assertEqual(resp.status_code, 201)
+
+    # ── the bug that was reported ──
+    def test_a_hand_unlock_reaches_the_workbook(self):
+        self.assertIsNone(self._cell(self._wb()['Courses'], 'Semester 11', 'ITNE233'))
+        self._unlock(self.note)
+        self.assertEqual(self._cell(self._wb()['Courses'], 'Semester 11', 'ITNE233'), 1)
+
+    def test_a_hand_unlock_is_valued_at_list_price(self):
+        self._unlock(self.note)
+        ws = self._wb()['Courses']
+        self.assertAlmostEqual(self._cell(ws, 'Total value of copies sold', 'ITNE233'),
+                               self._history_value('ITNE233') + 2.0, places=3)
+
+    def test_a_hand_unlock_lands_in_the_current_semester(self):
+        self._unlock(self.note)
+        ws = self._wb()['Courses']
+        self.assertEqual(self._cell(ws, 'Semester 11', 'ITNE233'), 1)
+        self.assertIsNone(self._cell(ws, 'Semester 10 (Summer)', 'ITNE233'))
+
+    def test_a_hand_unlock_reaches_the_semsters_revenue_grid(self):
+        self._unlock(self.note)
+        self.assertEqual(self._cell(self._wb()['semsters'], 'Month 1', 'Semester 11'), 2.0)
+
+    def test_the_ledger_says_how_the_chapter_was_obtained(self):
+        self._unlock(self.note)
+        flat = [c.value for row in self._wb()['Sales ledger'].iter_rows() for c in row]
+        self.assertIn('Unlocked by hand', flat)
+        self.assertIn('Sara', flat)
+
+    def test_unlocking_a_free_chapter_is_not_a_sale(self):
+        self._unlock(self.free)
+        self.assertIsNone(self._cell(self._wb()['Courses'], 'Semester 11', 'ITNE233'))
+
+    def test_a_paid_sale_is_not_double_counted_by_its_access_row(self):
+        # Confirming an order also creates an Access row. The chapter must be
+        # counted once, at what was paid, not twice.
+        order = Order.objects.create(user=self.student, status='pending', semester=self.s11)
+        OrderItem.objects.create(order=order, note=self.note, course_name='ITNE233',
+                                 chapter_number='3', chapter_title='Transport',
+                                 price=Decimal('2.000'))
+        self._client(self.admin).patch(f'/api/admin/orders/{order.id}/',
+                                       {'status': 'paid'}, format='json')
+        ws = self._wb()['Courses']
+        self.assertEqual(self._cell(ws, 'Semester 11', 'ITNE233'), 1)
+        self.assertAlmostEqual(self._cell(ws, 'Total value of copies sold', 'ITNE233'),
+                               self._history_value('ITNE233') + 2.0, places=3)
+
+    def test_the_workbook_total_matches_the_sales_page(self):
+        """The two must never disagree — the admin compares them side by side."""
+        self._unlock(self.note)
+        other = User.objects.create_user('o@x.com', 'pw', name='Omar')
+        self._unlock(self.note, user=other)
+
+        sales = self._client(self.admin).get('/api/admin/sales/').data
+        ws = self._wb()['Courses']
+        self.assertEqual(sales['total_sales'], 2)
+        # The workbook column also carries the hand-kept years; strip those and
+        # what is left must be exactly what the Sales page reports.
+        website_only = (self._cell(ws, 'Total value of copies sold', 'ITNE233')
+                        - self._history_value('ITNE233'))
+        self.assertAlmostEqual(website_only, float(sales['total_revenue']), places=3)
+
+
+class InsightsSemesterFilterTests(TestCase):
+    """Insights can be read one semester at a time."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.s10 = Semester.objects.create(label='Semester 10 (Summer)', position=10,
+                                           is_summer=True)
+        self.s11 = Semester.objects.create(label='Semester 11', position=11,
+                                           is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.course  = Course.objects.create(name='ITNE233', college='IT')
+        self.note    = Note.objects.create(course=self.course, chapter_number=3,
+                                           chapter_title='Transport', price=Decimal('2.000'))
+        self.tracing = __import__('api.tracing', fromlist=['tracing'])
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def test_sales_can_be_scoped_to_one_semester(self):
+        old = User.objects.create_user('old@x.com', 'pw', name='Old')
+        Access.objects.create(user=old, note=self.note, semester=self.s10)
+        Access.objects.create(user=self.student, note=self.note, semester=self.s11)
+
+        everything = self._client(self.admin).get('/api/admin/sales/').data
+        self.assertEqual(everything['total_sales'], 2)
+
+        this_term = self._client(self.admin).get(
+            f'/api/admin/sales/?semester={self.s11.id}').data
+        self.assertEqual(this_term['total_sales'], 1)
+        self.assertEqual(this_term['total_revenue'], '2.000')
+
+    def test_views_can_be_scoped_to_one_semester(self):
+        code = self.tracing.code_for(self.student.id, self.note.id)
+        DownloadLog.objects.create(user=self.student, note=self.note, code=code,
+                                   semester=self.s10)
+        DownloadLog.objects.create(user=self.student, note=self.note, code=code,
+                                   semester=self.s11)
+        DownloadLog.objects.create(user=self.student, note=self.note, code=code,
+                                   semester=self.s11)
+
+        rows = self._client(self.admin).get('/api/admin/note-views/').data
+        self.assertEqual(next(r for r in rows if r['id'] == self.note.id)['opens'], 3)
+
+        rows = self._client(self.admin).get(
+            f'/api/admin/note-views/?semester={self.s11.id}').data
+        self.assertEqual(next(r for r in rows if r['id'] == self.note.id)['opens'], 2)
+
+    def test_purchases_follow_the_chosen_semester(self):
+        code = self.tracing.code_for(self.student.id, self.note.id)
+        DownloadLog.objects.create(user=self.student, note=self.note, code=code,
+                                   semester=self.s11)
+        Access.objects.create(user=self.student, note=self.note, semester=self.s10)
+        rows = self._client(self.admin).get(
+            f'/api/admin/note-views/?semester={self.s11.id}').data
+        # The open is in Semester 11 but the purchase was in Semester 10.
+        self.assertEqual(next(r for r in rows if r['id'] == self.note.id)['purchases'], 0)
+
+    def test_an_unknown_semester_returns_nothing_rather_than_everything(self):
+        Access.objects.create(user=self.student, note=self.note, semester=self.s11)
+        data = self._client(self.admin).get('/api/admin/sales/?semester=999999').data
+        self.assertEqual(data['total_sales'], 0)
+        self.assertEqual(self._client(self.admin).get(
+            '/api/admin/note-views/?semester=999999').data, [])
+
+    def test_a_download_is_stamped_with_the_current_semester(self):
+        Access.objects.create(user=self.student, note=self.note, semester=self.s11)
+        pdf = _make_pdf(1)
+        with patch('api.views._fetch_file_bytes', return_value=(pdf, 'application/pdf')):
+            self.note.pdf_file = 'notes/x.pdf'
+            self.note.save(update_fields=['pdf_file'])
+            self._client(self.student).get(f'/api/notes/{self.note.id}/download/')
+        self.assertEqual(DownloadLog.objects.latest('created_at').semester, self.s11)

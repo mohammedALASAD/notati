@@ -278,6 +278,10 @@ class DownloadLog(models.Model):
     to the student who downloaded it."""
     user       = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='downloads')
     note       = models.ForeignKey(Note, on_delete=models.SET_NULL, null=True, related_name='downloads')
+    # The term the open happened in, so Insights can be read one semester at a
+    # time. Stamped when the row is written, like Order.semester.
+    semester   = models.ForeignKey('Semester', on_delete=models.SET_NULL, null=True,
+                                   blank=True, related_name='downloads')
     code       = models.CharField(max_length=32, db_index=True)
     ip         = models.CharField(max_length=45, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

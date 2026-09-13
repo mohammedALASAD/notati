@@ -186,14 +186,16 @@ def _note_file_response(file_field, request, note):
             content = pdfutils.fingerprint_pdf(content, code)
         content_type = 'application/pdf'
         try:
-            DownloadLog.objects.create(user=user, note=note, code=code, ip=_client_ip(request))
+            DownloadLog.objects.create(user=user, note=note, code=code,
+                                       ip=_client_ip(request), semester=Semester.current())
         except Exception:
             pass  # never fail a download because logging hiccuped
     elif user is None and note.is_free:
         # Guest reading a free chapter (no account). We can't fingerprint without an
         # identity, but we still count the open — logged with no user, by IP.
         try:
-            DownloadLog.objects.create(user=None, note=note, code='', ip=_client_ip(request))
+            DownloadLog.objects.create(user=None, note=note, code='',
+                                       ip=_client_ip(request), semester=Semester.current())
         except Exception:
             pass
 
@@ -748,10 +750,28 @@ def admin_stats(request):
     })
 
 
+def _semester_filter(request):
+    """The ?semester= the admin picked, or None for every semester at once.
+    Returns (semester_or_None, ok) — ok is False if the id doesn't exist, so the
+    caller can answer with an empty result rather than silently showing all."""
+    raw = (request.query_params.get('semester') or '').strip()
+    if not raw or raw == 'all':
+        return None, True
+    semester = Semester.objects.filter(pk=raw).first() if raw.isdigit() else None
+    return semester, semester is not None
+
+
 @api_view(['GET'])
 @permission_classes([IsAdmin])
 def admin_sales(request):
     from collections import defaultdict
+
+    # One semester at a time, or all of them. Filtering the access grants is
+    # what scopes it — a grant is the unit this page counts as a sale.
+    semester, ok = _semester_filter(request)
+    if not ok:
+        return Response({'total_revenue': '0.000', 'total_gross_revenue': '0.000',
+                         'total_sales': 0, 'total_discounted_sales': 0, 'rows': []})
 
     # What each student actually paid per note, from PAID orders (net of any
     # order-level discount). Lets revenue reflect discounts instead of list price.
@@ -769,10 +789,11 @@ def admin_sales(request):
         .order_by('course__college', 'course__name', 'chapter_number')
     )
     note_ids = [n.id for n in notes]
+    grants = Access.objects.filter(note_id__in=note_ids)
+    if semester:
+        grants = grants.filter(semester=semester)
     grants_by_note = defaultdict(list)
-    for note_id, user_id in (Access.objects
-                             .filter(note_id__in=note_ids)
-                             .values_list('note_id', 'user_id')):
+    for note_id, user_id in grants.values_list('note_id', 'user_id'):
         grants_by_note[note_id].append(user_id)
 
     rows = []
@@ -836,6 +857,12 @@ def admin_note_views(request):
     from django.db.models import Count
     logs = DownloadLog.objects.filter(note__isnull=False)
 
+    semester, ok = _semester_filter(request)
+    if not ok:
+        return Response([])
+    if semester:
+        logs = logs.filter(semester=semester)
+
     def _day(param):
         """A ?from=/?to= value as a date, or None if absent or unparseable."""
         raw = (request.query_params.get(param) or '').strip()
@@ -873,10 +900,11 @@ def admin_note_views(request):
         # hand back an incomplete spreadsheet.
         .order_by('-opens')[:200]
     )
+    purchase_filter = Q(access_grants__semester=semester) if semester else Q()
     notes = {
         n.id: n for n in
         Note.objects.select_related('course')
-        .annotate(purchase_count=Count('access_grants'))
+        .annotate(purchase_count=Count('access_grants', filter=purchase_filter))
         .filter(id__in=[r['note_id'] for r in rows])
     }
     data = []

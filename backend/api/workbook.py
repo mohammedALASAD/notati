@@ -20,6 +20,7 @@ it completely.
 """
 import json
 import re
+from collections import namedtuple
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -30,7 +31,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from .models import Course, OrderItem, Semester
+from .models import Access, Course, OrderItem, Semester
 
 HISTORY_PATH = Path(__file__).resolve().parent / 'sales_history.json'
 
@@ -76,12 +77,85 @@ def _put(ws, row, col, value, *, fill=None, font=None, money=False):
     return cell
 
 
+Sale = namedtuple('Sale', 'semester course value when student email college '
+                          'chapter_number chapter_title list_price ref paid')
+
+
 def _net(item):
     """A line's share of its order's discount taken off, so revenue is what
     actually landed rather than list price."""
     price = item.price or Decimal('0')
     pct = Decimal(item.order.discount_percent or 0)
     return price - (price * pct / Decimal(100)).quantize(Decimal('0.001'))
+
+
+def _collect_sales():
+    """Every copy that went out, counted the same way the Insights Sales page
+    counts it: one per access grant on a paid chapter.
+
+    That matters — access is granted both by confirming an order and by
+    unlocking a chapter by hand, and a hand-unlock is still a copy in someone's
+    possession. Counting paid order lines alone missed every manual grant.
+
+    Where a paid order exists for that student and chapter, the sale is worth
+    what they actually paid, discount included; otherwise it is worth the list
+    price, which is what the Sales page shows for a hand-granted unlock.
+
+    Paid order lines whose access row has since gone — the chapter was deleted,
+    or access was revoked — are added afterwards so a past sale is never lost.
+    """
+    items = list(OrderItem.objects
+                 .filter(order__status='paid')
+                 .select_related('order', 'order__user', 'order__semester'))
+    # Only lines that still point at a chapter can be matched to an access row.
+    # A line whose chapter was deleted keeps its snapshotted course and price, so
+    # it is counted on its own below rather than being lost.
+    paid = {(i.order.user_id, i.note_id): i for i in items if i.note_id}
+
+    sales, seen = [], set()
+    grants = (Access.objects
+              .select_related('user', 'note__course', 'semester')
+              .order_by('granted_at'))
+    for grant in grants:
+        note = grant.note
+        if not note or note.price <= 0:
+            continue                      # free chapters are not sales
+        item = paid.get((grant.user_id, grant.note_id))
+        if item:
+            seen.add((grant.user_id, grant.note_id))
+            value, ref = _net(item), (item.order.code or f'#{item.order_id}')
+            semester = item.order.semester or grant.semester
+            when = item.order.paid_at or item.order.created_at or grant.granted_at
+        else:
+            value, ref = note.price, 'unlocked by hand'
+            semester, when = grant.semester, grant.granted_at
+        sales.append(Sale(
+            semester=semester.label if semester else 'Unassigned',
+            course=note.course.name if note.course else '(unknown)',
+            value=value, when=when,
+            student=grant.user.name, email=grant.user.email,
+            college=grant.user.college or '',
+            chapter_number=str(note.chapter_number), chapter_title=note.chapter_title,
+            list_price=note.price, ref=ref, paid=bool(item),
+        ))
+
+    # Sales with no access row left: the chapter was deleted, or access revoked.
+    for item in items:
+        if (item.order.user_id, item.note_id) in seen or (item.price or 0) <= 0:
+            continue
+        order = item.order
+        sales.append(Sale(
+            semester=order.semester.label if order.semester else 'Unassigned',
+            course=item.course_name or '(unknown)',
+            value=_net(item), when=order.paid_at or order.created_at,
+            student=order.user.name, email=order.user.email,
+            college=order.user.college or '',
+            chapter_number=item.chapter_number, chapter_title=item.chapter_title,
+            list_price=item.price, ref=order.code or f'#{order.pk}', paid=True,
+        ))
+
+    sales.sort(key=lambda s: (s.when is None, s.when))
+    return sales
 
 
 # ── Gathering ─────────────────────────────────────────────────────────────────
@@ -96,7 +170,7 @@ def _semester_labels(history):
     return labels
 
 
-def _course_columns(history, items):
+def _course_columns(history, sales):
     """Course columns in the order the old record had them, with anything new
     appended. The newest name seen for a code is the one shown.
 
@@ -122,18 +196,18 @@ def _course_columns(history, items):
         live.add(key)
     # Finally anything an order still remembers whose course has since been
     # deleted — an old sale must never lose its column.
-    for item in items:
-        key = register(item.course_name or '(unknown)')
+    for sale in sales:
+        key = register(sale.course)
         if key not in live:
-            names.setdefault(key, item.course_name or '(unknown)')
+            names.setdefault(key, sale.course)
     return order, names
 
 
 # ── Sheet: Courses ────────────────────────────────────────────────────────────
 
-def _sheet_courses(wb, items, history):
+def _sheet_courses(wb, sales, history):
     ws = wb.create_sheet('Courses')
-    keys, names = _course_columns(history, items)
+    keys, names = _course_columns(history, sales)
     labels = _semester_labels(history)
 
     # Hand-kept copies, keyed the same way as the live ones.
@@ -145,13 +219,12 @@ def _sheet_courses(wb, items, history):
                   for n, v in (history.get('course_total_value') or {}).items()}
 
     live_copies, live_value = {}, {}
-    for item in items:
-        key = _course_key(item.course_name or '(unknown)')
-        label = item.order.semester.label if item.order.semester else 'Unassigned'
-        if label not in labels:
-            labels.append(label)
-        live_copies[(label, key)] = live_copies.get((label, key), 0) + 1
-        live_value[key] = live_value.get(key, Decimal('0')) + _net(item)
+    for sale in sales:
+        key = _course_key(sale.course)
+        if sale.semester not in labels:
+            labels.append(sale.semester)
+        live_copies[(sale.semester, key)] = live_copies.get((sale.semester, key), 0) + 1
+        live_value[key] = live_value.get(key, Decimal('0')) + sale.value
 
     ws.column_dimensions['A'].width = 22
     for idx in range(len(keys)):
@@ -215,23 +288,20 @@ def _sheet_courses(wb, items, history):
 
 # ── Sheet: semsters ───────────────────────────────────────────────────────────
 
-def _month_index(items):
+def _month_index(sales):
     """Revenue per (semester, month-number-within-that-semester).
 
     The old record counted 'Month 1..6' inside a term rather than calendar
     months, so the website's sales are numbered the same way: the first calendar
     month a semester sold anything is Month 1, and gaps stay gaps."""
     by_sem = {}
-    for item in items:
-        order = item.order
-        when = order.paid_at or order.created_at
-        if not when:
+    for sale in sales:
+        if not sale.when:
             continue
-        label = order.semester.label if order.semester else 'Unassigned'
-        stamp = timezone.localtime(when)
-        by_sem.setdefault(label, {})
+        stamp = timezone.localtime(sale.when)
+        by_sem.setdefault(sale.semester, {})
         key = (stamp.year, stamp.month)
-        by_sem[label][key] = by_sem[label].get(key, Decimal('0')) + _net(item)
+        by_sem[sale.semester][key] = by_sem[sale.semester].get(key, Decimal('0')) + sale.value
 
     out = {}
     for label, months in by_sem.items():
@@ -242,7 +312,7 @@ def _month_index(items):
     return out
 
 
-def _sheet_semesters(wb, items, history):
+def _sheet_semesters(wb, sales, history):
     ws = wb.create_sheet('semsters')
     labels = _semester_labels(history)
 
@@ -252,7 +322,7 @@ def _sheet_semesters(wb, items, history):
         for label, value in entry['revenue'].items():
             hist[(label, number)] = value
 
-    live = _month_index(items)
+    live = _month_index(sales)
     for label, _ in live:
         if label not in labels:
             labels.append(label)
@@ -312,47 +382,43 @@ def _sheet_semesters(wb, items, history):
 
 # ── Sheet: Sales ledger ───────────────────────────────────────────────────────
 
-def _sheet_ledger(wb, items):
-    """The detail the old file never had: who bought what, and when."""
+def _sheet_ledger(wb, sales):
+    """The detail the old file never had: who has each chapter, and how it
+    reached them — bought, or unlocked by hand."""
     ws = wb.create_sheet('Sales ledger')
-    heads = ['Date paid', 'Semester', 'Order', 'Student', 'Email', 'College',
-             'Course', 'Ch.', 'Chapter title', 'Price', 'Discount', 'Net', 'Ref']
+    heads = ['Date', 'Semester', 'How', 'Student', 'Email', 'College',
+             'Course', 'Ch.', 'Chapter title', 'List price', 'Value', 'Reference']
     for idx, (head, width) in enumerate(
-            zip(heads, [12, 20, 11, 22, 26, 14, 20, 6, 28, 9, 14, 9, 16]), start=1):
+            zip(heads, [12, 20, 15, 22, 26, 16, 20, 6, 28, 11, 10, 18]), start=1):
         _put(ws, 1, idx, head, fill=LABEL_FILL, font=HEAD_FONT)
         ws.column_dimensions[get_column_letter(idx)].width = width
     ws.freeze_panes = 'A2'
 
     row = 2
-    for item in items:
-        order = item.order
-        net = _net(item)
-        paid = order.paid_at or order.created_at
+    for sale in sales:
         values = [
-            timezone.localtime(paid).strftime('%Y-%m-%d') if paid else '',
-            order.semester.label if order.semester else '',
-            order.code or f'#{order.pk}',
-            order.user.name, order.user.email, order.user.college or '',
-            item.course_name, item.chapter_number, item.chapter_title,
-            float(item.price or 0),
-            f'{order.discount_code} ({order.discount_percent}%)'
-            if order.discount_code else '',
-            float(net),
-            order.note or '',
+            timezone.localtime(sale.when).strftime('%Y-%m-%d') if sale.when else '',
+            sale.semester,
+            'Paid order' if sale.paid else 'Unlocked by hand',
+            sale.student, sale.email, sale.college,
+            sale.course, sale.chapter_number, sale.chapter_title,
+            float(sale.list_price or 0), float(sale.value or 0), sale.ref,
         ]
         for idx, value in enumerate(values, start=1):
-            _put(ws, row, idx, value, money=idx in (10, 12))
+            cell = _put(ws, row, idx, value, money=idx in (10, 11))
+            if idx == 3 and not sale.paid:
+                cell.font = GREY
         row += 1
 
     _put(ws, row, 1, 'Total', fill=TOTAL_FILL, font=HEAD_FONT)
-    for idx in range(2, 14):
+    for idx in range(2, 13):
         _put(ws, row, idx, None, fill=TOTAL_FILL)
     if row > 2:
         _put(ws, row, 9, f'=COUNTA(I2:I{row - 1})&" chapters"',
              fill=TOTAL_FILL, font=HEAD_FONT)
         _put(ws, row, 10, f'=SUM(J2:J{row - 1})', fill=TOTAL_FILL, font=HEAD_FONT,
              money=True)
-        _put(ws, row, 12, f'=SUM(L2:L{row - 1})', fill=TOTAL_FILL, font=HEAD_FONT,
+        _put(ws, row, 11, f'=SUM(K2:K{row - 1})', fill=TOTAL_FILL, font=HEAD_FONT,
              money=True)
     return ws
 
@@ -363,19 +429,13 @@ def build_sales_workbook():
     """Returns (filename, xlsx bytes)."""
     generated = timezone.localtime()
     history = _load_history()
-
-    items = list(
-        OrderItem.objects
-        .filter(order__status='paid')
-        .select_related('order', 'order__user', 'order__semester')
-        .order_by('order__paid_at', 'order_id', 'id')
-    )
+    sales = _collect_sales()
 
     wb = Workbook()
     wb.remove(wb.active)
-    _sheet_semesters(wb, items, history)
-    _sheet_courses(wb, items, history)
-    _sheet_ledger(wb, items)
+    _sheet_semesters(wb, sales, history)
+    _sheet_courses(wb, sales, history)
+    _sheet_ledger(wb, sales)
 
     buf = BytesIO()
     wb.save(buf)

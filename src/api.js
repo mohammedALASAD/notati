@@ -279,17 +279,21 @@
       return list(data);
     },
 
-    async getSalesData() {
-      const data = await req('GET', '/admin/sales/');
+    // semester: a Semester id to scope the figures to one term; falsy = all.
+    async getSalesData(semester) {
+      const qs = semester ? `?semester=${encodeURIComponent(semester)}` : '';
+      const data = await req('GET', `/admin/sales/${qs}`);
       return data || { total_revenue: '0.000', total_sales: 0, rows: [] };
     },
 
     // from/to: YYYY-MM-DD calendar days, both ends inclusive. Either can be
     // omitted for an open-ended range; omit both for all time.
-    async getNoteViews(from, to) {
+    // semester: a Semester id to scope to one term; falsy = all.
+    async getNoteViews(from, to, semester) {
       const p = [];
       if (from) p.push('from=' + encodeURIComponent(from));
       if (to)   p.push('to='   + encodeURIComponent(to));
+      if (semester) p.push('semester=' + encodeURIComponent(semester));
       const qs = p.length ? '?' + p.join('&') : '';
       const data = await req('GET', `/admin/note-views/${qs}`);
       return Array.isArray(data) ? data : [];

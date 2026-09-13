@@ -2253,7 +2253,7 @@ function LeakTrace() {
    Note views — how many times each chapter (free or paid) was
    opened/read, from the download log, ranked by opens.
    ============================================================ */
-function NoteViews() {
+function NoteViews({ semester }) {
   const { toast } = useToast();
   const [rows,    setRows]    = useStateAd([]);
   const [loading, setLoading] = useStateAd(true);
@@ -2282,11 +2282,11 @@ function NoteViews() {
   useEffectAd(() => {
     const seq = ++reqSeq.current;
     setLoading(true);
-    NotatiAPI.getNoteViews(from, to)
+    NotatiAPI.getNoteViews(from, to, semester)
       .then(data => { if (seq === reqSeq.current) setRows(data); })
       .catch(e   => { if (seq === reqSeq.current) toast.error('Could not load views', e.message); })
       .finally(() => { if (seq === reqSeq.current) setLoading(false); });
-  }, [from, to]);
+  }, [from, to, semester]);
 
   const colleges = useMemoAd(() => {
     const seen = new Set();
@@ -2701,24 +2701,53 @@ function ChapterInsights() {
   const [insightsTab,  setInsightsTab]  = useStateAd('views');
   const [salesData,    setSalesData]    = useStateAd(null);
   const [loadingSales, setLoadingSales] = useStateAd(false);
+  // One semester picker shared by Views and Sales, so switching tabs keeps you
+  // looking at the same term. '' means every semester at once.
+  const [semester,     setSemester]     = useStateAd('');
+  const [semesters,    setSemesters]    = useStateAd([]);
 
   useEffectAd(() => {
-    if (insightsTab !== 'sales' || salesData) return;
+    NotatiAPI.getSemesters()
+      .then(d => setSemesters(d.semesters || [])).catch(() => {});
+  }, []);
+
+  // Refetch whenever the tab opens or the semester changes — the totals are
+  // recomputed on the server, so this is a real filter, not a client-side hide.
+  useEffectAd(() => {
+    if (insightsTab !== 'sales') return;
     setLoadingSales(true);
-    NotatiAPI.getSalesData()
+    NotatiAPI.getSalesData(semester)
       .then(setSalesData).catch(() => {})
       .finally(() => setLoadingSales(false));
-  }, [insightsTab]);
+  }, [insightsTab, semester]);
+
+  const scoped = insightsTab === 'views' || insightsTab === 'sales';
+  const current = semesters.find(x => x.is_current);
 
   return (
     <div>
       <div className="page-head">
         <div className="ttl">
           <h1>Insights</h1>
-          <p className="sub">See how often each chapter is opened, how many students bought it, and track revenue.</p>
+          <p className="sub">
+            See how often each chapter is opened, how many students bought it, and track revenue.
+            {current && <> Currently selling in <strong>{current.label}</strong>.</>}
+          </p>
         </div>
         <div className="actions">
           <div className="filters" style={{ margin: 0 }}>
+            {scoped && (
+              <select className="filter-select" value={semester}
+                      title="Show one semester at a time"
+                      onChange={e => setSemester(e.target.value)}>
+                <option value="">All semesters</option>
+                {semesters.map(x => (
+                  <option key={x.id} value={x.id}>
+                    {x.label}{x.is_current ? ' — current' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
             {[
               { id: 'views',  label: 'Views' },
               { id: 'sales',  label: 'Sales' },
@@ -2737,7 +2766,7 @@ function ChapterInsights() {
 
       {insightsTab === 'trace' && <LeakTrace/>}
 
-      {insightsTab === 'views' && <NoteViews/>}
+      {insightsTab === 'views' && <NoteViews semester={semester}/>}
 
       {insightsTab === 'sales' && (
         <SalesView salesData={salesData} loading={loadingSales}/>
