@@ -121,14 +121,18 @@ def _collect_sales():
         if not note or note.price <= 0:
             continue                      # free chapters are not sales
         item = paid.get((grant.user_id, grant.note_id))
+        # The access grant IS the sale, so its own term and date decide where the
+        # sale is filed — the same stamps the Insights Sales page reads. An order
+        # only says what was paid for it, and the two can differ: an order placed
+        # near the end of a term is often confirmed after the next one has begun.
+        semester, when = grant.semester, grant.granted_at
         if item:
             seen.add((grant.user_id, grant.note_id))
             value, ref = _net(item), (item.order.code or f'#{item.order_id}')
-            semester = item.order.semester or grant.semester
-            when = item.order.paid_at or item.order.created_at or grant.granted_at
+            semester = semester or item.order.semester
+            when = when or item.order.paid_at or item.order.created_at
         else:
             value, ref = note.price, 'unlocked by hand'
-            semester, when = grant.semester, grant.granted_at
         sales.append(Sale(
             semester=semester.label if semester else 'Unassigned',
             course=note.course.name if note.course else '(unknown)',
@@ -139,9 +143,15 @@ def _collect_sales():
             list_price=note.price, ref=ref, paid=bool(item),
         ))
 
-    # Sales with no access row left: the chapter was deleted, or access revoked.
+    # Sales whose chapter has since been deleted. The order line keeps a snapshot
+    # of the course and price, so the sale survives the chapter going away.
+    #
+    # Deliberately only those: a line whose chapter still exists but has no access
+    # row means access was revoked, and the student no longer holds that copy.
+    # The Sales page excludes those, so counting them here would put the two out
+    # of step — which is the whole point of counting grants in the first place.
     for item in items:
-        if (item.order.user_id, item.note_id) in seen or (item.price or 0) <= 0:
+        if item.note_id is not None or (item.price or 0) <= 0:
             continue
         order = item.order
         sales.append(Sale(

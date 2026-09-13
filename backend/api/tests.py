@@ -1224,6 +1224,13 @@ class SalesWorkbookTests(TestCase):
         OrderItem.objects.create(order=order, note=note, course_name=course_name,
                                  chapter_number=str(chapter), chapter_title='Ch',
                                  price=Decimal(price))
+        # Confirming an order is what grants access, and the grant is what the
+        # record counts — so a realistic paid order always has one, stamped at
+        # the moment the payment was confirmed.
+        grant, made = Access.objects.get_or_create(
+            user=order.user, note=note, defaults={'semester': order.semester})
+        if made and when:
+            Access.objects.filter(pk=grant.pk).update(granted_at=when)
         return order
 
     def _wb(self):
@@ -1707,3 +1714,91 @@ class InsightsSemesterFilterTests(TestCase):
             self.note.save(update_fields=['pdf_file'])
             self._client(self.student).get(f'/api/notes/{self.note.id}/download/')
         self.assertEqual(DownloadLog.objects.latest('created_at').semester, self.s11)
+
+
+class SaleSemesterAgreementTests(TestCase):
+    """An order placed in one term and confirmed in the next must land in the
+    same semester in the workbook as it does on the Insights Sales page.
+
+    This is the case reported from production: order 26 was placed in
+    Semester 10, access was granted in Semester 11, and the workbook filed the
+    sale under Semester 10 while the website showed it under Semester 11."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.s10 = Semester.objects.create(label='Semester 10 (Summer)', position=10,
+                                           is_summer=True)
+        self.s11 = Semester.objects.create(label='Semester 11', position=11,
+                                           is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.course  = Course.objects.create(name='ITIS103', college='IT')
+        self.note    = Note.objects.create(course=self.course, chapter_number=2,
+                                           chapter_title='Global E-business',
+                                           price=Decimal('1.500'))
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def _wb(self):
+        import openpyxl
+        resp = self._client(self.admin).get('/api/admin/sales-workbook/')
+        return openpyxl.load_workbook(BytesIO(resp.content))
+
+    def _cell(self, ws, row_label, column_label):
+        col = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))].index(column_label)
+        for row in ws.iter_rows():
+            if row[0].value == row_label:
+                return row[col].value
+        raise AssertionError(f'no row {row_label!r}')
+
+    def _sale_across_the_term_boundary(self):
+        """Placed in Semester 10, access granted once Semester 11 had begun."""
+        order = Order.objects.create(user=self.student, status='paid', semester=self.s10,
+                                     code='NT9000', paid_at=timezone.now())
+        OrderItem.objects.create(order=order, note=self.note, course_name='ITIS103',
+                                 chapter_number='2', chapter_title='Global E-business',
+                                 price=Decimal('1.500'))
+        Access.objects.create(user=self.student, note=self.note,
+                              granted_by=self.admin, semester=self.s11)
+        return order
+
+    def test_the_sale_is_filed_under_the_semester_access_was_granted_in(self):
+        self._sale_across_the_term_boundary()
+        ws = self._wb()['Courses']
+        self.assertEqual(self._cell(ws, 'Semester 11', 'ITIS103'), 1)
+        self.assertIsNone(self._cell(ws, 'Semester 10 (Summer)', 'ITIS103'))
+
+    def test_it_still_counts_what_was_actually_paid(self):
+        self._sale_across_the_term_boundary()
+        ws = self._wb()['Courses']
+        history = 560.5      # ITIS103 in the hand-kept record
+        self.assertAlmostEqual(self._cell(ws, 'Total value of copies sold', 'ITIS103'),
+                               history + 1.5, places=3)
+
+    def test_the_revenue_lands_in_the_right_semester_column(self):
+        self._sale_across_the_term_boundary()
+        ws = self._wb()['semsters']
+        self.assertEqual(self._cell(ws, 'Month 1', 'Semester 11'), 1.5)
+
+    def test_a_revoked_unlock_is_dropped_by_both(self):
+        # Access revoked: the student no longer holds the copy, so neither the
+        # Sales page nor the workbook should still be counting it.
+        order = self._sale_across_the_term_boundary()
+        Access.objects.filter(user=self.student, note=self.note).delete()
+        ws = self._wb()['Courses']
+        self.assertIsNone(self._cell(ws, 'Semester 11', 'ITIS103'))
+        self.assertIsNone(self._cell(ws, 'Semester 10 (Summer)', 'ITIS103'))
+        self.assertEqual(order.status, 'paid')     # the order itself is untouched
+
+    def test_workbook_and_sales_page_agree_semester_by_semester(self):
+        self._sale_across_the_term_boundary()
+        ws = self._wb()['Courses']
+        for semester, label in ((self.s11, 'Semester 11'),
+                                (self.s10, 'Semester 10 (Summer)')):
+            page = self._client(self.admin).get(
+                f'/api/admin/sales/?semester={semester.id}').data
+            copies = self._cell(ws, label, 'ITIS103') or 0
+            self.assertEqual(copies, page['total_sales'],
+                             f'{label}: workbook {copies} vs Sales page '
+                             f'{page["total_sales"]}')
