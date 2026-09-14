@@ -175,16 +175,20 @@ def _note_file_response(file_field, request, note):
     filename = file_field.name.split('/')[-1]
 
     user = request.user if request.user.is_authenticated else None
-    # Only fingerprint real students' PDFs — admins get the clean master, and
-    # non-PDF files can't be stamped.
-    if user and user.role != 'admin' and pdfutils.is_pdf(content):
+    # Admins are never counted or stamped: an admin checking their own chapter
+    # is not a student reading it, and counting it would pollute the Insights
+    # numbers with the admin's own testing. Sign in as a student to see an open
+    # appear.
+    if user and user.role != 'admin':
         code = tracing.code_for(user.id, note.id)
-        # Skip watermarking an oversized PDF — it would parse the whole file in
-        # memory and can OOM a small instance. The download is still logged, so
-        # the open is counted; it just isn't fingerprinted.
-        if len(content) <= FINGERPRINT_MAX_BYTES:
-            content = pdfutils.fingerprint_pdf(content, code)
-        content_type = 'application/pdf'
+        # Fingerprint only what can be fingerprinted: a PDF under the size cap.
+        # An oversized PDF would be parsed whole in memory and can OOM a small
+        # instance; a non-PDF can't be stamped at all. Either way the open is
+        # still counted — logging is separate from stamping.
+        if pdfutils.is_pdf(content):
+            if len(content) <= FINGERPRINT_MAX_BYTES:
+                content = pdfutils.fingerprint_pdf(content, code)
+            content_type = 'application/pdf'
         try:
             DownloadLog.objects.create(user=user, note=note, code=code,
                                        ip=_client_ip(request), semester=Semester.current())
@@ -667,9 +671,11 @@ class AccessListCreateView(generics.ListCreateAPIView):
         return Access.objects.filter(user=user).select_related('note__course')
 
     def perform_create(self, serializer):
-        # Hand-granted access is filed under the running term too, so it lands in
-        # the right column of the sales record.
-        serializer.save(granted_by=self.request.user, semester=Semester.current())
+        # Hand-granted access is filed under the running term, and its price is
+        # frozen at today's list price — so it lands in the right column of the
+        # sales record and stays worth what it was worth when it went out.
+        serializer.save(granted_by=self.request.user, semester=Semester.current(),
+                        price=serializer.validated_data['note'].price)
 
 
 class AccessDetailView(generics.RetrieveDestroyAPIView):
@@ -793,8 +799,8 @@ def admin_sales(request):
     if semester:
         grants = grants.filter(semester=semester)
     grants_by_note = defaultdict(list)
-    for note_id, user_id in grants.values_list('note_id', 'user_id'):
-        grants_by_note[note_id].append(user_id)
+    for note_id, user_id, frozen in grants.values_list('note_id', 'user_id', 'price'):
+        grants_by_note[note_id].append((user_id, frozen))
 
     rows = []
     total_revenue = 0.0       # after discounts
@@ -807,9 +813,13 @@ def admin_sales(request):
             continue
         list_price = float(n.price)
         sales = revenue = gross = discounted = 0
-        for uid in uids:
+        for uid, frozen in uids:
             sales += 1
-            unit, had = paid_map.get((uid, n.id), (list_price, False))
+            # What this copy was worth when it went out: the order's net price
+            # if there was one, else the price frozen on the grant, else (for
+            # rows older than that field) today's list price.
+            fallback = float(frozen) if frozen is not None else list_price
+            unit, had = paid_map.get((uid, n.id), (fallback, False))
             revenue += unit
             gross += list_price
             if had:
@@ -1190,14 +1200,19 @@ class AdminOrderDetailView(APIView):
 
         if new_status == 'paid' and order.status != 'paid':
             with transaction.atomic():
+                pct = Decimal(order.discount_percent or 0)
                 for item in order.items.all():
                     if item.note_id:
+                        # The order's own term, not today's — marking an old order
+                        # paid must not move it into the current one. The price is
+                        # what was actually paid for this line, discount taken off.
+                        paid = item.price - (item.price * pct / Decimal(100)).quantize(
+                            Decimal('0.001'))
                         Access.objects.get_or_create(
                             user=order.user, note_id=item.note_id,
-                            # The order's own term, not today's — marking an old
-                            # order paid must not move it into the current one.
                             defaults={'granted_by': request.user,
-                                      'semester': order.semester},
+                                      'semester': order.semester,
+                                      'price': paid},
                         )
                 order.status = 'paid'
                 order.paid_at = timezone.now()

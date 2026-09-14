@@ -83,6 +83,36 @@ class CourseSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'college', 'created_at']
         read_only_fields = ['id', 'created_at']
 
+    def validate_name(self, value):
+        """One course, one name. A near-miss of an existing course is refused
+        rather than becoming a second column in the sales record.
+
+        Catches the ways it has actually gone wrong: a stray space ('ITIS 103'
+        vs 'ITIS103'), a lowercase copy, a code typed with extra digits
+        ('ITIS10333'), and the plain code of a course that is now listed with
+        its merged partners ('ACC112' vs 'ACC112 / ACA112')."""
+        from .workbook import _course_key
+        value = ' '.join((value or '').split())          # tidy the whitespace only
+        if not value:
+            raise serializers.ValidationError('Give the course a name.')
+        key = _course_key(value)
+        others = Course.objects.all()
+        if self.instance:
+            others = others.exclude(pk=self.instance.pk)
+        for other in others:
+            other_key = _course_key(other.name)
+            same = key == other_key
+            # 'ITIS10333' starts with the complete code 'ITIS103' — a typo, not
+            # a new course. Only a full code (letters then three digits) counts
+            # as a prefix, so 'LAW10' can't block 'LAW106'.
+            typo = (len(key) > len(other_key) and key.startswith(other_key)
+                    and re.fullmatch(r'[A-Z]+\d{3}', other_key))
+            if same or typo:
+                raise serializers.ValidationError(
+                    f'That looks like "{other.name}", which already exists. '
+                    f'Edit that course instead of adding another.')
+        return value
+
 
 def _file_url(file_field, request=None):
     if not file_field:

@@ -18,6 +18,28 @@ from .models import (User, Course, Note, NoteFile, Access, BagItem, Verification
 from .serializers import NoteSerializer, RegisterSerializer
 
 
+def _value_of(wb, cell):
+    """Resolve a 'Total value of copies sold' cell.
+
+    Since the value row became a formula — the hand-kept figure plus a SUMIF
+    over the ledger — a test can't just read a number. This follows the formula
+    to the ledger rows it points at and adds them up, so it also proves the
+    ranges are right. A plain number (no sales yet) is returned as-is."""
+    import re as _re
+    if not isinstance(cell, str):
+        return float(cell or 0)
+    m = _re.fullmatch(
+        r"=(?:(?P<fixed>[\d.]+)\+)?SUMIF\('Sales ledger'!\$G\$2:\$G\$(?P<last>\d+),"
+        r'"(?P<name>[^"]+)",\'Sales ledger\'!\$K\$2:\$K\$(?P=last)\)', cell)
+    assert m, f'unexpected value formula: {cell!r}'
+    ws = wb['Sales ledger']
+    total = float(m['fixed'] or 0)
+    for r in range(2, int(m['last']) + 1):
+        if ws.cell(row=r, column=7).value == m['name']:
+            total += float(ws.cell(row=r, column=11).value or 0)
+    return round(total, 3)
+
+
 def _make_pdf(pages=3):
     """Return bytes of a simple multi-page PDF for testing."""
     buf = BytesIO()
@@ -1227,8 +1249,10 @@ class SalesWorkbookTests(TestCase):
         # Confirming an order is what grants access, and the grant is what the
         # record counts — so a realistic paid order always has one, stamped at
         # the moment the payment was confirmed.
+        net = Decimal(price) * (100 - discount) / 100
         grant, made = Access.objects.get_or_create(
-            user=order.user, note=note, defaults={'semester': order.semester})
+            user=order.user, note=note,
+            defaults={'semester': order.semester, 'price': net})
         if made and when:
             Access.objects.filter(pk=grant.pk).update(granted_at=when)
         return order
@@ -1323,16 +1347,16 @@ class SalesWorkbookTests(TestCase):
 
     def test_value_row_adds_old_value_and_new_revenue(self):
         self._sell('ITIS103', price='2.000')
-        ws = self._wb()['Courses']
+        wb = self._wb(); ws = wb['Courses']
         col = self._headers(ws).index('ITIS103')
-        self.assertAlmostEqual(self._row(ws, 'Total value of copies sold')[col],
+        self.assertAlmostEqual(_value_of(wb, self._row(ws, 'Total value of copies sold')[col]),
                                560.5 + 2.0, places=3)   # old 560.5 + this sale
 
     def test_discount_comes_off_the_value(self):
         self._sell('ITIS103', price='2.000', discount=25)
-        ws = self._wb()['Courses']
+        wb = self._wb(); ws = wb['Courses']
         col = self._headers(ws).index('ITIS103')
-        self.assertAlmostEqual(self._row(ws, 'Total value of copies sold')[col],
+        self.assertAlmostEqual(_value_of(wb, self._row(ws, 'Total value of copies sold')[col]),
                                560.5 + 1.5, places=3)
 
     # ── semsters ──
@@ -1469,9 +1493,17 @@ class WorkbookStaysCurrentTests(TestCase):
 
     # ── a new course appearing ──
     def test_adding_a_course_puts_it_in_the_file_before_it_has_sold(self):
-        Course.objects.create(name='ITCY999', college='IT')
+        new = Course.objects.create(name='ITCY999', college='IT')
+        Note.objects.create(course=new, chapter_number=1, chapter_title='New',
+                            price=Decimal('1.000'))
         # No sale yet — the column is still there, just empty.
         self.assertIn('ITCY999', self._headers(self._download()['Courses']))
+
+    def test_an_empty_course_shell_gets_no_column(self):
+        # A course with no chapters is a typo or a leftover, not something on
+        # sale — it stays out of the file until it has content.
+        Course.objects.create(name='ITIS10333', college='IT')
+        self.assertNotIn('ITIS10333', self._headers(self._download()['Courses']))
 
     def test_a_brand_new_course_fills_in_once_it_sells(self):
         new = Course.objects.create(name='ITCY999', college='IT')
@@ -1479,9 +1511,9 @@ class WorkbookStaysCurrentTests(TestCase):
                                    price=Decimal('3.000'))
         self._mark_paid(self._buy(note))
 
-        ws = self._download()['Courses']
+        wb = self._download(); ws = wb['Courses']
         self.assertEqual(self._cell(ws, 'Semester 10 (Summer)', 'ITCY999'), 1)
-        self.assertEqual(self._cell(ws, 'Total value of copies sold', 'ITCY999'), 3.0)
+        self.assertEqual(_value_of(wb, self._cell(ws, 'Total value of copies sold', 'ITCY999')), 3.0)
 
     def test_a_deleted_course_keeps_its_column_for_past_sales(self):
         new = Course.objects.create(name='ITOLD100', college='IT')
@@ -1494,7 +1526,9 @@ class WorkbookStaysCurrentTests(TestCase):
         self.assertEqual(self._cell(ws, 'Semester 10 (Summer)', 'ITOLD100'), 1)
 
     def test_a_new_course_is_added_after_the_ones_the_old_record_had(self):
-        Course.objects.create(name='ZZZ100', college='IT')
+        new = Course.objects.create(name='ZZZ100', college='IT')
+        Note.objects.create(course=new, chapter_number=1, chapter_title='N',
+                            price=Decimal('1.000'))
         heads = [h for h in self._headers(self._download()['Courses']) if h]
         self.assertLess(heads.index('ITIS103'), heads.index('ZZZ100'))
 
@@ -1517,8 +1551,8 @@ class WorkbookStaysCurrentTests(TestCase):
         self._mark_paid(self._buy(self.note))
         self.note.price = Decimal('9.000')              # put the price up afterwards
         self.note.save()
-        ws = self._download()['Courses']
-        self.assertEqual(self._cell(ws, 'Total value of copies sold', 'ITIS103'),
+        wb = self._download(); ws = wb['Courses']
+        self.assertEqual(_value_of(wb, self._cell(ws, 'Total value of copies sold', 'ITIS103')),
                          560.5 + 2.0)                   # still what was actually paid
 
     def test_the_hand_kept_years_never_move(self):
@@ -1587,8 +1621,8 @@ class ManualUnlockCountsTests(TestCase):
 
     def test_a_hand_unlock_is_valued_at_list_price(self):
         self._unlock(self.note)
-        ws = self._wb()['Courses']
-        self.assertAlmostEqual(self._cell(ws, 'Total value of copies sold', 'ITNE233'),
+        wb = self._wb(); ws = wb['Courses']
+        self.assertAlmostEqual(_value_of(wb, self._cell(ws, 'Total value of copies sold', 'ITNE233')),
                                self._history_value('ITNE233') + 2.0, places=3)
 
     def test_a_hand_unlock_lands_in_the_current_semester(self):
@@ -1620,9 +1654,9 @@ class ManualUnlockCountsTests(TestCase):
                                  price=Decimal('2.000'))
         self._client(self.admin).patch(f'/api/admin/orders/{order.id}/',
                                        {'status': 'paid'}, format='json')
-        ws = self._wb()['Courses']
+        wb = self._wb(); ws = wb['Courses']
         self.assertEqual(self._cell(ws, 'Semester 11', 'ITNE233'), 1)
-        self.assertAlmostEqual(self._cell(ws, 'Total value of copies sold', 'ITNE233'),
+        self.assertAlmostEqual(_value_of(wb, self._cell(ws, 'Total value of copies sold', 'ITNE233')),
                                self._history_value('ITNE233') + 2.0, places=3)
 
     def test_the_workbook_total_matches_the_sales_page(self):
@@ -1632,11 +1666,11 @@ class ManualUnlockCountsTests(TestCase):
         self._unlock(self.note, user=other)
 
         sales = self._client(self.admin).get('/api/admin/sales/').data
-        ws = self._wb()['Courses']
+        wb = self._wb(); ws = wb['Courses']
         self.assertEqual(sales['total_sales'], 2)
         # The workbook column also carries the hand-kept years; strip those and
         # what is left must be exactly what the Sales page reports.
-        website_only = (self._cell(ws, 'Total value of copies sold', 'ITNE233')
+        website_only = (_value_of(wb, self._cell(ws, 'Total value of copies sold', 'ITNE233'))
                         - self._history_value('ITNE233'))
         self.assertAlmostEqual(website_only, float(sales['total_revenue']), places=3)
 
@@ -1771,9 +1805,9 @@ class SaleSemesterAgreementTests(TestCase):
 
     def test_it_still_counts_what_was_actually_paid(self):
         self._sale_across_the_term_boundary()
-        ws = self._wb()['Courses']
+        wb = self._wb(); ws = wb['Courses']
         history = 560.5      # ITIS103 in the hand-kept record
-        self.assertAlmostEqual(self._cell(ws, 'Total value of copies sold', 'ITIS103'),
+        self.assertAlmostEqual(_value_of(wb, self._cell(ws, 'Total value of copies sold', 'ITIS103')),
                                history + 1.5, places=3)
 
     def test_the_revenue_lands_in_the_right_semester_column(self):
@@ -1802,3 +1836,175 @@ class SaleSemesterAgreementTests(TestCase):
             self.assertEqual(copies, page['total_sales'],
                              f'{label}: workbook {copies} vs Sales page '
                              f'{page["total_sales"]}')
+
+
+class ValueRowIsLiveTests(TestCase):
+    """The value row is a formula over the ledger: the hand-kept figure fixed,
+    plus a SUMIF of what each website copy was actually worth when it went out.
+    A price rise applies to new sales only — history is never revalued."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 11', position=11,
+                                               is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.other   = User.objects.create_user('o@x.com', 'pw', name='Omar')
+        self.course  = Course.objects.create(name='ITIS103', college='IT')
+        self.note    = Note.objects.create(course=self.course, chapter_number=2,
+                                           chapter_title='Ch', price=Decimal('1.000'))
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def _wb(self):
+        import openpyxl
+        resp = self._client(self.admin).get('/api/admin/sales-workbook/')
+        return openpyxl.load_workbook(BytesIO(resp.content))
+
+    def _value_cell(self, wb, course):
+        ws = wb['Courses']
+        col = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))].index(course)
+        for row in ws.iter_rows():
+            if row[0].value == 'Total value of copies sold':
+                return row[col].value
+        raise AssertionError('no value row')
+
+    def _resolve(self, wb, formula):
+        return _value_of(wb, formula)
+
+    def _unlock(self, user, note):
+        resp = self._client(self.admin).post('/api/access/', {'user': user.id, 'note': note.id},
+                                             format='json')
+        self.assertEqual(resp.status_code, 201)
+
+    def test_value_is_a_formula_over_the_ledger(self):
+        self._unlock(self.student, self.note)
+        cell = self._value_cell(self._wb(), 'ITIS103')
+        self.assertTrue(isinstance(cell, str) and cell.startswith('='), cell)
+        self.assertIn("'Sales ledger'", cell)
+
+    def test_a_new_sale_moves_the_value(self):
+        wb = self._wb()
+        before = self._resolve(wb, self._value_cell(wb, 'ITIS103')) \
+            if isinstance(self._value_cell(wb, 'ITIS103'), str) \
+            else float(self._value_cell(wb, 'ITIS103'))
+        self._unlock(self.student, self.note)
+        wb = self._wb()
+        after = self._resolve(wb, self._value_cell(wb, 'ITIS103'))
+        self.assertAlmostEqual(after - before, 1.0, places=3)
+
+    def test_old_sales_keep_their_price_when_the_price_goes_up(self):
+        self._unlock(self.student, self.note)             # sold at 1.000
+        self.note.price = Decimal('1.500')                 # price rises
+        self.note.save()
+        self._unlock(self.other, self.note)                # sold at 1.500
+        wb = self._wb()
+        history = 560.5                                    # ITIS103 hand-kept value
+        self.assertAlmostEqual(self._resolve(wb, self._value_cell(wb, 'ITIS103')),
+                               history + 1.0 + 1.5, places=3)
+
+    def test_hand_kept_value_is_the_fixed_part(self):
+        self._unlock(self.student, self.note)
+        cell = self._value_cell(self._wb(), 'ITIS103')
+        self.assertTrue(cell.startswith('=560.5+'), cell)
+
+
+class CourseNameStandardisationTests(TestCase):
+    """Near-duplicate course names are refused at the door, so the record never
+    grows a second column for a course it already has."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        Course.objects.create(name='ITIS103', college='IT')
+        Course.objects.create(name='ACC112 / ACA112', college='Business')
+
+    def _add(self, name):
+        c = APIClient(); c.force_authenticate(self.admin)
+        return c.post('/api/courses/', {'name': name, 'college': 'IT'}, format='json')
+
+    def test_a_stray_space_is_the_same_course(self):
+        resp = self._add('ITIS 103')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('ITIS103', str(resp.data))
+
+    def test_case_does_not_make_a_new_course(self):
+        self.assertEqual(self._add('itis103').status_code, 400)
+
+    def test_extra_digits_are_a_typo_not_a_course(self):
+        resp = self._add('ITIS10333')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('ITIS103', str(resp.data))
+
+    def test_the_bare_code_of_a_merged_course_is_refused(self):
+        resp = self._add('ACC112')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('ACC112 / ACA112', str(resp.data))
+
+    def test_a_genuinely_new_course_is_fine(self):
+        self.assertEqual(self._add('ITIS104').status_code, 201)
+        self.assertEqual(self._add('LAW106').status_code, 201)
+
+    def test_a_short_code_does_not_block_a_real_one(self):
+        Course.objects.create(name='LAW10', college='Law')     # not a full code
+        self.assertEqual(self._add('LAW106').status_code, 201)
+
+    def test_whitespace_is_tidied_but_the_name_is_kept(self):
+        resp = self._add('  MGT230   /  MGT231 ')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data['name'], 'MGT230 / MGT231')
+
+    def test_renaming_a_course_to_itself_is_allowed(self):
+        course = Course.objects.get(name='ITIS103')
+        c = APIClient(); c.force_authenticate(self.admin)
+        resp = c.patch(f'/api/courses/{course.id}/', {'name': 'ITIS103'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+
+
+class ViewsCountEveryStudentOpenTests(TestCase):
+    """An open is counted whenever a student opens a chapter, whether or not the
+    file can be fingerprinted. Admin opens are deliberately not counted."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 11', position=11,
+                                               is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.course  = Course.objects.create(name='ITNE233', college='IT')
+        self.paid    = Note.objects.create(course=self.course, chapter_number=3,
+                                           chapter_title='Transport', price=Decimal('2.000'))
+        Access.objects.create(user=self.student, note=self.paid, semester=self.sem)
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def _open(self, user, content, ctype):
+        with patch('api.views._fetch_file_bytes', return_value=(content, ctype)):
+            self.paid.pdf_file = 'notes/x.bin'
+            self.paid.save(update_fields=['pdf_file'])
+            return self._client(user).get(f'/api/notes/{self.paid.id}/download/')
+
+    def test_a_student_opening_a_paid_pdf_is_counted(self):
+        resp = self._open(self.student, _make_pdf(1), 'application/pdf')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(DownloadLog.objects.filter(user=self.student, note=self.paid).count(), 1)
+
+    def test_a_student_opening_a_non_pdf_is_still_counted(self):
+        # A slide deck or image can't be fingerprinted, but it was still opened.
+        resp = self._open(self.student, b'PK\x03\x04not-a-pdf', 'application/zip')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(DownloadLog.objects.filter(user=self.student, note=self.paid).count(), 1)
+
+    def test_the_admin_opening_a_chapter_is_not_counted(self):
+        resp = self._open(self.admin, _make_pdf(1), 'application/pdf')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(DownloadLog.objects.count(), 0)
+
+    def test_the_open_shows_on_the_views_page_for_its_semester(self):
+        self._open(self.student, _make_pdf(1), 'application/pdf')
+        rows = self._client(self.admin).get(
+            f'/api/admin/note-views/?semester={self.sem.id}').data
+        row = next(r for r in rows if r['id'] == self.paid.id)
+        self.assertEqual(row['opens'], 1)
+        self.assertFalse(row['is_free'])

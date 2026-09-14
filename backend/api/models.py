@@ -94,6 +94,11 @@ class Access(models.Model):
     semester   = models.ForeignKey(
         'Semester', on_delete=models.SET_NULL, null=True, blank=True, related_name='access_grants'
     )
+    # What this copy was worth the moment it went out — the net price paid if it
+    # came from an order, the list price at the time if unlocked by hand. Frozen
+    # here so a later price change never revalues a sale already made. Null only
+    # on rows from before this field existed; those fall back to today's price.
+    price      = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
     granted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

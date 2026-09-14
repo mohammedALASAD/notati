@@ -2433,10 +2433,10 @@ function NoteViews({ semester }) {
         <PageLoader rows={4}/>
       ) : rows.length === 0 ? (
         <EmptyState
-          title={hasRange ? 'No opens in this period' : 'No opens yet'}
-          message={hasRange
-            ? 'Nothing was opened between those dates. Try a wider range, or "All time".'
-            : 'This fills in as chapters get opened. Every read or download is counted here — by logged-in students and by guests with no account (guests can only open free chapters).'}/>
+          title={hasRange || semester ? 'No opens in this period' : 'No opens yet'}
+          message={hasRange || semester
+            ? 'Nothing was opened by a student in this window. Widen the dates or pick "All semesters". Your own opens as admin are never counted — sign in as a student to see one appear.'
+            : 'This fills in as chapters get opened. Every read or download is counted here — by logged-in students and by guests with no account (guests can only open free chapters). Your own opens as admin are never counted.'}/>
       ) : shown.length === 0 ? (
         <EmptyState title="No matches" message="Try a different filter or search term."/>
       ) : (

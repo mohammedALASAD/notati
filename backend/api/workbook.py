@@ -132,7 +132,10 @@ def _collect_sales():
             semester = semester or item.order.semester
             when = when or item.order.paid_at or item.order.created_at
         else:
-            value, ref = note.price, 'unlocked by hand'
+            # The price frozen on the grant when it was made. Older rows had no
+            # such record and fall back to the list price as it stands today.
+            value = grant.price if grant.price is not None else note.price
+            ref = 'unlocked by hand'
         sales.append(Sale(
             semester=semester.label if semester else 'Unassigned',
             course=note.course.name if note.course else '(unknown)',
@@ -184,10 +187,10 @@ def _course_columns(history, sales):
     """Course columns in the order the old record had them, with anything new
     appended. The newest name seen for a code is the one shown.
 
-    Every course in the catalogue gets a column, not just the ones that have
-    sold — add a course today and it is in the file straight away, with an empty
-    column until its first sale. The old record worked the same way, listing
-    courses before they were on sale."""
+    Every course with at least one chapter gets a column, not just the ones
+    that have sold — add a course and its first chapter and it is in the file
+    straight away, empty until its first sale. The old record worked the same
+    way, listing courses before they were on sale."""
     names, order = {}, []
 
     def register(name):
@@ -200,7 +203,10 @@ def _course_columns(history, sales):
     for name in history.get('courses', []):
         register(name)
     live = set()
-    for name in Course.objects.values_list('name', flat=True):
+    # A course is in the record once it has a chapter to sell. Empty shells —
+    # typos, tests, duplicates left behind — stay out until they have content.
+    for name in (Course.objects.filter(notes__isnull=False).distinct()
+                 .values_list('name', flat=True)):
         key = register(name)
         names[key] = name                   # the catalogue name is today's name
         live.add(key)
@@ -215,9 +221,8 @@ def _course_columns(history, sales):
 
 # ── Sheet: Courses ────────────────────────────────────────────────────────────
 
-def _sheet_courses(wb, sales, history):
+def _sheet_courses(wb, sales, history, keys, names, ledger_last):
     ws = wb.create_sheet('Courses')
-    keys, names = _course_columns(history, sales)
     labels = _semester_labels(history)
 
     # Hand-kept copies, keyed the same way as the live ones.
@@ -228,13 +233,12 @@ def _sheet_courses(wb, sales, history):
     hist_value = {_course_key(n): v
                   for n, v in (history.get('course_total_value') or {}).items()}
 
-    live_copies, live_value = {}, {}
+    live_copies = {}
     for sale in sales:
         key = _course_key(sale.course)
         if sale.semester not in labels:
             labels.append(sale.semester)
         live_copies[(sale.semester, key)] = live_copies.get((sale.semester, key), 0) + 1
-        live_value[key] = live_value.get(key, Decimal('0')) + sale.value
 
     ws.column_dimensions['A'].width = 22
     for idx in range(len(keys)):
@@ -282,15 +286,22 @@ def _sheet_courses(wb, sales, history):
          fill=COUNT_FILL, font=Font(bold=True, size=10))
     row += 1
 
-    # Value can't be a formula over the grid above: the grid holds copies, and
-    # chapters have never all cost the same. Each course's figure is its
-    # hand-kept value plus what the website actually took; only the grand total
-    # sums the row.
+    # Value = the hand-kept figure, fixed, plus a live SUMIF over the ledger's
+    # Value column for this course. The ledger carries what each copy was
+    # actually worth when it went out — old website sales at the old price,
+    # new ones at today's, discounts taken off — so a price change never
+    # rewrites history, and adding a ledger row moves this cell.
     _put(ws, row, 1, 'Total value of copies sold', fill=TOTAL_FILL, font=HEAD_FONT)
     for idx, key in enumerate(keys, start=2):
-        value = float(hist_value.get(key) or 0) + float(live_value.get(key, 0))
-        _put(ws, row, idx, round(value, 3) or None, fill=TOTAL_FILL, font=HEAD_FONT,
-             money=True)
+        fixed = float(hist_value.get(key) or 0)
+        if ledger_last >= 2:
+            name = names[key].replace('"', '""')
+            live = (f"SUMIF('Sales ledger'!$G$2:$G${ledger_last},\"{name}\","
+                    f"'Sales ledger'!$K$2:$K${ledger_last})")
+            value = f'={fixed}+{live}' if fixed else f'={live}'
+        else:
+            value = round(fixed, 3) or None
+        _put(ws, row, idx, value, fill=TOTAL_FILL, font=HEAD_FONT, money=True)
     _put(ws, row, len(keys) + 2, f'=SUM(B{row}:{last_col}{row})',
          fill=GRAND_FILL, font=Font(bold=True, size=10), money=True)
     return ws
@@ -392,9 +403,13 @@ def _sheet_semesters(wb, sales, history):
 
 # ── Sheet: Sales ledger ───────────────────────────────────────────────────────
 
-def _sheet_ledger(wb, sales):
+def _sheet_ledger(wb, sales, names):
     """The detail the old file never had: who has each chapter, and how it
-    reached them — bought, or unlocked by hand."""
+    reached them — bought, or unlocked by hand.
+
+    The Courses sheet sums this sheet's Value column with SUMIF, so the course
+    written here is the same display name that heads the Courses column, and
+    the function returns the last data row for those formulas to point at."""
     ws = wb.create_sheet('Sales ledger')
     heads = ['Date', 'Semester', 'How', 'Student', 'Email', 'College',
              'Course', 'Ch.', 'Chapter title', 'List price', 'Value', 'Reference']
@@ -411,7 +426,8 @@ def _sheet_ledger(wb, sales):
             sale.semester,
             'Paid order' if sale.paid else 'Unlocked by hand',
             sale.student, sale.email, sale.college,
-            sale.course, sale.chapter_number, sale.chapter_title,
+            names.get(_course_key(sale.course), sale.course),
+            sale.chapter_number, sale.chapter_title,
             float(sale.list_price or 0), float(sale.value or 0), sale.ref,
         ]
         for idx, value in enumerate(values, start=1):
@@ -430,7 +446,7 @@ def _sheet_ledger(wb, sales):
              money=True)
         _put(ws, row, 11, f'=SUM(K2:K{row - 1})', fill=TOTAL_FILL, font=HEAD_FONT,
              money=True)
-    return ws
+    return row - 1          # last data row; 1 when there are no sales at all
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -441,11 +457,15 @@ def build_sales_workbook():
     history = _load_history()
     sales = _collect_sales()
 
+    keys, names = _course_columns(history, sales)
+
     wb = Workbook()
     wb.remove(wb.active)
     _sheet_semesters(wb, sales, history)
-    _sheet_courses(wb, sales, history)
-    _sheet_ledger(wb, sales)
+    ledger_last = _sheet_ledger(wb, sales, names)
+    _sheet_courses(wb, sales, history, keys, names, ledger_last)
+    # Tab order the way the old file had it, with the detail sheet last.
+    wb.move_sheet('Sales ledger', offset=1)
 
     buf = BytesIO()
     wb.save(buf)
