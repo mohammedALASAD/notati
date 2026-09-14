@@ -208,7 +208,7 @@ def _note_file_response(file_field, request, note):
     return response
 
 
-def _sample_response(file_field):
+def _sample_response(file_field, request, note):
     """Return a teaser preview (first pages crisp, rest blurred), inline.
     Non-PDF files are refused (we can't render/blur them)."""
     content, _ = _fetch_file_bytes(file_field)
@@ -216,6 +216,16 @@ def _sample_response(file_field):
         return Response({'detail': 'Preview not available for this file type.'},
                         status=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
     sample = pdfutils.sample_pdf(content)
+    # Count the look. Sampling is what a student does with a paid chapter they
+    # don't own yet, so it is the interest signal Insights would otherwise miss.
+    # Kept apart from opens by `kind`; the admin's own looks are never counted.
+    user = request.user if request.user.is_authenticated else None
+    if user is None or user.role != 'admin':
+        try:
+            DownloadLog.objects.create(user=user, note=note, kind='preview', code='',
+                                       ip=_client_ip(request), semester=Semester.current())
+        except Exception:
+            pass  # never fail a preview because logging hiccuped
     response = HttpResponse(sample, content_type='application/pdf')
     response['Content-Disposition'] = 'inline; filename="sample.pdf"'
     return response
@@ -584,7 +594,7 @@ class NoteFileSampleView(APIView):
         if not nf.file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            return _sample_response(nf.file)
+            return _sample_response(nf.file, request, nf.note)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -599,7 +609,7 @@ class NoteSampleView(APIView):
         if not note.pdf_file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            return _sample_response(note.pdf_file)
+            return _sample_response(note.pdf_file, request, note)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -777,7 +787,8 @@ def admin_sales(request):
     semester, ok = _semester_filter(request)
     if not ok:
         return Response({'total_revenue': '0.000', 'total_gross_revenue': '0.000',
-                         'total_sales': 0, 'total_discounted_sales': 0, 'rows': []})
+                         'total_sales': 0, 'total_discounted_sales': 0, 'rows': [],
+                         'history': None})
 
     # What each student actually paid per note, from PAID orders (net of any
     # order-level discount). Lets revenue reflect discounts instead of list price.
@@ -840,12 +851,17 @@ def admin_sales(request):
             'revenue': f'{revenue:.3f}',           # net of discounts
             'gross_revenue': f'{gross:.3f}',
         })
+    # The semesters before the website, from the hand-kept record, so picking
+    # an old term shows what sold then and 'all semesters' really is all of
+    # them. None for the website's own terms — the page reads as before.
+    from .workbook import history_for_insights
     return Response({
         'total_revenue': f'{total_revenue:.3f}',          # net of discounts
         'total_gross_revenue': f'{total_gross:.3f}',
         'total_sales': total_sales,
         'total_discounted_sales': total_discounted,
         'rows': rows,
+        'history': history_for_insights(semester),
     })
 
 
@@ -855,7 +871,10 @@ def admin_note_views(request):
     """Per-chapter open counts from the download log — how many times each note
     (free or paid) was opened/read, and by how many distinct students. Every
     in-app read/download by a logged-in student is one log row, so 'opens' means
-    times accessed, and 'students' is the unique-student count.
+    times accessed, and 'students' is the unique-student count. 'previews' is
+    how often the chapter's blurred sample was looked at — a paid chapter a
+    student hasn't bought can only be previewed, so without this column a
+    chapter that draws a lot of interest but few buyers would look untouched.
 
     Pass ?from=YYYY-MM-DD and/or ?to=YYYY-MM-DD to count only opens inside that
     date range — both ends inclusive and read as calendar days in the site's
@@ -897,12 +916,14 @@ def admin_note_views(request):
             days = 0
         if days > 0:
             logs = logs.filter(created_at__gte=timezone.now() - timedelta(days=days))
+    opened = Q(kind='open')
     rows = (
         logs.values('note_id')
         .annotate(
-            opens=Count('id'),
-            students=Count('user_id', distinct=True),
-            guest_opens=Count('id', filter=Q(user_id__isnull=True)),
+            opens=Count('id', filter=opened),
+            students=Count('user_id', distinct=True, filter=opened),
+            guest_opens=Count('id', filter=opened & Q(user_id__isnull=True)),
+            previews=Count('id', filter=Q(kind='preview')),
         )
         # Capped so a runaway log can't build a huge response. 200 is well clear
         # of the catalogue size; the admin table is searchable and sortable, and
@@ -933,6 +954,7 @@ def admin_note_views(request):
             'opens': r['opens'],
             'students': r['students'],
             'guest_opens': r['guest_opens'],
+            'previews': r['previews'],
             # How many students own this chapter. Free chapters are never bought,
             # so they report null and the UI leaves the cell blank.
             'purchases': None if n.is_free else n.purchase_count,

@@ -2008,3 +2008,157 @@ class ViewsCountEveryStudentOpenTests(TestCase):
         row = next(r for r in rows if r['id'] == self.paid.id)
         self.assertEqual(row['opens'], 1)
         self.assertFalse(row['is_free'])
+
+
+class PreviewsAreCountedTests(TestCase):
+    """Looking at a chapter's blurred sample is counted as a preview — apart from
+    opens, never inflating them — because it is the only thing a student can do
+    with a paid chapter before buying it."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 11', position=11,
+                                               is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.course  = Course.objects.create(name='ITIS103', college='IT')
+        self.paid    = Note.objects.create(course=self.course, chapter_number=2,
+                                           chapter_title='Data', price=Decimal('1.500'))
+        self.nf      = NoteFile.objects.create(
+            note=self.paid, file=SimpleUploadedFile('f.pdf', _make_pdf(4)))
+        cache.clear()      # the sample endpoint is throttled
+
+    def _client(self, user=None):
+        c = APIClient()
+        if user:
+            c.force_authenticate(user)
+        return c
+
+    def _row(self, **params):
+        query = '&'.join(f'{k}={v}' for k, v in params.items())
+        rows = self._client(self.admin).get(f'/api/admin/note-views/?{query}').data
+        return next((r for r in rows if r['id'] == self.paid.id), None)
+
+    def test_a_student_without_access_sampling_a_paid_chapter_is_a_preview(self):
+        resp = self._client(self.student).get(f'/api/note-files/{self.nf.id}/sample/')
+        self.assertEqual(resp.status_code, 200)
+        log = DownloadLog.objects.get()
+        self.assertEqual((log.kind, log.user, log.note, log.semester),
+                         ('preview', self.student, self.paid, self.sem))
+        row = self._row()
+        self.assertEqual((row['opens'], row['students'], row['previews']), (0, 0, 1))
+
+    def test_a_guest_preview_is_counted_too(self):
+        self._client().get(f'/api/note-files/{self.nf.id}/sample/')
+        self.assertEqual(self._row()['previews'], 1)
+        self.assertEqual(self._row()['guest_opens'], 0)
+
+    def test_the_admin_previewing_is_not_counted(self):
+        self._client(self.admin).get(f'/api/note-files/{self.nf.id}/sample/')
+        self.assertEqual(DownloadLog.objects.count(), 0)
+
+    def test_previews_follow_the_semester_filter(self):
+        self._client(self.student).get(f'/api/note-files/{self.nf.id}/sample/')
+        other = Semester.objects.create(label='Semester 10 (Summer)', position=10)
+        self.assertEqual(self._row(semester=self.sem.id)['previews'], 1)
+        self.assertIsNone(self._row(semester=other.id))
+
+    def test_an_open_after_buying_is_an_open_not_a_preview(self):
+        Access.objects.create(user=self.student, note=self.paid, semester=self.sem)
+        with patch('api.views._fetch_file_bytes',
+                   return_value=(_make_pdf(1), 'application/pdf')):
+            self._client(self.student).get(f'/api/note-files/{self.nf.id}/download/')
+        row = self._row()
+        self.assertEqual((row['opens'], row['previews']), (1, 0))
+
+
+class RecordShowsInInsightsTests(TestCase):
+    """The semesters before the website come from the hand-kept record, so the
+    Sales page can be read for any term and 'all semesters' really is all."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.s5  = Semester.objects.create(label='Semester 5', position=5)
+        self.s7  = Semester.objects.create(label='Semester 7 (Summer)', position=7,
+                                           is_summer=True)
+        self.s11 = Semester.objects.create(label='Semester 11', position=11,
+                                           is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        # Renamed since the record: the old 'ITIS103' rows must land here.
+        self.course  = Course.objects.create(name='ITIS103 / ITIS104',
+                                             college='College of Information Technology')
+        self.note    = Note.objects.create(course=self.course, chapter_number=2,
+                                           chapter_title='Data', price=Decimal('1.500'))
+        self.history = __import__('json').load(
+            open(__import__('api.workbook', fromlist=['w']).HISTORY_PATH))
+
+    def _sales(self, semester=None):
+        c = APIClient(); c.force_authenticate(self.admin)
+        url = '/api/admin/sales/' + (f'?semester={semester.id}' if semester else '')
+        return c.get(url).data
+
+    def test_an_old_semester_lists_its_courses_with_copies_but_no_revenue(self):
+        data = self._sales(self.s5)
+        self.assertEqual(data['total_sales'], 0)          # nothing on the website
+        hist = data['history']
+        expected = self.history['course_rows']
+        entry = next(e for e in expected if e['semester'] == 'Semester 5')
+        row = next(r for r in hist['rows'] if r['course_name'] == self.course.name)
+        self.assertEqual(row['sales'], entry['copies']['ITIS103'])
+        self.assertIsNone(row['revenue'])
+        self.assertEqual(row['college'], self.course.college)
+        self.assertEqual(hist['revenue'],
+                         f"{self.history['semester_revenue']['Semester 5']:.3f}")
+        self.assertEqual(hist['copies'],
+                         sum(v for v in entry['copies'].values() if isinstance(v, (int, float))))
+        self.assertFalse(hist['revenue_by_course'])
+        # 'No Pay' is not a course that sold nothing — it is not a row at all.
+        self.assertNotIn('LAW303', [r['course_name'] for r in hist['rows']])
+
+    def test_a_summer_has_revenue_but_no_copies(self):
+        hist = self._sales(self.s7)['history']
+        self.assertEqual(hist['rows'], [])
+        self.assertIsNone(hist['copies'])
+        self.assertEqual(hist['revenue'],
+                         f"{self.history['semester_revenue']['Semester 7 (Summer)']:.3f}")
+
+    def test_the_websites_own_semester_has_no_record(self):
+        Access.objects.create(user=self.student, note=self.note, semester=self.s11,
+                              price=Decimal('1.500'))
+        data = self._sales(self.s11)
+        self.assertEqual(data['total_sales'], 1)
+        self.assertIsNone(data['history'])
+
+    def test_all_semesters_values_every_course_and_reports_what_it_cannot_split(self):
+        hist = self._sales()['history']
+        row = next(r for r in hist['rows'] if r['course_name'] == self.course.name)
+        self.assertEqual(row['sales'], int(self.history['course_total_copies']['ITIS103']))
+        self.assertEqual(row['revenue'], f"{self.history['course_total_value']['ITIS103']:.3f}")
+        self.assertEqual(hist['copies'], int(self.history['grand_total_copies']))
+        self.assertEqual(hist['revenue'],
+                         f"{self.history['semester_revenue_grand_total']:.3f}")
+        by_course = sum(float(r['revenue']) for r in hist['rows'])
+        self.assertAlmostEqual(float(hist['unallocated']),
+                               float(hist['revenue']) - by_course, places=3)
+        self.assertTrue(hist['revenue_by_course'])
+
+    def test_a_course_no_longer_in_the_catalogue_still_lands_in_a_college(self):
+        # ITCY354 was dropped years ago; ITCY-anything belongs with IT.
+        Course.objects.create(name='ITCY201', college='College of Information Technology')
+        row = next(r for r in self._sales()['history']['rows'] if r['course_name'] == 'ITCY354')
+        self.assertEqual(row['college'], 'College of Information Technology')
+
+    def test_the_record_tab_counts_the_old_copies_too(self):
+        c = APIClient(); c.force_authenticate(self.admin)
+        data = c.get('/api/admin/semesters/').data
+        by_label = {s['label']: s['sales_count'] for s in data['semesters']}
+        entry = next(e for e in self.history['course_rows'] if e['semester'] == 'Semester 5')
+        self.assertEqual(by_label['Semester 5'],
+                         sum(v for v in entry['copies'].values() if isinstance(v, (int, float))))
+        self.assertEqual(by_label['Semester 7 (Summer)'], 0)
+        Access.objects.create(user=self.student, note=self.note, semester=self.s11,
+                              price=Decimal('1.500'))
+        data = c.get('/api/admin/semesters/').data
+        self.assertEqual(next(s for s in data['semesters']
+                              if s['label'] == 'Semester 11')['sales_count'], 1)

@@ -419,6 +419,10 @@ class SemesterSerializer(serializers.ModelSerializer):
         extra_kwargs = {'position': {'required': False}}
 
     def get_sales_count(self, obj):
-        """Paid chapters filed under this semester — shown so the admin can see
-        which terms carry real data before renaming or deleting one."""
-        return OrderItem.objects.filter(order__semester=obj, order__status='paid').count()
+        """Copies sold under this semester — shown so the admin can see which
+        terms carry real data before renaming or deleting one. Counted the way
+        the Sales page and the workbook count: one per access grant on a paid
+        chapter, plus whatever the hand-kept record has for the term."""
+        from .workbook import history_copies_for
+        live = Access.objects.filter(semester=obj, note__price__gt=0).count()
+        return live + (history_copies_for(obj.label) or 0)

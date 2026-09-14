@@ -62,10 +62,10 @@ class OrderAdmin(admin.ModelAdmin):
 @admin.register(DownloadLog)
 class DownloadLogAdmin(admin.ModelAdmin):
     """Read-only audit trail of note downloads / reads and their trace codes."""
-    list_display = ['created_at', 'code', 'user', 'note', 'ip']
-    list_filter = ['created_at']
+    list_display = ['created_at', 'kind', 'code', 'user', 'note', 'ip']
+    list_filter = ['kind', 'created_at']
     search_fields = ['code', 'user__email', 'user__name', 'note__chapter_title']
-    readonly_fields = ['user', 'note', 'code', 'ip', 'created_at']
+    readonly_fields = ['user', 'note', 'kind', 'code', 'ip', 'created_at']
 
     def has_add_permission(self, request):
         return False

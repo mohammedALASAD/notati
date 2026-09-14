@@ -280,9 +280,17 @@ class OrderItem(models.Model):
 class DownloadLog(models.Model):
     """One row per note download / in-app read. The `code` is a per-(user, note)
     fingerprint embedded in the delivered PDF, so a leaked copy can be traced back
-    to the student who downloaded it."""
+    to the student who downloaded it.
+
+    A row is also written when someone looks at a chapter's blurred sample —
+    `kind` tells the two apart. A preview is not an open (the student never got
+    the chapter), but it is the only thing a student can do with a paid chapter
+    before buying it, so Insights counts them on their own."""
+    KIND_CHOICES = [('open', 'Open'), ('preview', 'Preview')]
+
     user       = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='downloads')
     note       = models.ForeignKey(Note, on_delete=models.SET_NULL, null=True, related_name='downloads')
+    kind       = models.CharField(max_length=8, choices=KIND_CHOICES, default='open', db_index=True)
     # The term the open happened in, so Insights can be read one semester at a
     # time. Stamped when the row is written, like Order.semester.
     semester   = models.ForeignKey('Semester', on_delete=models.SET_NULL, null=True,

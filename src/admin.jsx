@@ -1624,6 +1624,7 @@ function AccessManager() {
           <h1>Unlock access</h1>
           <p className="sub">
             After receiving a BenefitPay payment, find the student by email then grant them access to the chapter they paid for.
+            Each unlock of a paid chapter is a sale: it is filed under the current semester at today's price, in Insights and in the sales record.
           </p>
         </div>
       </div>
@@ -1905,51 +1906,80 @@ function TestimonialsManager() {
 /* ============================================================
    Sales View — revenue breakdown by college / course / chapter
    ============================================================ */
-function SalesView({ salesData, loading }) {
+function SalesView({ salesData, loading, semesterLabel }) {
   const [collegeFilter,    setCollegeFilter]    = useStateAd('all');
   const [sortBy,           setSortBy]           = useStateAd('revenue');
   const [expandedColleges, setExpandedColleges] = useStateAd(() => new Set());
   const [expandedCourses,  setExpandedCourses]  = useStateAd(() => new Set());
 
+  // The hand-kept record for the semesters before the website (null for the
+  // website's own terms). Its course rows sit in the same tree as the live
+  // ones; a single old term has copies per course but only one revenue figure
+  // for the whole term, so that goes on the card rather than the rows.
+  const record = (salesData && salesData.history) || null;
+  const recordRows = useMemoAd(() => (record ? record.rows : []), [record]);
+
   const colleges = useMemoAd(() => {
     if (!salesData) return [];
-    return Array.from(new Set(salesData.rows.map(r => r.college))).sort();
-  }, [salesData]);
+    return Array.from(new Set([...salesData.rows, ...recordRows].map(r => r.college))).sort();
+  }, [salesData, recordRows]);
 
-  const { filteredRows, filteredRevenue, filteredSales, filteredDiscounted, filteredSaved } = useMemoAd(() => {
-    if (!salesData) return { filteredRows: [], filteredRevenue: 0, filteredSales: 0, filteredDiscounted: 0, filteredSaved: 0 };
-    const rows = collegeFilter === 'all'
-      ? salesData.rows
-      : salesData.rows.filter(r => r.college === collegeFilter);
+  const { filteredRows, filteredRecord, filteredRevenue, filteredSales, filteredDiscounted, filteredSaved,
+          recordRevenue, recordCopies } = useMemoAd(() => {
+    if (!salesData) return { filteredRows: [], filteredRecord: [], filteredRevenue: 0, filteredSales: 0,
+                             filteredDiscounted: 0, filteredSaved: 0, recordRevenue: 0, recordCopies: 0 };
+    const inScope = r => collegeFilter === 'all' || r.college === collegeFilter;
+    const rows = salesData.rows.filter(inScope);
+    const old  = recordRows.filter(inScope);
     const revenue = rows.reduce((s, r) => s + Number(r.revenue), 0);
     const gross   = rows.reduce((s, r) => s + Number(r.gross_revenue != null ? r.gross_revenue : r.revenue), 0);
+    // A term's revenue that was never split by course can only be shown when
+    // nothing is filtered out — a college filter would have to guess its share.
+    const oldRevenue = !record ? 0
+      : collegeFilter === 'all' ? Number(record.revenue)
+      : old.reduce((s, r) => s + Number(r.revenue || 0), 0);
+    const oldCopies = old.reduce((s, r) => s + r.sales, 0);
     return {
       filteredRows: rows,
-      filteredRevenue: revenue,
-      filteredSales:   rows.reduce((s, r) => s + r.sales, 0),
+      filteredRecord: old,
+      filteredRevenue: revenue + oldRevenue,
+      filteredSales:   rows.reduce((s, r) => s + r.sales, 0) + oldCopies,
       filteredDiscounted: rows.reduce((s, r) => s + (r.discounted_sales || 0), 0),
       filteredSaved: gross - revenue,
+      recordRevenue: oldRevenue,
+      recordCopies: oldCopies,
     };
-  }, [salesData, collegeFilter]);
+  }, [salesData, recordRows, record, collegeFilter]);
 
   const grouped = useMemoAd(() => {
     const map = {};
+    const node = (college, cn) => {
+      if (!map[college]) map[college] = { revenue: 0, sales: 0, discounted: 0, courses: {} };
+      if (!map[college].courses[cn]) map[college].courses[cn] = { revenue: 0, sales: 0, discounted: 0, chapters: [], record: null };
+      return map[college].courses[cn];
+    };
     filteredRows.forEach(r => {
-      if (!map[r.college]) map[r.college] = { revenue: 0, sales: 0, discounted: 0, courses: {} };
+      const co = node(r.college, r.course_name);
       map[r.college].revenue    += Number(r.revenue);
       map[r.college].sales      += r.sales;
       map[r.college].discounted += (r.discounted_sales || 0);
-      const cn = r.course_name;
-      if (!map[r.college].courses[cn]) map[r.college].courses[cn] = { revenue: 0, sales: 0, discounted: 0, chapters: [] };
-      map[r.college].courses[cn].revenue    += Number(r.revenue);
-      map[r.college].courses[cn].sales      += r.sales;
-      map[r.college].courses[cn].discounted += (r.discounted_sales || 0);
-      map[r.college].courses[cn].chapters.push(r);
+      co.revenue    += Number(r.revenue);
+      co.sales      += r.sales;
+      co.discounted += (r.discounted_sales || 0);
+      co.chapters.push(r);
+    });
+    filteredRecord.forEach(r => {
+      const co = node(r.college, r.course_name);
+      map[r.college].revenue += Number(r.revenue || 0);
+      map[r.college].sales   += r.sales;
+      co.revenue += Number(r.revenue || 0);
+      co.sales   += r.sales;
+      co.record   = r;
     });
     const entries = Object.entries(map);
     entries.sort((a, b) => sortBy === 'revenue' ? b[1].revenue - a[1].revenue : b[1].sales - a[1].sales);
     return entries;
-  }, [filteredRows, sortBy]);
+  }, [filteredRows, filteredRecord, sortBy]);
 
   function toggleCollege(college) {
     setExpandedColleges(prev => {
@@ -1967,22 +1997,33 @@ function SalesView({ salesData, loading }) {
   }
 
   if (loading) return <PageLoader rows={5}/>;
-  if (!salesData || salesData.rows.length === 0) return (
-    <EmptyState title="No sales yet"
-                message="Sales appear here once students start buying paid chapters."/>
+  if (!salesData || (salesData.rows.length === 0 && !record)) return (
+    <EmptyState title={semesterLabel ? `No sales in ${semesterLabel} yet` : 'No sales yet'}
+                message={semesterLabel
+                  ? 'Nothing has sold in this semester so far. Pick another semester, or "All semesters" for everything.'
+                  : 'Sales appear here once students start buying paid chapters.'}/>
   );
+
+  // Copies that were never written down (the summers) read as a dash, not a zero.
+  const copiesUnknown = record && record.copies == null && filteredSales === 0;
+  const fmt = n => Number(n).toLocaleString('en-GB', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 
   return (
     <div>
       {/* Summary cards */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
         {[
-          { label: 'Total revenue', value: `BD ${filteredRevenue.toFixed(3)}`, sub: 'after discounts', color: 'var(--notati-walnut)' },
-          { label: 'Total sales',   value: String(filteredSales),              sub: 'access grants sold', color: 'var(--notati-amber)' },
+          { label: 'Total revenue', value: `BD ${fmt(filteredRevenue)}`,
+            sub: record ? (recordRevenue > 0 ? `incl. BD ${fmt(recordRevenue)} from your record` : 'website only — record revenue not split by college')
+                        : 'after discounts',
+            color: 'var(--notati-walnut)' },
+          { label: 'Total sales',   value: copiesUnknown ? '—' : filteredSales.toLocaleString('en-GB'),
+            sub: copiesUnknown ? 'copies were not written down' : record ? `incl. ${recordCopies.toLocaleString('en-GB')} from your record` : 'access grants sold',
+            color: 'var(--notati-amber)' },
           { label: 'Sold with discount', value: String(filteredDiscounted),
             sub: filteredSaved > 0 ? `BD ${filteredSaved.toFixed(3)} given off` : 'no discounts used',
             color: 'var(--notati-forest)' },
-          { label: 'Avg per sale',  value: `BD ${filteredSales > 0 ? (filteredRevenue / filteredSales).toFixed(3) : '0.000'}`,
+          { label: 'Avg per sale',  value: `BD ${filteredSales > 0 ? fmt(filteredRevenue / filteredSales) : '0.000'}`,
             sub: 'average paid', color: 'var(--fg-1)' },
         ].map(card => (
           <div key={card.label} style={{ flex: 1, minWidth: 160, background: 'var(--bg-section)',
@@ -1998,6 +2039,20 @@ function SalesView({ salesData, loading }) {
           </div>
         ))}
       </div>
+
+      {record && (
+        <p style={{ fontSize: 13, color: 'var(--fg-3)', margin: '-8px 0 20px', lineHeight: 1.5 }}>
+          <strong style={{ color: 'var(--fg-2)' }}>From your hand-kept record</strong>
+          {record.semester ? ` (${record.semester})` : ' (before the website)'}:{' '}
+          {record.copies == null ? 'revenue only — copies were not written down for the summers'
+            : `${record.copies.toLocaleString('en-GB')} copies, BD ${fmt(record.revenue)}`}.
+          {record.revenue_by_course
+            ? (Number(record.unallocated) > 0
+                ? ` BD ${fmt(record.unallocated)} of that is not split by course — the summer semesters were only ever tracked month by month.`
+                : '')
+            : ' Revenue per course was not recorded back then, so the course rows show copies only.'}
+        </p>
+      )}
 
       {/* Filter + sort bar */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
@@ -2025,7 +2080,10 @@ function SalesView({ salesData, loading }) {
 
       {/* Tree table */}
       {grouped.length === 0 ? (
-        <EmptyState title="No matches" message="Try a different college filter."/>
+        <EmptyState title={record && record.copies == null ? 'Only the revenue was recorded' : 'No matches'}
+                    message={record && record.copies == null
+                      ? 'The record has this semester\'s revenue but not which courses it came from.'
+                      : 'Try a different college filter.'}/>
       ) : (
         <section className="panel">
           <div className="panel-body flush">
@@ -2072,7 +2130,7 @@ function SalesView({ salesData, loading }) {
                         </td>
                         <td className="r" data-l="Revenue">
                           <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--notati-walnut)' }}>
-                            BD {cData.revenue.toFixed(3)}
+                            BD {fmt(cData.revenue)}
                           </span>
                         </td>
                       </tr>
@@ -2093,7 +2151,7 @@ function SalesView({ salesData, loading }) {
                                 </span>
                                 <span className="tag tag-walnut" style={{ fontSize: 12 }}>{course}</span>
                                 <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
-                                  {chapters.length} ch.
+                                  {chapters.length ? `${chapters.length} ch.` : 'from your record'}
                                 </span>
                                 {coData.discounted > 0 && (
                                   <span className="tag" style={{ fontSize: 10,
@@ -2107,10 +2165,47 @@ function SalesView({ salesData, loading }) {
                               <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>{coData.sales}</span>
                             </td>
                             <td className="r" data-l="Revenue">
-                              <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>BD {coData.revenue.toFixed(3)}</span>
+                              <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>
+                                {coData.record && !coData.record.revenue && !chapters.length ? '—' : `BD ${fmt(coData.revenue)}`}
+                              </span>
                             </td>
                           </tr>
                         );
+                        if (coExpanded && coData.record) {
+                          // The copies this course sold before the website, as one line
+                          // under the live chapters — so the course total adds up in view.
+                          const rec = coData.record;
+                          rows.push(
+                            <tr key={`rec-${courseKey}`}>
+                              <td data-l="Name">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 64 }}>
+                                  <div style={{
+                                    width: 28, height: 28, borderRadius: 'var(--r-3)', flexShrink: 0,
+                                    background: 'var(--bg-card-2)', color: 'var(--fg-3)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: 12, fontWeight: 700
+                                  }}>
+                                    <Icons.FileText size={13}/>
+                                  </div>
+                                  <div style={{ minWidth: 0 }}>
+                                    <span style={{ fontSize: 13, color: 'var(--fg-1)', fontWeight: 600 }}>
+                                      {record.semester ? `Before the website · ${record.semester}` : 'Before the website · Semesters 1–9'}
+                                    </span>
+                                    <span className="tag tag-soft" style={{ marginLeft: 8, fontSize: 10 }}>record</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="r" data-l="Sales">
+                                <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>{rec.sales}</span>
+                              </td>
+                              <td className="r" data-l="Revenue">
+                                <span style={{ fontSize: 13, color: 'var(--fg-3)' }}>
+                                  {rec.revenue ? `BD ${fmt(rec.revenue)}` : 'not recorded'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        }
                         if (coExpanded) {
                           chapters.forEach(ch => {
                             rows.push(
@@ -2320,8 +2415,9 @@ function NoteViews({ semester }) {
     });
   }, [rows, college, priceF, q, sortKey, sortDir]);
 
-  const totalOpens  = useMemoAd(() => shown.reduce((s, r) => s + r.opens, 0), [shown]);
-  const totalGuests = useMemoAd(() => shown.reduce((s, r) => s + (r.guest_opens || 0), 0), [shown]);
+  const totalOpens    = useMemoAd(() => shown.reduce((s, r) => s + r.opens, 0), [shown]);
+  const totalGuests   = useMemoAd(() => shown.reduce((s, r) => s + (r.guest_opens || 0), 0), [shown]);
+  const totalPreviews = useMemoAd(() => shown.reduce((s, r) => s + (r.previews || 0), 0), [shown]);
   // Highest-opens row, found independently of the sort, so the bar scale and the
   // "most opened" card stay right when you sort by another column.
   const topRow   = useMemoAd(() => shown.reduce((best, r) => (!best || r.opens > best.opens ? r : best), null), [shown]);
@@ -2334,12 +2430,12 @@ function NoteViews({ semester }) {
     downloadCSV(
       `notati-chapter-views-${range}.csv`,
       ['Course', 'Chapter', 'Title', 'College', 'Access', 'Price (BHD)',
-       'Opens', 'Students', 'Guest opens', 'Purchases'],
+       'Opens', 'Students', 'Guest opens', 'Previews', 'Purchases'],
       shown.map(r => [
         r.course_name, r.chapter_number, r.chapter_title, r.college,
         r.is_free ? 'Free' : 'Paid',
         r.is_free ? 0 : Number(r.price),
-        r.opens, r.students, r.guest_opens || 0,
+        r.opens, r.students, r.guest_opens || 0, r.previews || 0,
         // Free chapters are never bought — blank, not 0, so it reads as "n/a".
         r.purchases == null ? '' : r.purchases,
       ]),
@@ -2368,6 +2464,7 @@ function NoteViews({ semester }) {
           { label: 'Total opens',      value: String(totalOpens),
             sub: hasRange ? 'in the selected dates' : 'reads + downloads', color: 'var(--notati-walnut)' },
           { label: 'Guest opens',      value: String(totalGuests),   sub: 'no account (free only)', color: 'var(--notati-amber)' },
+          { label: 'Previews',         value: String(totalPreviews), sub: 'blurred samples looked at', color: 'var(--notati-bark)' },
           { label: 'Chapters opened',  value: String(shown.length),  sub: 'distinct chapters', color: 'var(--notati-forest)' },
           { label: 'Most opened',      value: topRow ? String(topRow.opens) : '0',
             sub: topRow ? `${topRow.course_name} Ch.${topRow.chapter_number}` : '-', color: 'var(--fg-1)' },
@@ -2435,8 +2532,8 @@ function NoteViews({ semester }) {
         <EmptyState
           title={hasRange || semester ? 'No opens in this period' : 'No opens yet'}
           message={hasRange || semester
-            ? 'Nothing was opened by a student in this window. Widen the dates or pick "All semesters". Your own opens as admin are never counted — sign in as a student to see one appear.'
-            : 'This fills in as chapters get opened. Every read or download is counted here — by logged-in students and by guests with no account (guests can only open free chapters). Your own opens as admin are never counted.'}/>
+            ? 'Nothing was opened or previewed by a student in this window. Widen the dates or pick "All semesters". Your own opens as admin are never counted — sign in as a student to see one appear.'
+            : 'This fills in as chapters get opened. Every read or download is counted here — by logged-in students and by guests with no account (guests can only open free chapters). A look at a paid chapter\'s blurred sample counts as a preview, not an open. Your own opens as admin are never counted.'}/>
       ) : shown.length === 0 ? (
         <EmptyState title="No matches" message="Try a different filter or search term."/>
       ) : (
@@ -2454,6 +2551,9 @@ function NoteViews({ semester }) {
                     <th {...thSort('opens', 110)}>Opens{sortArrow('opens')}</th>
                     <th {...thSort('students', 90)}>Students{sortArrow('students')}</th>
                     <th {...thSort('guest_opens', 90)}>Guests{sortArrow('guest_opens')}</th>
+                    <th {...thSort('previews', 90)} title="Looks at the blurred sample — what a student can do with a paid chapter before buying it. Click to sort">
+                      Previews{sortArrow('previews')}
+                    </th>
                     <th {...thSort('purchases', 100)}>Purchases{sortArrow('purchases')}</th>
                   </tr>
                 </thead>
@@ -2489,6 +2589,10 @@ function NoteViews({ semester }) {
                       <td className="r" data-l="Guests"
                           style={{ color: r.guest_opens ? 'var(--notati-amber)' : 'var(--fg-3)', fontWeight: r.guest_opens ? 700 : 400 }}>
                         {r.guest_opens || 0}
+                      </td>
+                      <td className="r" data-l="Previews"
+                          style={{ color: r.previews ? 'var(--fg-1)' : 'var(--fg-3)', fontWeight: r.previews ? 700 : 400 }}>
+                        {r.previews || 0}
                       </td>
                       {/* Free chapters are never bought, so their cell stays blank. */}
                       <td className="r" data-l="Purchases"
@@ -2702,24 +2806,36 @@ function ChapterInsights() {
   const [salesData,    setSalesData]    = useStateAd(null);
   const [loadingSales, setLoadingSales] = useStateAd(false);
   // One semester picker shared by Views and Sales, so switching tabs keeps you
-  // looking at the same term. '' means every semester at once.
+  // looking at the same term. '' means every semester at once. It opens on the
+  // current term — that is what you want to see almost every time — so the
+  // tabs wait for the list before fetching, rather than showing every semester
+  // for a moment and then jumping.
   const [semester,     setSemester]     = useStateAd('');
   const [semesters,    setSemesters]    = useStateAd([]);
+  const [ready,        setReady]        = useStateAd(false);
+  const picked = useRefAd(false);          // the admin chose one themselves
 
   useEffectAd(() => {
     NotatiAPI.getSemesters()
-      .then(d => setSemesters(d.semesters || [])).catch(() => {});
+      .then(d => {
+        const list = d.semesters || [];
+        setSemesters(list);
+        const cur = list.find(x => x.is_current);
+        if (cur && !picked.current) setSemester(String(cur.id));
+      })
+      .catch(() => {})
+      .finally(() => setReady(true));
   }, []);
 
   // Refetch whenever the tab opens or the semester changes — the totals are
   // recomputed on the server, so this is a real filter, not a client-side hide.
   useEffectAd(() => {
-    if (insightsTab !== 'sales') return;
+    if (insightsTab !== 'sales' || !ready) return;
     setLoadingSales(true);
     NotatiAPI.getSalesData(semester)
       .then(setSalesData).catch(() => {})
       .finally(() => setLoadingSales(false));
-  }, [insightsTab, semester]);
+  }, [insightsTab, semester, ready]);
 
   const scoped = insightsTab === 'views' || insightsTab === 'sales';
   const current = semesters.find(x => x.is_current);
@@ -2739,7 +2855,7 @@ function ChapterInsights() {
             {scoped && (
               <select className="filter-select" value={semester}
                       title="Show one semester at a time"
-                      onChange={e => setSemester(e.target.value)}>
+                      onChange={e => { picked.current = true; setSemester(e.target.value); }}>
                 <option value="">All semesters</option>
                 {semesters.map(x => (
                   <option key={x.id} value={x.id}>
@@ -2766,10 +2882,11 @@ function ChapterInsights() {
 
       {insightsTab === 'trace' && <LeakTrace/>}
 
-      {insightsTab === 'views' && <NoteViews semester={semester}/>}
+      {insightsTab === 'views' && (ready ? <NoteViews semester={semester}/> : <PageLoader rows={5}/>)}
 
       {insightsTab === 'sales' && (
-        <SalesView salesData={salesData} loading={loadingSales}/>
+        <SalesView salesData={salesData} loading={loadingSales || !ready}
+                   semesterLabel={(semesters.find(x => String(x.id) === semester) || {}).label}/>
       )}
 
       {insightsTab === 'record' && <SalesRecord/>}
