@@ -1260,25 +1260,52 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
     );
   }
 
-  /* ---- Level 0: College cards ---- */
-  if (college === 'all' && !q.trim() && !selectedCourse) {
-    return (
-      <div className="fade-in">
-        <div className="page-head">
-          <div className="ttl">
-            <h1>Notes library</h1>
-            <p className="sub">Select your college to browse available courses.</p>
-          </div>
-          <div className="actions">
-            <div className="search-mini" style={{ minWidth: 240 }}>
-              <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search all courses…"/>
-            </div>
+  /* ---- Levels 0 and 1: college cards, or the course grid ----
+     One tree for both, on purpose. Typing the first letter used to switch from a
+     "college cards" branch to a "course grid" branch that had its own search box,
+     so the box being typed in was torn down after one keystroke and focus went
+     with it. Here the search box is the same element whichever level is showing;
+     only the cards underneath change. */
+  const browsing = college === 'all' && !q.trim();
+
+  return (
+    <div className="fade-in">
+      <div className="page-head">
+        <div className="ttl">
+          <h1>{college !== 'all' ? college : 'Notes library'}</h1>
+          <p className="sub">
+            {browsing ? 'Select your college to browse available courses.'
+              : college !== 'all' ? 'Browse by course.' : 'Search results'}
+          </p>
+        </div>
+        <div className="actions">
+          {!browsing && (
+            <button className="btn btn-outline" onClick={() => pickCollege('all')}>
+              <Icons.ArrowLeft size={16}/> All colleges
+            </button>
+          )}
+        </div>
+      </div>
+
+      <section className="panel">
+        <div className="panel-head" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <FilterDropdown
+            value={college}
+            onChange={pickCollege}
+            options={COLLEGES.map(c => ({ val: c, lbl: c }))}
+            placeholder="All colleges"
+            icon={<Icons.Filter size={13}/>}/>
+
+          <div className="search-mini" style={{ minWidth: 260, marginLeft: 'auto' }}>
+            <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+            <input value={q} onChange={(e) => setQ(e.target.value)}
+                   placeholder={browsing ? 'Search all courses…' : 'Search by course name…'}/>
           </div>
         </div>
-        <section className="panel">
-          <div className="panel-body">
-            {loading ? <PageLoader rows={4} variant="cards"/> : collegeSummaries.length === 0 ? (
+
+        <div className="panel-body">
+          {loading ? <PageLoader rows={6} variant="cards"/> : browsing ? (
+            collegeSummaries.length === 0 ? (
               <EmptyState title="No courses yet" message="The library is empty - check back soon."/>
             ) : (
               <div className="grid-3 fade-in">
@@ -1299,45 +1326,8 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-        </section>
-      </div>
-    );
-  }
-
-  /* ---- Level 1: Course grid ---- */
-  return (
-    <div>
-      <div className="page-head">
-        <div className="ttl">
-          <h1>{college !== 'all' ? college : 'Notes library'}</h1>
-          <p className="sub">{college !== 'all' ? 'Browse by course.' : 'Search results'}</p>
-        </div>
-        <div className="actions">
-          <button className="btn btn-outline" onClick={() => pickCollege('all')}>
-            <Icons.ArrowLeft size={16}/> All colleges
-          </button>
-        </div>
-      </div>
-
-      <section className="panel">
-        <div className="panel-head" style={{ flexWrap: 'wrap', gap: 10 }}>
-          <FilterDropdown
-            value={college}
-            onChange={pickCollege}
-            options={COLLEGES.map(c => ({ val: c, lbl: c }))}
-            placeholder="All colleges"
-            icon={<Icons.Filter size={13}/>}/>
-
-          <div className="search-mini" style={{ minWidth: 260, marginLeft: 'auto' }}>
-            <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by course name…"/>
-          </div>
-        </div>
-
-        <div className="panel-body">
-          {loading ? <PageLoader rows={6} variant="cards"/> : courses.length === 0 ? (
+            )
+          ) : courses.length === 0 ? (
             <EmptyState title="No courses yet"
                         message={notes.length === 0
                           ? "The library is empty - check back soon."
@@ -1748,20 +1738,36 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
         </div>
       </section>
 
-      {/* Course grid / College cards */}
+      {/* Course grid / College cards — one tree for both levels, on purpose.
+          Typing the first letter used to swap a "college cards" branch for a
+          "course grid" branch with its own search box, so the box being typed in
+          was torn down after one keystroke and focus went with it. The search box
+          is now the same element whichever level is showing. */}
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 80px' }}>
-        {college === 'all' && !q.trim() ? (
-
-          /* ── Level 0: College cards ── */
-          <section className="panel">
-            <div className="panel-head" style={{ justifyContent: 'flex-end' }}>
-              <div className="search-mini" style={{ minWidth: 260 }}>
-                <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search all courses…"/>
-              </div>
+        {college !== 'all' && (
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => pickCollege('all')}>
+              <Icons.ArrowLeft size={14}/> All colleges
+            </button>
+            <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>{college}</span>
+          </div>
+        )}
+        <section className="panel">
+          <div className="panel-head" style={{ flexWrap: 'wrap', gap: 10 }}>
+            <FilterDropdown
+              value={college}
+              onChange={pickCollege}
+              options={COLLEGES.map(c => ({ val: c, lbl: c }))}
+              placeholder="All colleges"
+              icon={<Icons.Filter size={13}/>}/>
+            <div className="search-mini" style={{ minWidth: 260, marginLeft: 'auto' }}>
+              <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
+              <input value={q} onChange={(e) => setQ(e.target.value)}
+                     placeholder={college === 'all' && !q.trim() ? 'Search all courses…' : 'Search by course name…'}/>
             </div>
-            <div className="panel-body">
-              {loading ? (
+          </div>
+          <div className="panel-body">
+            {loading ? (
                 <div style={{ padding: '56px 24px', textAlign: 'center' }}>
                   <div style={{ display: 'inline-block', width: 36, height: 36, border: '3px solid var(--border-2)',
                                 borderTopColor: 'var(--notati-amber)', borderRadius: '50%',
@@ -1786,7 +1792,8 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                     </div>
                   )}
                 </div>
-              ) : collegeSummaries.length === 0 ? (
+              ) : college === 'all' && !q.trim() ? (
+                collegeSummaries.length === 0 ? (
                 <EmptyState title="No courses yet" message="The library is empty - check back soon."/>
               ) : (
                 <div className="grid-3 fade-in">
@@ -1807,104 +1814,49 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-          </section>
-
-        ) : (
-
-          /* ── Level 1: Course grid ── */
-          <>
-            {college !== 'all' && (
-              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => pickCollege('all')}>
-                  <Icons.ArrowLeft size={14}/> All colleges
-                </button>
-                <span style={{ font: 'var(--type-h3)', color: 'var(--fg-1)' }}>{college}</span>
-              </div>
-            )}
-            <section className="panel">
-              <div className="panel-head" style={{ flexWrap: 'wrap', gap: 10 }}>
-                <FilterDropdown
-                  value={college}
-                  onChange={pickCollege}
-                  options={COLLEGES.map(c => ({ val: c, lbl: c }))}
-                  placeholder="All colleges"
-                  icon={<Icons.Filter size={13}/>}/>
-                <div className="search-mini" style={{ minWidth: 260, marginLeft: 'auto' }}>
-                  <Icons.Search size={16} style={{ color: 'var(--fg-3)' }}/>
-                  <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by course name…"/>
-                </div>
-              </div>
-              <div className="panel-body">
-                {loading ? (
-                  <div style={{ padding: '56px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'inline-block', width: 36, height: 36, border: '3px solid var(--border-2)',
-                                  borderTopColor: 'var(--notati-amber)', borderRadius: '50%',
-                                  animation: 'spin 0.9s linear infinite', marginBottom: 20 }}/>
-                    <div style={{ font: 'var(--type-body)', color: 'var(--fg-2)', marginBottom: 16 }}>
-                      {loadSecs < 3  ? 'Loading courses…'
-                     : loadSecs < 9  ? 'Waking the server up…'
-                     : loadSecs < 17 ? 'Server is starting - almost there…'
-                     :                 'Taking a bit longer than usual, hang tight…'}
-                    </div>
-                    <div style={{ width: 220, height: 3, background: 'var(--border-2)', borderRadius: 2, margin: '0 auto 16px', overflow: 'hidden' }}>
-                      <div style={{
-                        height: '100%', borderRadius: 2,
-                        background: 'var(--notati-amber)',
-                        width: `${Math.min(88, Math.round(100 * (1 - Math.exp(-loadSecs / 12))))}%`,
-                        transition: 'width 1s ease-out'
-                      }}/>
-                    </div>
-                    {loadSecs >= 5 && (
-                      <div style={{ font: 'var(--type-caption)', color: 'var(--fg-3)', fontSize: 12, maxWidth: 280, margin: '0 auto' }}>
-                        First visit after a quiet period takes ~20 seconds.
-                      </div>
-                    )}
-                  </div>
-                ) : courses.length === 0 ? (
-                  <EmptyState title="No courses yet" message="The library is empty - check back soon."/>
-                ) : (
-                  <div className="grid-3 fade-in">
-                    {courses.map(({ courseName, college: coll, notes: cNotes }) => {
-                      const free = cNotes.filter(n => !n.price || Number(n.price) === 0).length;
-                      const paid = cNotes.length - free;
-                      return (
-                        <div key={courseName} className="notecard" style={{ cursor: 'pointer' }}
-                             onClick={() => setSelectedCourse(courseName)}>
-                          <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{coll}</div>
-                          <span className="course">{courseName}</span>
-                          <div className="title">{cNotes.length} chapter{cNotes.length !== 1 ? 's' : ''} available</div>
-                          <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                            {free > 0 && (
-                              <span style={{ background: 'var(--notati-sage)', color: 'var(--notati-paper)',
-                                             font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
-                                             borderRadius: 'var(--r-pill)' }}>{free} free</span>
-                            )}
-                            {paid > 0 && (
-                              <span style={{ background: 'transparent', color: 'var(--fg-2)',
-                                             border: '1px solid var(--border-1)',
-                                             font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
-                                             borderRadius: 'var(--r-pill)' }}>{paid} paid</span>
-                            )}
-                          </div>
-                          <div className="foot">
-                            <span/>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-                                           color: 'var(--notati-walnut)', fontWeight: 700 }}>
-                              Browse chapters <Icons.ArrowRight size={13}/>
-                            </span>
-                          </div>
+              )
+              ) : (
+                courses.length === 0 ? (
+                <EmptyState title="No courses yet" message="The library is empty - check back soon."/>
+              ) : (
+                <div className="grid-3 fade-in">
+                  {courses.map(({ courseName, college: coll, notes: cNotes }) => {
+                    const free = cNotes.filter(n => !n.price || Number(n.price) === 0).length;
+                    const paid = cNotes.length - free;
+                    return (
+                      <div key={courseName} className="notecard" style={{ cursor: 'pointer' }}
+                           onClick={() => setSelectedCourse(courseName)}>
+                        <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>{coll}</div>
+                        <span className="course">{courseName}</span>
+                        <div className="title">{cNotes.length} chapter{cNotes.length !== 1 ? 's' : ''} available</div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                          {free > 0 && (
+                            <span style={{ background: 'var(--notati-sage)', color: 'var(--notati-paper)',
+                                           font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
+                                           borderRadius: 'var(--r-pill)' }}>{free} free</span>
+                          )}
+                          {paid > 0 && (
+                            <span style={{ background: 'transparent', color: 'var(--fg-2)',
+                                           border: '1px solid var(--border-1)',
+                                           font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
+                                           borderRadius: 'var(--r-pill)' }}>{paid} paid</span>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </section>
-          </>
-
-        )}
+                        <div className="foot">
+                          <span/>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                                         color: 'var(--notati-walnut)', fontWeight: 700 }}>
+                            Browse chapters <Icons.ArrowRight size={13}/>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+              )}
+          </div>
+        </section>
       </main>
 
       {/* ── Footer ── */}
