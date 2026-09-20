@@ -1,3 +1,4 @@
+import time
 from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO
@@ -56,12 +57,13 @@ def _page_text(content):
 
 
 def _serialize_note(note, user=None):
-    """Run NoteSerializer with a request context authenticated as `user`."""
+    """Run NoteSerializer with a request context authenticated as `user`
+    (a guest, with no account, when None)."""
+    from django.contrib.auth.models import AnonymousUser
     request = APIRequestFactory().get('/api/notes/')
-    request.user = user
     if user is not None:
         force_authenticate(request, user=user)
-    request.user = user
+    request.user = user if user is not None else AnonymousUser()
     return NoteSerializer(note, context={'request': request}).data
 
 
@@ -2162,3 +2164,116 @@ class RecordShowsInInsightsTests(TestCase):
         data = c.get('/api/admin/semesters/').data
         self.assertEqual(next(s for s in data['semesters']
                               if s['label'] == 'Semester 11')['sales_count'], 1)
+
+
+class DirectDownloadLinkTests(TestCase):
+    """The Download button hands the browser a plain link with a signed token,
+    because a link the browser navigates to is the only download that works on
+    every phone. The link must be as safe as the header it replaces: bound to
+    one student and one file, expiring, and still fingerprinted and logged."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 11', position=11, is_current=True)
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.other   = User.objects.create_user('o@x.com', 'pw', name='Omar')
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.course  = Course.objects.create(name='ITCS342', college='College of Information Technology')
+        self.paid    = Note.objects.create(course=self.course, chapter_number=1,
+                                           chapter_title='Introduction to analysis: design/of "algorithm"',
+                                           price=Decimal('1.000'))
+        self.nf      = NoteFile.objects.create(note=self.paid, label='',
+                                               file=SimpleUploadedFile('a1b2c3.pdf', _make_pdf(2)))
+        self.free    = Note.objects.create(course=self.course, chapter_number=2,
+                                           chapter_title='Free one', price=0)
+        self.free_nf = NoteFile.objects.create(note=self.free, label='Lecture slides',
+                                               file=SimpleUploadedFile('zz.pdf', _make_pdf(1)))
+        Access.objects.create(user=self.student, note=self.paid, semester=self.sem,
+                              price=Decimal('1.000'))
+        cache.clear()
+
+    def _files(self, note, user=None):
+        return _serialize_note(note, user)['files']
+
+    def _fetch(self, link):
+        # A plain navigation: no Authorization header at all.
+        with patch('api.views._fetch_file_bytes',
+                   return_value=(_make_pdf(2), 'application/pdf')):
+            return APIClient().get('/api/' + link)
+
+    def test_a_student_with_access_gets_a_tokenised_link_and_nobody_else_does(self):
+        link = self._files(self.paid, self.student)[0]['download']
+        self.assertTrue(link.startswith(f'note-files/{self.nf.id}/download/?t='))
+        self.assertIsNone(self._files(self.paid, self.other)[0]['download'])
+        self.assertIsNone(self._files(self.paid)[0]['download'])
+        self.assertGreater(self._files(self.paid, self.student)[0]['download_expires'],
+                           timezone.now().timestamp())
+
+    def test_a_guest_gets_a_bare_link_to_a_free_chapter(self):
+        self.assertEqual(self._files(self.free)[0]['download'],
+                         f'note-files/{self.free_nf.id}/download/')
+
+    def test_the_link_downloads_the_file_fingerprinted_logged_and_well_named(self):
+        link = self._files(self.paid, self.student)[0]['download']
+        resp = self._fetch(link)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'application/pdf')
+        # Saved under a name that means something in a Downloads folder — the
+        # course and chapter, with filesystem-hostile characters swept out.
+        self.assertIn('filename="ITCS342 Ch.1 - Introduction to analysis design of algorithm.pdf"',
+                      resp['Content-Disposition'])
+        self.assertTrue(resp['Content-Disposition'].startswith('attachment'))
+        # Same stamp and same log row as a header-authenticated download.
+        code = __import__('api.tracing', fromlist=['t']).code_for(self.student.id, self.paid.id)
+        self.assertIn(code, _page_text(resp.content))
+        log = DownloadLog.objects.get()
+        self.assertEqual((log.user, log.note, log.kind, log.semester),
+                         (self.student, self.paid, 'open', self.sem))
+
+    def test_a_label_names_the_file(self):
+        resp = self._fetch(self._files(self.free)[0]['download'])
+        self.assertIn('filename="ITCS342 Ch.2 - Lecture slides.pdf"', resp['Content-Disposition'])
+
+    def test_a_forged_or_expired_token_gets_a_readable_page_not_the_file(self):
+        link = self._files(self.paid, self.student)[0]['download']
+        base, token = link.split('?t=')
+        for bad in (token[:-3] + 'xyz', 'garbage', ''):
+            resp = self._fetch(f'{base}?t={bad}') if bad else APIClient().get('/api/' + base)
+            self.assertNotEqual(resp.status_code, 200, bad)
+            self.assertFalse(DownloadLog.objects.exists())
+        forged = self._fetch(f'{base}?t={token[:-3]}xyz')
+        self.assertEqual(forged.status_code, 403)
+        self.assertIn('text/html', forged['Content-Type'])
+        self.assertIn('expired', forged.content.decode().lower())
+        # Same token, hours later: refused the same way.
+        from api import downloads
+        with patch('django.core.signing.time.time', return_value=time.time() + downloads.MAX_AGE + 1):
+            self.assertEqual(self._fetch(link).status_code, 403)
+
+    def test_a_token_only_opens_the_file_it_was_issued_for(self):
+        other_nf = NoteFile.objects.create(note=self.paid, label='Extra',
+                                           file=SimpleUploadedFile('b.pdf', _make_pdf(1)))
+        link = self._files(self.paid, self.student)[0]['download']       # for self.nf
+        token = link.split('?t=')[1]
+        resp = self._fetch(f'note-files/{other_nf.id}/download/?t={token}')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_a_token_stops_working_once_access_is_revoked(self):
+        link = self._files(self.paid, self.student)[0]['download']
+        Access.objects.filter(user=self.student).delete()
+        self.assertEqual(self._fetch(link).status_code, 403)
+
+    def test_the_admins_own_link_is_never_logged(self):
+        link = self._files(self.paid, self.admin)[0]['download']
+        self.assertEqual(self._fetch(link).status_code, 200)
+        self.assertFalse(DownloadLog.objects.exists())
+
+    def test_legacy_single_file_notes_get_a_link_too(self):
+        old = Note.objects.create(course=self.course, chapter_number=3, chapter_title='Legacy',
+                                  price=0, pdf_file=SimpleUploadedFile('old.pdf', _make_pdf(1)))
+        files = self._files(old, self.student)
+        self.assertTrue(files[0]['is_legacy'])
+        self.assertEqual(files[0]['download'].split('?')[0], f'notes/{old.id}/download/')
+        resp = self._fetch(files[0]['download'])
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('filename="ITCS342 Ch.3 - Legacy.pdf"', resp['Content-Disposition'])

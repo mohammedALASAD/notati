@@ -1,4 +1,5 @@
 import re
+from django.utils import timezone
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -203,14 +204,27 @@ class NoteSerializer(serializers.ModelSerializer):
         # every copy they receive is traceable — a direct URL would bypass that.
         # Free notes have nothing to trace, so they keep the direct URL.
         # Everyone still gets id/label/filename so the UI can list the contents.
+        #
+        # `download` is the proxy path with a signed token for this user — a
+        # link the browser can navigate to on its own, which is the only way a
+        # download works on every phone (see downloads.py). Only for people who
+        # may have the file; a guest on a free chapter gets the bare path.
+        from . import downloads
         direct = self._is_admin() or obj.is_free
+        request = self.context.get('request')
+        user = request.user if request and request.user.is_authenticated else None
+        may_download = self._can_access(obj)
+        expires = downloads.expires_at(timezone.now()) if may_download else None
         result = []
         for nf in obj.files.all():
             result.append({
                 'id': nf.id,
                 'label': nf.label or '',
-                'file_url': _file_url(nf.file, self.context.get('request')) if direct else None,
+                'file_url': _file_url(nf.file, request) if direct else None,
                 'filename': nf.file.name.split('/')[-1] if nf.file else '',
+                'download': (downloads.link(f'note-files/{nf.id}/download/', user, 'file', nf.id)
+                             if may_download and nf.file else None),
+                'download_expires': expires,
             })
         if not result and obj.pdf_file:
             result.append({
@@ -218,6 +232,9 @@ class NoteSerializer(serializers.ModelSerializer):
                 'label': '',
                 'file_url': _signed_url(obj.pdf_file.url) if direct else None,
                 'is_legacy': True,
+                'download': (downloads.link(f'notes/{obj.id}/download/', user, 'note', obj.id)
+                             if may_download else None),
+                'download_expires': expires,
             })
         return result
 

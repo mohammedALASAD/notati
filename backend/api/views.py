@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.http import HttpResponse, JsonResponse
+from django.utils.http import content_disposition_header
 from django.shortcuts import get_object_or_404
 from django.db.models import Q, Exists, OuterRef
 from django.db import transaction
@@ -36,7 +37,7 @@ from .serializers import (
     SemesterSerializer,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
-from . import pdfutils, verification, emails, tracing
+from . import pdfutils, verification, emails, tracing, downloads
 from datetime import timedelta
 
 
@@ -167,14 +168,20 @@ def _alert_admin_of_activity(kind, user, obj):
 FINGERPRINT_MAX_BYTES = 10 * 1024 * 1024   # 10 MB
 
 
-def _note_file_response(file_field, request, note):
+def _note_file_response(file_field, request, note, user=None, label=''):
     """Deliver a note's file. For an authenticated student we stamp the PDF with a
     per-(student, note) fingerprint and log the download, so a leaked copy can be
-    traced back. Stamping is best-effort and never blocks the download."""
-    content, content_type = _fetch_file_bytes(file_field)
-    filename = file_field.name.split('/')[-1]
+    traced back. Stamping is best-effort and never blocks the download.
 
-    user = request.user if request.user.is_authenticated else None
+    `user` is who is receiving the file. Normally that is the signed-in user;
+    a direct download link (see downloads.py) names the student in its token
+    instead, because a plain link the browser navigates to carries no login
+    header. Either way the same student is stamped and logged."""
+    content, content_type = _fetch_file_bytes(file_field)
+    filename = downloads.filename_for(note, label, file_field.name.split('/')[-1])
+
+    if user is None and request.user.is_authenticated:
+        user = request.user
     # Admins are never counted or stamped: an admin checking their own chapter
     # is not a student reading it, and counting it would pollute the Insights
     # numbers with the admin's own testing. Sign in as a student to see an open
@@ -204,8 +211,25 @@ def _note_file_response(file_field, request, note):
             pass
 
     response = HttpResponse(content, content_type=content_type)
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response['Content-Disposition'] = content_disposition_header(True, filename)
     return response
+
+
+def _download_user(request, kind, pk):
+    """Who is asking for a file: the signed-in user, else whoever a direct
+    download link's token names. Returns (user, bad_link) — bad_link is True
+    when a token was presented but is expired, forged or for another file, so
+    the caller can answer with a page a person can read rather than JSON,
+    since a link is something the browser navigated to."""
+    if request.user.is_authenticated:
+        return request.user, False
+    token = request.query_params.get('t')
+    user = downloads.user_from_token(token, kind, pk)
+    return user, bool(token) and user is None
+
+
+def _expired_link():
+    return HttpResponse(downloads.EXPIRED_PAGE, content_type='text/html', status=403)
 
 
 def _sample_response(file_field, request, note):
@@ -483,17 +507,20 @@ class NoteDownloadView(APIView):
 
     def get(self, request, pk):
         note = get_object_or_404(Note, pk=pk)
+        user, bad_link = _download_user(request, 'note', pk)
+        if bad_link:
+            return _expired_link()
         if not note.is_free:
-            if not request.user.is_authenticated:
+            if user is None:
                 return Response({'detail': 'Login required.'}, status=status.HTTP_401_UNAUTHORIZED)
-            if request.user.role != 'admin':
-                has_access = note.access_grants.filter(user=request.user).exists()
+            if user.role != 'admin':
+                has_access = note.access_grants.filter(user=user).exists()
                 if not has_access:
                     return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
         if not note.pdf_file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            return _note_file_response(note.pdf_file, request, note)
+            return _note_file_response(note.pdf_file, request, note, user=user)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -569,16 +596,19 @@ class NoteFileDownloadView(APIView):
     def get(self, request, pk):
         nf = get_object_or_404(NoteFile, pk=pk)
         note = nf.note
+        user, bad_link = _download_user(request, 'file', pk)
+        if bad_link:
+            return _expired_link()
         if not note.is_free:
-            if not request.user.is_authenticated:
+            if user is None:
                 return Response({'detail': 'Login required.'}, status=status.HTTP_401_UNAUTHORIZED)
-            if request.user.role != 'admin':
-                if not note.access_grants.filter(user=request.user).exists():
+            if user.role != 'admin':
+                if not note.access_grants.filter(user=user).exists():
                     return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
         if not nf.file:
             return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            return _note_file_response(nf.file, request, note)
+            return _note_file_response(nf.file, request, note, user=user, label=nf.label)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

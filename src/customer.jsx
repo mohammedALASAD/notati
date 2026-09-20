@@ -51,13 +51,30 @@ function _previewNote(n, openReader, toast) {
   else NotatiAPI.previewNoteFile(n._numId).catch(e => toast.error('Preview failed', e.message));
 }
 
-function _downloadNote(n, openReader, toast) {
-  const files = n.files || [];
+/* Save some of a note's files to the student's device. Files with a live
+   direct link are handed to the browser to save (NotatiAPI.saveFiles) — the
+   only route that works on every phone, and it must be called inside the
+   click, before any await. A file without a live link (a page open long enough
+   for its links to expire) falls back to fetching it and saving from
+   JavaScript, which is fine on a desktop. */
+function _saveNoteFiles(n, files, toast) {
   if (files.length === 0) { toast.info('No file', 'No PDF attached yet.'); return; }
+  const now = Date.now() / 1000;
+  const live = files.filter(f => f.downloadUrl && f.downloadExpires > now + 60);
+  if (live.length === files.length) {
+    NotatiAPI.saveFiles(live.map(f => f.downloadUrl));
+    toast.info(files.length > 1 ? `Downloading ${files.length} files` : 'Downloading',
+               'Preparing your copy — it will save to your device in a moment.');
+    return;
+  }
   files.forEach(f => {
     if (f.id) NotatiAPI.downloadNoteFileById(f.id, _buildNoteFilename(f)).catch(e => toast.error('Download failed', e.message));
     else NotatiAPI.downloadNoteFile(n._numId, n.fileName || n.title + '.pdf').catch(e => toast.error('Download failed', e.message));
   });
+}
+
+function _downloadNote(n, openReader, toast) {
+  _saveNoteFiles(n, n.files || [], toast);
 }
 
 /* ============================================================
@@ -1391,20 +1408,12 @@ function NoteReader({ note, open, onClose }) {
   const files = note.files || [];
 
   function downloadFile(nf) {
-    if (nf.id) {
-      NotatiAPI.downloadNoteFileById(nf.id, _buildNoteFilename(nf))
-        .catch(e => toast.error('Download failed', e.message));
-    } else if (note._numId) {
-      NotatiAPI.downloadNoteFile(note._numId, note.fileName || note.title + '.pdf')
-        .catch(e => toast.error('Download failed', e.message));
-    }
+    _saveNoteFiles(note, [nf], toast);
   }
 
   function downloadAll() {
     if (files.length === 0) { toast.error('No files', 'No files are attached to this note yet.'); return; }
-    files.forEach((nf, i) => {
-      setTimeout(() => downloadFile(nf), i * 400);
-    });
+    _saveNoteFiles(note, files, toast);
   }
 
   const isFreeNote = note.isFree || Number(note.price || 0) === 0;

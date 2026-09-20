@@ -141,6 +141,9 @@
         fileUrl:   f.file_url || null,
         filename:  f.filename || '',
         isLegacy:  f.is_legacy || false,
+        // A link the browser can save on its own — see NotatiAPI.saveFiles.
+        downloadUrl:     f.download ? BASE + '/' + f.download : null,
+        downloadExpires: f.download_expires || 0,     // unix seconds
       })),
     };
   }
@@ -555,6 +558,35 @@
     return res.blob();
   }
 
+  /* Hand download links to the browser itself. The server answers each with
+     Content-Disposition: attachment, so the page stays where it is and the
+     file lands in Downloads — on desktop, iOS, Android and the browsers inside
+     Instagram and WhatsApp alike, none of which reliably save a JavaScript
+     blob (the way _proxyDownload does). Must run inside the click handler,
+     before any await, or mobile browsers treat it as a pop-up.
+
+     One file navigates the page: the most dependable route everywhere. Two or
+     more go through hidden frames, because two page navigations in a row
+     cancel each other before the first has even answered. */
+  function saveFiles(urls) {
+    if (urls.length === 1) {
+      const a = document.createElement('a');
+      a.href = urls[0];
+      a.setAttribute('download', '');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+    urls.forEach(url => {
+      const frame = document.createElement('iframe');
+      frame.style.display = 'none';
+      frame.src = url;
+      document.body.appendChild(frame);
+      setTimeout(() => frame.remove(), 5 * 60 * 1000);   // long enough for a slow file
+    });
+  }
+
   async function _proxyDownload(url, filename) {
     const blob = await _proxyFetch(url);
     const a = document.createElement('a');
@@ -580,5 +612,6 @@
     setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
   }
 
+  NotatiAPI.saveFiles = saveFiles;
   window.NotatiAPI = NotatiAPI;
 })();
