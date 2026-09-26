@@ -779,7 +779,7 @@ class LeakTracingTests(TestCase):
         self.assertEqual(paid_row['purchases'], 2)   # student + other own it
         self.assertIsNone(free_row['purchases'])     # free chapters are never bought
 
-    def test_note_views_reports_guest_opens(self):
+    def test_note_views_reports_guests_apart_from_students(self):
         free = Note.objects.create(course=self.course, chapter_number=8,
                                    chapter_title='Basics', price=Decimal('0'))
         self.DownloadLog.objects.create(user=None, note=free, code='', ip='9.9.9.9')
@@ -790,7 +790,8 @@ class LeakTracingTests(TestCase):
         row = next(r for r in resp.data if r['id'] == free.id)
         self.assertEqual(row['opens'], 3)          # 2 guests + 1 student
         self.assertEqual(row['students'], 1)       # unique accounts (guests excluded)
-        self.assertEqual(row['guest_opens'], 2)
+        self.assertEqual(row['guests'], 2)
+        self.assertEqual(row['readers'], 3)
 
 
 class AdminAlertTests(TestCase):
@@ -1098,10 +1099,15 @@ class OrderPaidEmailTests(TestCase):
 
 
 class ChapterUpdateNotifyTests(TestCase):
-    """Admin can email every owner of a chapter that it was updated. Only owners
-    are emailed, only admins can trigger it, and no owners means no emails."""
+    """Admin can email this semester's owners of a chapter that it was updated.
+    Only owners, only this term's, only admins can trigger it, and no owners
+    means no emails."""
 
     def setUp(self):
+        Semester.objects.all().delete()
+        self.last = Semester.objects.create(label='Semester 10 (Summer)', position=10,
+                                            is_summer=True)
+        self.now = Semester.objects.create(label='Semester 11', position=11, is_current=True)
         self.course = Course.objects.create(name='ITNE233', college='IT')
         self.note = Note.objects.create(course=self.course, chapter_number=2,
                                         chapter_title='Application layer', price=Decimal('2.000'))
@@ -1109,8 +1115,8 @@ class ChapterUpdateNotifyTests(TestCase):
         self.owner2 = User.objects.create_user('o2@x.com', 'pw', name='Owner Two')
         self.nonowner = User.objects.create_user('none@x.com', 'pw', name='No Access')
         self.admin = User.objects.create_user('adm@x.com', 'pw', name='Adm', role='admin')
-        Access.objects.create(user=self.owner1, note=self.note)
-        Access.objects.create(user=self.owner2, note=self.note)
+        Access.objects.create(user=self.owner1, note=self.note, semester=self.now)
+        Access.objects.create(user=self.owner2, note=self.note, semester=self.now)
 
     def _c(self, user):
         c = APIClient(); c.force_authenticate(user); return c
@@ -1138,6 +1144,43 @@ class ChapterUpdateNotifyTests(TestCase):
     def test_students_cannot_trigger_notify(self):
         resp = self._c(self.owner1).post(f'/api/notes/{self.note.id}/notify-update/')
         self.assertEqual(resp.status_code, 403)
+
+    @patch('api.emails._send_async')
+    def test_last_terms_owners_are_left_alone(self, mock_send):
+        old_owner = User.objects.create_user('old@x.com', 'pw', name='Old')
+        Access.objects.create(user=old_owner, note=self.note, semester=self.last)
+        # A grant from before semesters were recorded at all is old by definition.
+        legacy = User.objects.create_user('legacy@x.com', 'pw', name='Legacy')
+        Access.objects.create(user=legacy, note=self.note, semester=None)
+
+        resp = self._c(self.admin).post(f'/api/notes/{self.note.id}/notify-update/')
+        self.assertEqual(resp.data['count'], 2)
+        self.assertEqual(resp.data['semester'], 'Semester 11')
+        recipients = sorted(call.args[0]['to'][0] for call in mock_send.call_args_list)
+        self.assertEqual(recipients, ['o1@x.com', 'o2@x.com'])
+
+    @patch('api.emails._send_async')
+    def test_a_student_who_bought_it_again_this_term_is_mailed_once(self, mock_send):
+        # Same student, two terms: still one person, one email.
+        Access.objects.filter(user=self.owner1).update(semester=self.last)
+        other = Note.objects.create(course=self.course, chapter_number=3,
+                                    chapter_title='Transport', price=Decimal('2.000'))
+        Access.objects.create(user=self.owner1, note=other, semester=self.now)
+        resp = self._c(self.admin).post(f'/api/notes/{self.note.id}/notify-update/')
+        self.assertEqual(resp.data['count'], 1)      # owner2 only; owner1 is last term here
+        self.assertEqual(mock_send.call_args_list[0].args[0]['to'], ['o2@x.com'])
+
+    def test_the_admin_can_see_the_count_before_sending(self):
+        resp = self._c(self.admin).get(f'/api/notes/{self.note.id}/notify-update/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual((resp.data['count'], resp.data['semester']), (2, 'Semester 11'))
+
+    def test_the_admin_advancing_a_semester_changes_who_is_mailed(self):
+        self.assertEqual(self._c(self.admin)
+                         .get(f'/api/notes/{self.note.id}/notify-update/').data['count'], 2)
+        Semester.objects.create(label='Semester 12', position=12).make_current()
+        self.assertEqual(self._c(self.admin)
+                         .get(f'/api/notes/{self.note.id}/notify-update/').data['count'], 0)
 
 
 class SemesterTests(TestCase):
@@ -2053,7 +2096,7 @@ class PreviewsAreCountedTests(TestCase):
     def test_a_guest_preview_is_counted_too(self):
         self._client().get(f'/api/note-files/{self.nf.id}/sample/')
         self.assertEqual(self._row()['previews'], 1)
-        self.assertEqual(self._row()['guest_opens'], 0)
+        self.assertEqual(self._row()['guests'], 0)
 
     def test_the_admin_previewing_is_not_counted(self):
         self._client(self.admin).get(f'/api/note-files/{self.nf.id}/sample/')
@@ -2277,3 +2320,82 @@ class DirectDownloadLinkTests(TestCase):
         resp = self._fetch(files[0]['download'])
         self.assertEqual(resp.status_code, 200)
         self.assertIn('filename="ITCS342 Ch.3 - Legacy.pdf"', resp['Content-Disposition'])
+
+
+class ViewsCountPeopleNotClicksTests(TestCase):
+    """The Views page counts readers, not clicks: a student who opens a chapter
+    thirty times is one reader. The raw total stays available alongside, so
+    heavy re-reading is still visible."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 11', position=11, is_current=True)
+        self.old     = Semester.objects.create(label='Semester 10 (Summer)', position=10,
+                                               is_summer=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.sara    = User.objects.create_user('sara@x.com', 'pw', name='Sara')
+        self.omar    = User.objects.create_user('omar@x.com', 'pw', name='Omar')
+        self.course  = Course.objects.create(name='ACC112 / ACA112',
+                                             college='College of Business Administration')
+        self.ch1     = Note.objects.create(course=self.course, chapter_number=1,
+                                           chapter_title='Accounting in business', price=0)
+        self.tracing = __import__('api.tracing', fromlist=['t'])
+
+    def _open(self, note, user=None, ip='', times=1, kind='open', semester=None):
+        for _ in range(times):
+            DownloadLog.objects.create(
+                user=user, note=note, kind=kind, ip=ip,
+                code=self.tracing.code_for(user.id, note.id) if user else '',
+                semester=semester or self.sem)
+
+    def _row(self, note, **params):
+        query = '&'.join(f'{k}={v}' for k, v in params.items())
+        c = APIClient(); c.force_authenticate(self.admin)
+        data = c.get(f'/api/admin/note-views/?{query}').data
+        return next((r for r in data if r['id'] == note.id), None)
+
+    def test_one_student_opening_thirty_times_is_one_reader(self):
+        self._open(self.ch1, self.sara, times=30)
+        row = self._row(self.ch1)
+        self.assertEqual(row['readers'], 1)
+        self.assertEqual(row['students'], 1)
+        self.assertEqual(row['opens'], 30)     # the re-reading is still visible
+
+    def test_guests_are_counted_by_device_not_by_click(self):
+        self._open(self.ch1, None, ip='1.1.1.1', times=9)
+        self._open(self.ch1, None, ip='2.2.2.2', times=1)
+        row = self._row(self.ch1)
+        self.assertEqual((row['guests'], row['readers'], row['opens']), (2, 2, 10))
+
+    def test_students_and_guests_add_up_to_the_readership(self):
+        self._open(self.ch1, self.sara, times=4)
+        self._open(self.ch1, self.omar, times=2)
+        self._open(self.ch1, None, ip='1.1.1.1', times=7)
+        row = self._row(self.ch1)
+        self.assertEqual((row['students'], row['guests'], row['readers'], row['opens']),
+                         (2, 1, 3, 13))
+
+    def test_previews_are_headcounted_the_same_way(self):
+        self._open(self.ch1, self.sara, times=5, kind='preview')
+        self._open(self.ch1, None, ip='3.3.3.3', times=4, kind='preview')
+        row = self._row(self.ch1)
+        self.assertEqual(row['previews'], 2)
+        self.assertEqual((row['readers'], row['opens']), (0, 0))   # a look is not a read
+
+    def test_a_reader_is_counted_once_inside_the_window_asked_for(self):
+        # Same student, both terms. Each term sees one reader; all time sees one too.
+        self._open(self.ch1, self.sara, times=3, semester=self.old)
+        self._open(self.ch1, self.sara, times=2, semester=self.sem)
+        self.assertEqual(self._row(self.ch1, semester=self.old.id)['readers'], 1)
+        self.assertEqual(self._row(self.ch1, semester=self.sem.id)['readers'], 1)
+        self.assertEqual(self._row(self.ch1)['readers'], 1)
+        self.assertEqual(self._row(self.ch1)['opens'], 5)
+
+    def test_every_chapter_of_a_course_comes_back_so_the_page_can_group_them(self):
+        ch2 = Note.objects.create(course=self.course, chapter_number=2,
+                                  chapter_title='Recording transactions', price=Decimal('1.500'))
+        self._open(self.ch1, self.sara, times=20)
+        self._open(ch2, self.omar, times=1)
+        rows = [self._row(n) for n in (self.ch1, ch2)]
+        self.assertEqual([r['course_name'] for r in rows], [self.course.name] * 2)
+        self.assertEqual([r['readers'] for r in rows], [1, 1])

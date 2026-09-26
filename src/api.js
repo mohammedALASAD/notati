@@ -262,6 +262,11 @@
     },
 
     // Email everyone who owns this chapter that it's been updated. Returns { count }.
+    /* How many students would be emailed about an update to this chapter, and
+       which semester that is — so the admin sees the number before sending. */
+    async getChapterUpdateAudience(id) {
+      return req('GET', `/notes/${id}/notify-update/`);
+    },
     async notifyChapterUpdate(id) {
       return req('POST', `/notes/${id}/notify-update/`);
     },

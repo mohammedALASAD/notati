@@ -586,6 +586,9 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
   const [err, setErr]                   = useStateAd('');
   // When editing, whether to email the chapter's owners about the update.
   const [notifyOwners, setNotifyOwners] = useStateAd(true);
+  // Who the update email would reach: this semester's owners of this chapter.
+  // Loaded up front so the admin decides with the number in front of them.
+  const [audience, setAudience] = useStateAd(null);
 
   // Multi-file state
   const [existingFiles,  setExistingFiles]  = useStateAd([]);   // NoteFile records
@@ -599,6 +602,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
     if (!open) return;
     setExistingFiles([]); setPendingFiles([]); setDeletedFileIds(new Set()); setErr('');
     setNotifyOwners(true);
+    setAudience(null);
     if (existingNote) {
       setTitle(existingNote.title);
       setCollege(existingNote.college || '');
@@ -611,6 +615,8 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
       if (existingNote._numId) {
         NotatiAPI.getNoteFiles(existingNote._numId)
           .then(setExistingFiles).catch(() => {});
+        NotatiAPI.getChapterUpdateAudience(existingNote._numId)
+          .then(setAudience).catch(() => {});
       }
     } else {
       setTitle(upload && upload.chapterTitle ? upload.chapterTitle : '');
@@ -703,7 +709,7 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
           const res = await NotatiAPI.notifyChapterUpdate(savedNote._numId);
           if (res && res.count > 0) {
             toast.success('Owners notified',
-              `Emailed ${res.count} student${res.count === 1 ? '' : 's'} about the update.`);
+              `Emailed ${res.count} student${res.count === 1 ? '' : 's'} in ${res.semester || 'this semester'} about the update.`);
           }
         } catch (_) { /* ignore — the update itself is saved */ }
       }
@@ -887,8 +893,18 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
                    onChange={(e) => setNotifyOwners(e.target.checked)}
                    style={{ marginTop: 2, flexShrink: 0 }}/>
             <span style={{ fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.5 }}>
-              Email everyone who owns this chapter that it's been updated, with a nudge to
-              use the new version. Uncheck for small fixes (price, typo) you don't want to announce.
+              Email this semester's owners of this chapter that it's been updated, with a nudge
+              to use the new version. Uncheck for small fixes (price, typo) you don't want to announce.
+              {audience && (
+                <strong style={{ display: 'block', marginTop: 4, color: 'var(--fg-1)' }}>
+                  {audience.count === 0
+                    ? `Nobody owns this chapter in ${audience.semester || 'the current semester'} yet — no email will be sent.`
+                    : `${audience.count} student${audience.count === 1 ? '' : 's'} in ${audience.semester || 'the current semester'} will get it.`}
+                  <span style={{ fontWeight: 400, color: 'var(--fg-3)' }}>
+                    {' '}Students who bought it in an earlier semester are left alone.
+                  </span>
+                </strong>
+              )}
             </span>
           </label>
         )}
@@ -2359,8 +2375,9 @@ function NoteViews({ semester }) {
   const [from,    setFrom]    = useStateAd('');
   const [to,      setTo]      = useStateAd('');
   const [q,       setQ]       = useStateAd('');
-  const [sortKey, setSortKey] = useStateAd('opens');
+  const [sortKey, setSortKey] = useStateAd('readers');
   const [sortDir, setSortDir] = useStateAd('desc');
+  const [expanded, setExpanded] = useStateAd(() => new Set());
 
   const hasRange = !!(from || to);
   // Today in the admin's own timezone — toISOString() would shift the date.
@@ -2415,13 +2432,52 @@ function NoteViews({ semester }) {
     });
   }, [rows, college, priceF, q, sortKey, sortDir]);
 
+  // Chapters folded into their course. A course's figures are its chapters'
+  // added up — each student counted once per chapter, the way the numbers read
+  // on the rows underneath, so the course line and the chapter lines agree.
+  const grouped = useMemoAd(() => {
+    const map = {};
+    shown.forEach(r => {
+      const key = r.course_name;
+      if (!map[key]) map[key] = { course: key, college: r.college, chapters: [],
+                                  readers: 0, opens: 0, students: 0, guests: 0,
+                                  previews: 0, purchases: 0, hasPaid: false };
+      const g = map[key];
+      g.chapters.push(r);
+      g.readers   += r.readers || 0;
+      g.opens     += r.opens || 0;
+      g.students  += r.students || 0;
+      g.guests    += r.guests || 0;
+      g.previews  += r.previews || 0;
+      if (!r.is_free) { g.purchases += r.purchases || 0; g.hasPaid = true; }
+    });
+    const list = Object.values(map);
+    list.forEach(g => g.chapters.sort((a, b) => a.chapter_number - b.chapter_number));
+    const dir = sortDir === 'asc' ? 1 : -1;
+    list.sort((a, b) => {
+      if (sortKey === 'course_name') return a.course.localeCompare(b.course) * dir;
+      return ((a[sortKey] || 0) - (b[sortKey] || 0)) * dir;
+    });
+    return list;
+  }, [shown, sortKey, sortDir]);
+
+  const totalReaders  = useMemoAd(() => shown.reduce((s, r) => s + (r.readers || 0), 0), [shown]);
   const totalOpens    = useMemoAd(() => shown.reduce((s, r) => s + r.opens, 0), [shown]);
-  const totalGuests   = useMemoAd(() => shown.reduce((s, r) => s + (r.guest_opens || 0), 0), [shown]);
+  const totalGuests   = useMemoAd(() => shown.reduce((s, r) => s + (r.guests || 0), 0), [shown]);
   const totalPreviews = useMemoAd(() => shown.reduce((s, r) => s + (r.previews || 0), 0), [shown]);
+
+  function toggleCourse(name) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }
   // Highest-opens row, found independently of the sort, so the bar scale and the
   // "most opened" card stay right when you sort by another column.
-  const topRow   = useMemoAd(() => shown.reduce((best, r) => (!best || r.opens > best.opens ? r : best), null), [shown]);
-  const topOpens = topRow ? topRow.opens : 1;
+  const topRow   = useMemoAd(() => shown.reduce((best, r) => (!best || (r.readers || 0) > (best.readers || 0) ? r : best), null), [shown]);
+  const topCourse = useMemoAd(() => grouped.reduce((best, g) => (!best || g.readers > best.readers ? g : best), null), [grouped]);
+  const topReaders = topCourse ? Math.max(topCourse.readers, 1) : 1;
 
   // Exports exactly what is on screen: the same date range, filters, search and
   // sort order. What you see is what lands in the spreadsheet.
@@ -2430,12 +2486,12 @@ function NoteViews({ semester }) {
     downloadCSV(
       `notati-chapter-views-${range}.csv`,
       ['Course', 'Chapter', 'Title', 'College', 'Access', 'Price (BHD)',
-       'Opens', 'Students', 'Guest opens', 'Previews', 'Purchases'],
+       'Readers', 'Total opens', 'Students', 'Guests', 'Previews', 'Purchases'],
       shown.map(r => [
         r.course_name, r.chapter_number, r.chapter_title, r.college,
         r.is_free ? 'Free' : 'Paid',
         r.is_free ? 0 : Number(r.price),
-        r.opens, r.students, r.guest_opens || 0, r.previews || 0,
+        r.readers || 0, r.opens, r.students, r.guests || 0, r.previews || 0,
         // Free chapters are never bought — blank, not 0, so it reads as "n/a".
         r.purchases == null ? '' : r.purchases,
       ]),
@@ -2461,12 +2517,12 @@ function NoteViews({ semester }) {
       {/* Summary cards */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
         {[
-          { label: 'Total opens',      value: String(totalOpens),
-            sub: hasRange ? 'in the selected dates' : 'reads + downloads', color: 'var(--notati-walnut)' },
-          { label: 'Guest opens',      value: String(totalGuests),   sub: 'no account (free only)', color: 'var(--notati-amber)' },
+          { label: 'Readers',          value: String(totalReaders),
+            sub: `${totalOpens} open${totalOpens === 1 ? '' : 's'} in total`, color: 'var(--notati-walnut)' },
+          { label: 'Guests',           value: String(totalGuests),   sub: 'no account (free only)', color: 'var(--notati-amber)' },
           { label: 'Previews',         value: String(totalPreviews), sub: 'blurred samples looked at', color: 'var(--notati-bark)' },
-          { label: 'Chapters opened',  value: String(shown.length),  sub: 'distinct chapters', color: 'var(--notati-forest)' },
-          { label: 'Most opened',      value: topRow ? String(topRow.opens) : '0',
+          { label: 'Chapters read',    value: String(shown.length),  sub: `across ${grouped.length} course${grouped.length === 1 ? '' : 's'}`, color: 'var(--notati-forest)' },
+          { label: 'Most read',        value: topRow ? String(topRow.readers || 0) : '0',
             sub: topRow ? `${topRow.course_name} Ch.${topRow.chapter_number}` : '-', color: 'var(--fg-1)' },
         ].map(card => (
           <div key={card.label} style={{ flex: 1, minWidth: 160, background: 'var(--bg-section)',
@@ -2538,6 +2594,15 @@ function NoteViews({ semester }) {
         <EmptyState title="No matches" message="Try a different filter or search term."/>
       ) : (
         <section className="panel">
+          <div className="panel-head" style={{ justifyContent: 'flex-end', gap: 8 }}>
+            <button className="btn btn-soft btn-sm"
+                    onClick={() => setExpanded(new Set(grouped.map(g => g.course)))}>
+              Expand all
+            </button>
+            <button className="btn btn-soft btn-sm" onClick={() => setExpanded(new Set())}>
+              Collapse all
+            </button>
+          </div>
           <div className="panel-body flush">
             <div className="scroll-table">
               <table className="tbl">
@@ -2546,11 +2611,17 @@ function NoteViews({ semester }) {
                     <th onClick={() => toggleSort('course_name')} title="Click to sort"
                         style={{ cursor: 'pointer', userSelect: 'none',
                                  color: sortKey === 'course_name' ? 'var(--fg-1)' : undefined }}>
-                      Chapter{sortArrow('course_name')}
+                      Course{sortArrow('course_name')}
                     </th>
-                    <th {...thSort('opens', 110)}>Opens{sortArrow('opens')}</th>
+                    <th {...thSort('readers', 120)}
+                        title="People who read it — each student counted once per chapter, however many times they opened it. Click to sort">
+                      Readers{sortArrow('readers')}
+                    </th>
                     <th {...thSort('students', 90)}>Students{sortArrow('students')}</th>
-                    <th {...thSort('guest_opens', 90)}>Guests{sortArrow('guest_opens')}</th>
+                    <th {...thSort('guests', 90)}
+                        title="Readers with no account, counted by device. Click to sort">
+                      Guests{sortArrow('guests')}
+                    </th>
                     <th {...thSort('previews', 90)} title="Looks at the blurred sample — what a student can do with a paid chapter before buying it. Click to sort">
                       Previews{sortArrow('previews')}
                     </th>
@@ -2558,50 +2629,102 @@ function NoteViews({ semester }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.map(r => (
-                    <tr key={r.id}>
-                      <td data-l="Chapter">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontWeight: 600, color: 'var(--fg-1)' }}>
-                            {r.course_name} Ch.{r.chapter_number}
-                          </span>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-                                         background: r.is_free ? 'var(--notati-forest)' : 'var(--notati-amber)',
-                                         color: '#fff', textTransform: 'uppercase', letterSpacing: '.04em' }}>
-                            {r.is_free ? 'Free' : 'Paid'}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 2 }}>
-                          {r.chapter_title} · {r.college}
-                        </div>
-                      </td>
-                      <td className="r" data-l="Opens">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
-                          <div style={{ flex: '0 1 70px', height: 6, borderRadius: 999, background: 'var(--border-1)',
-                                        overflow: 'hidden', maxWidth: 70 }}>
-                            <div style={{ width: `${Math.max(6, (r.opens / topOpens) * 100)}%`, height: '100%',
-                                          background: 'var(--notati-walnut)' }}/>
+                  {grouped.map(g => {
+                    const open = expanded.has(g.course);
+                    const rows = [
+                      <tr key={`c-${g.course}`} onClick={() => toggleCourse(g.course)}
+                          style={{ cursor: 'pointer', background: 'var(--bg-section)' }}>
+                        <td data-l="Course">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 11, color: 'var(--fg-3)', width: 14,
+                                           textAlign: 'center', flexShrink: 0, userSelect: 'none' }}>
+                              {open ? '▾' : '▸'}
+                            </span>
+                            <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--fg-1)' }}>{g.course}</span>
+                            <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+                              · {g.chapters.length} chapter{g.chapters.length !== 1 ? 's' : ''} · {g.college}
+                            </span>
                           </div>
-                          <strong style={{ color: 'var(--fg-1)' }}>{r.opens}</strong>
-                        </div>
-                      </td>
-                      <td className="r" data-l="Students" style={{ color: 'var(--fg-2)' }}>{r.students}</td>
-                      <td className="r" data-l="Guests"
-                          style={{ color: r.guest_opens ? 'var(--notati-amber)' : 'var(--fg-3)', fontWeight: r.guest_opens ? 700 : 400 }}>
-                        {r.guest_opens || 0}
-                      </td>
-                      <td className="r" data-l="Previews"
-                          style={{ color: r.previews ? 'var(--fg-1)' : 'var(--fg-3)', fontWeight: r.previews ? 700 : 400 }}>
-                        {r.previews || 0}
-                      </td>
-                      {/* Free chapters are never bought, so their cell stays blank. */}
-                      <td className="r" data-l="Purchases"
-                          style={{ color: r.purchases ? 'var(--fg-1)' : 'var(--fg-3)',
-                                   fontWeight: r.purchases ? 700 : 400 }}>
-                        {r.purchases == null ? '' : r.purchases}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="r" data-l="Readers">
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                            <div style={{ flex: '0 1 70px', height: 6, borderRadius: 999, background: 'var(--border-1)',
+                                          overflow: 'hidden', maxWidth: 70 }}>
+                              <div style={{ width: `${Math.max(6, (g.readers / topReaders) * 100)}%`, height: '100%',
+                                            background: 'var(--notati-walnut)' }}/>
+                            </div>
+                            <strong style={{ color: 'var(--fg-1)' }}>{g.readers}</strong>
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>
+                            {g.opens} open{g.opens === 1 ? '' : 's'}
+                          </div>
+                        </td>
+                        <td className="r" data-l="Students" style={{ color: 'var(--fg-2)', fontWeight: 700 }}>{g.students}</td>
+                        <td className="r" data-l="Guests"
+                            style={{ color: g.guests ? 'var(--notati-amber)' : 'var(--fg-3)', fontWeight: g.guests ? 700 : 400 }}>
+                          {g.guests}
+                        </td>
+                        <td className="r" data-l="Previews"
+                            style={{ color: g.previews ? 'var(--fg-1)' : 'var(--fg-3)', fontWeight: g.previews ? 700 : 400 }}>
+                          {g.previews}
+                        </td>
+                        <td className="r" data-l="Purchases"
+                            style={{ color: g.purchases ? 'var(--fg-1)' : 'var(--fg-3)', fontWeight: g.purchases ? 700 : 400 }}>
+                          {g.hasPaid ? g.purchases : ''}
+                        </td>
+                      </tr>
+                    ];
+                    if (open) g.chapters.forEach(r => rows.push(
+                      <tr key={r.id}>
+                        <td data-l="Chapter">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 24, flexWrap: 'wrap' }}>
+                            <div style={{
+                              width: 28, height: 28, borderRadius: 'var(--r-3)', flexShrink: 0,
+                              background: r.is_free ? 'var(--notati-forest)' : 'var(--notati-amber)',
+                              color: '#fff', display: 'flex', alignItems: 'center',
+                              justifyContent: 'center', fontSize: 12, fontWeight: 700
+                            }}>
+                              {r.chapter_number}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <span style={{ fontSize: 13, color: 'var(--fg-1)', fontWeight: 600 }}>
+                                {r.chapter_title}
+                              </span>
+                              <span className="tag" style={{ marginLeft: 8, fontSize: 10, textTransform: 'uppercase',
+                                    letterSpacing: '.04em', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                                    background: r.is_free ? 'var(--notati-forest)' : 'var(--notati-amber)', color: '#fff' }}>
+                                {r.is_free ? 'Free' : 'Paid'}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="r" data-l="Readers">
+                          <strong style={{ color: 'var(--fg-1)' }}>{r.readers || 0}</strong>
+                          {r.opens !== (r.readers || 0) && (
+                            <span style={{ fontSize: 11, color: 'var(--fg-3)', marginLeft: 6 }}>
+                              {r.opens} opens
+                            </span>
+                          )}
+                        </td>
+                        <td className="r" data-l="Students" style={{ color: 'var(--fg-2)' }}>{r.students}</td>
+                        <td className="r" data-l="Guests"
+                            style={{ color: r.guests ? 'var(--notati-amber)' : 'var(--fg-3)', fontWeight: r.guests ? 700 : 400 }}>
+                          {r.guests || 0}
+                        </td>
+                        <td className="r" data-l="Previews"
+                            style={{ color: r.previews ? 'var(--fg-1)' : 'var(--fg-3)', fontWeight: r.previews ? 700 : 400 }}>
+                          {r.previews || 0}
+                        </td>
+                        {/* Free chapters are never bought, so their cell stays blank. */}
+                        <td className="r" data-l="Purchases"
+                            style={{ color: r.purchases ? 'var(--fg-1)' : 'var(--fg-3)',
+                                     fontWeight: r.purchases ? 700 : 400 }}>
+                          {r.purchases == null ? '' : r.purchases}
+                        </td>
+                      </tr>
+                    ));
+                    return rows;
+                  })}
                 </tbody>
               </table>
             </div>

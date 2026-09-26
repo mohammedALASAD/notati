@@ -525,15 +525,40 @@ class NoteDownloadView(APIView):
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+def _current_owners(note):
+    """Students to tell about a chapter update: the ones who got it this
+    semester. Someone who bought it a term ago has moved on — the chapter they
+    paid for is the one they sat that term's exam with, and mailing them about
+    a revision for this term's students is noise, not service."""
+    semester = Semester.current()
+    # Narrowed on the grants themselves, not by chaining two filters across the
+    # relation: chaining joins twice, which would match a student holding *some*
+    # grant on this chapter and *some* grant this term — even if those are two
+    # different grants, from two different terms.
+    grants = Access.objects.filter(note=note)
+    if semester:
+        grants = grants.filter(semester=semester)
+    return User.objects.filter(pk__in=grants.values('user_id')).exclude(role='admin')
+
+
 class NoteNotifyUpdateView(APIView):
-    """Admin action: email every student who owns this chapter that we've published
-    an updated version, nudging them to the new one. Best-effort per recipient —
-    a mail failure for one student never aborts the rest."""
+    """Admin action: email this semester's owners of a chapter that we've
+    published an updated version, nudging them to the new one. Best-effort per
+    recipient — a mail failure for one student never aborts the rest.
+
+    GET answers how many would be mailed, so the admin can see the number
+    before deciding to send."""
     permission_classes = [IsAdmin]
+
+    def get(self, request, pk):
+        note = get_object_or_404(Note.objects.select_related('course'), pk=pk)
+        semester = Semester.current()
+        return Response({'count': _current_owners(note).count(),
+                         'semester': semester.label if semester else None})
 
     def post(self, request, pk):
         note = get_object_or_404(Note.objects.select_related('course'), pk=pk)
-        owners = User.objects.filter(access_grants__note=note).exclude(role='admin').distinct()
+        owners = _current_owners(note)
         count = 0
         for u in owners:
             try:
@@ -541,8 +566,10 @@ class NoteNotifyUpdateView(APIView):
                 count += 1
             except Exception:
                 pass  # keep notifying the others
+        semester = Semester.current()
         return Response({'detail': f'Notified {count} student{"" if count == 1 else "s"}.',
-                         'count': count})
+                         'count': count,
+                         'semester': semester.label if semester else None})
 
 
 class UploadDownloadView(APIView):
@@ -898,13 +925,19 @@ def admin_sales(request):
 @api_view(['GET'])
 @permission_classes([IsAdmin])
 def admin_note_views(request):
-    """Per-chapter open counts from the download log — how many times each note
-    (free or paid) was opened/read, and by how many distinct students. Every
-    in-app read/download by a logged-in student is one log row, so 'opens' means
-    times accessed, and 'students' is the unique-student count. 'previews' is
-    how often the chapter's blurred sample was looked at — a paid chapter a
-    student hasn't bought can only be previewed, so without this column a
-    chapter that draws a lot of interest but few buyers would look untouched.
+    """Per-chapter readership from the download log.
+
+    The headline number is people, not clicks: 'readers' counts each student
+    once per chapter however many times they opened it, because a student who
+    reads one chapter thirty times is one reader, and counting the clicks
+    drowned out every other chapter. 'opens' keeps the raw total alongside it —
+    the gap between the two is how heavily a chapter is re-read.
+
+    Guests have no account to count, so they are counted by device address:
+    close enough to be useful, and it undercounts a lecture hall sharing one
+    campus connection. 'previews' is the same headcount for the blurred
+    sample — a paid chapter a student hasn't bought can only be previewed, so
+    without it a chapter that draws interest but few buyers looks untouched.
 
     Pass ?from=YYYY-MM-DD and/or ?to=YYYY-MM-DD to count only opens inside that
     date range — both ends inclusive and read as calendar days in the site's
@@ -947,19 +980,25 @@ def admin_note_views(request):
         if days > 0:
             logs = logs.filter(created_at__gte=timezone.now() - timedelta(days=days))
     opened = Q(kind='open')
+    previewed = Q(kind='preview')
+    guest = Q(user_id__isnull=True)
     rows = (
         logs.values('note_id')
         .annotate(
             opens=Count('id', filter=opened),
             students=Count('user_id', distinct=True, filter=opened),
-            guest_opens=Count('id', filter=opened & Q(user_id__isnull=True)),
-            previews=Count('id', filter=Q(kind='preview')),
+            # Distinct *devices*, not opens: one guest refreshing ten times is
+            # one guest. Count(distinct) ignores NULL user ids by itself, so
+            # these two never double-count the same person.
+            guests=Count('ip', distinct=True, filter=opened & guest),
+            preview_students=Count('user_id', distinct=True, filter=previewed),
+            preview_guests=Count('ip', distinct=True, filter=previewed & guest),
         )
-        # Capped so a runaway log can't build a huge response. 200 is well clear
-        # of the catalogue size; the admin table is searchable and sortable, and
-        # the CSV export takes these rows, so truncating early would quietly
-        # hand back an incomplete spreadsheet.
-        .order_by('-opens')[:200]
+        # Capped so a runaway log can't build a huge response. The real bound is
+        # the catalogue — one row per chapter that has ever been opened — so this
+        # sits well above it; the CSV export takes these rows, and truncating
+        # early would quietly hand back an incomplete spreadsheet.
+        .order_by('-opens')[:2000]
     )
     purchase_filter = Q(access_grants__semester=semester) if semester else Q()
     notes = {
@@ -981,10 +1020,13 @@ def admin_note_views(request):
             'college': n.course.college,
             'is_free': n.is_free,
             'price': str(n.price),
+            # A student and a guest are never the same row, so the two
+            # headcounts simply add up to the chapter's readership.
+            'readers': r['students'] + r['guests'],
             'opens': r['opens'],
             'students': r['students'],
-            'guest_opens': r['guest_opens'],
-            'previews': r['previews'],
+            'guests': r['guests'],
+            'previews': r['preview_students'] + r['preview_guests'],
             # How many students own this chapter. Free chapters are never bought,
             # so they report null and the UI leaves the cell blank.
             'purchases': None if n.is_free else n.purchase_count,
