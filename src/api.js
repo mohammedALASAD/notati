@@ -135,6 +135,9 @@
       fileName:      fileName,
       tags:          [],
       publishedAt:   n.created_at,
+      // When the chapter last changed — a new file, a corrected title, a price.
+      // Falls back to the publish date for anything never edited since.
+      updatedAt:     n.updated_at || n.created_at,
       files:         (n.files || []).map(f => ({
         id:        f.id,
         label:     f.label || '',

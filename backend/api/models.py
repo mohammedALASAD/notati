@@ -70,10 +70,21 @@ class Note(models.Model):
         User, on_delete=models.SET_NULL, null=True, related_name='published_notes'
     )
     created_at     = models.DateTimeField(auto_now_add=True)
+    # When this chapter was last changed — a new file, a corrected title, a
+    # price. `created_at` only ever says when it was first published, which is
+    # no help in answering "what did I touch last?". Null only on rows written
+    # before this field existed; the backfill dated those from their newest file.
+    updated_at     = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
         ordering = ['course', 'chapter_number']
         unique_together = [('course', 'chapter_number')]
+
+    @property
+    def last_changed(self):
+        """The best answer available for 'when did this last change' — the stamp
+        if there is one, else the day it was published."""
+        return self.updated_at or self.created_at
 
     @property
     def is_free(self):

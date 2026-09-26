@@ -2399,3 +2399,101 @@ class ViewsCountPeopleNotClicksTests(TestCase):
         rows = [self._row(n) for n in (self.ch1, ch2)]
         self.assertEqual([r['course_name'] for r in rows], [self.course.name] * 2)
         self.assertEqual([r['readers'] for r in rows], [1, 1])
+
+
+class ChapterLastUpdatedTests(TestCase):
+    """A chapter records when it last changed, so the admin can see what they
+    touched most recently — the publish date alone never answers that."""
+
+    def setUp(self):
+        self.admin  = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.course = Course.objects.create(name='ITNE233', college='IT')
+        self.note   = Note.objects.create(course=self.course, chapter_number=5,
+                                          chapter_title='Network layer', price=Decimal('2.000'))
+
+    def _c(self):
+        c = APIClient(); c.force_authenticate(self.admin); return c
+
+    def _stamp(self):
+        self.note.refresh_from_db()
+        return self.note.updated_at
+
+    def test_editing_a_chapter_moves_the_stamp(self):
+        before = self._stamp()
+        resp = self._c().patch(f'/api/notes/{self.note.id}/',
+                               {'chapter_title': 'Network layer (Control Plane)'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertGreater(self._stamp(), before)
+
+    def test_adding_a_file_moves_the_stamp(self):
+        before = self._stamp()
+        resp = self._c().post('/api/note-files/', {
+            'note': self.note.id,
+            'file': SimpleUploadedFile('ch5.pdf', _make_pdf(1)),
+        }, format='multipart')
+        self.assertEqual(resp.status_code, 201)
+        self.assertGreater(self._stamp(), before)
+
+    def test_removing_a_file_moves_the_stamp(self):
+        nf = NoteFile.objects.create(note=self.note,
+                                     file=SimpleUploadedFile('x.pdf', _make_pdf(1)))
+        Note.objects.filter(pk=self.note.pk).update(
+            updated_at=timezone.now() - timedelta(days=3))
+        before = self._stamp()
+        self.assertEqual(self._c().delete(f'/api/note-files/{nf.id}/').status_code, 204)
+        self.assertGreater(self._stamp(), before)
+
+    def test_a_student_reading_it_does_not_count_as_a_change(self):
+        student = User.objects.create_user('s@x.com', 'pw', name='S')
+        Access.objects.create(user=student, note=self.note)
+        Note.objects.filter(pk=self.note.pk).update(
+            updated_at=timezone.now() - timedelta(days=2))
+        before = self._stamp()
+        c = APIClient(); c.force_authenticate(student)
+        with patch('api.views._fetch_file_bytes',
+                   return_value=(_make_pdf(1), 'application/pdf')):
+            self.note.pdf_file = 'notes/x.pdf'
+            Note.objects.filter(pk=self.note.pk).update(pdf_file='notes/x.pdf')
+            c.get(f'/api/notes/{self.note.id}/download/')
+        self.assertEqual(self._stamp(), before)
+
+    def test_the_admin_list_reports_it(self):
+        row = next(r for r in self._c().get('/api/notes/').data
+                   if r['id'] == self.note.id)
+        self.assertIsNotNone(row['updated_at'])
+        self.assertIn('created_at', row)
+
+    def test_the_backfill_dates_old_chapters_from_their_newest_file(self):
+        # What migration 0021 does, run against the same shapes it will meet:
+        # a chapter with files takes its newest file's date, one without keeps
+        # its publish date, and a file older than the chapter never wins.
+        newer = Note.objects.create(course=self.course, chapter_number=6,
+                                    chapter_title='With files', price=0)
+        bare  = Note.objects.create(course=self.course, chapter_number=7,
+                                    chapter_title='No files', price=0)
+        recent = timezone.now()
+        NoteFile.objects.create(note=newer, file=SimpleUploadedFile('a.pdf', _make_pdf(1)))
+        NoteFile.objects.filter(note=newer).update(created_at=recent)
+        Note.objects.filter(pk=newer.pk).update(
+            created_at=recent - timedelta(days=90), updated_at=None)
+        Note.objects.filter(pk=bare.pk).update(
+            created_at=recent - timedelta(days=90), updated_at=None)
+
+        newest = {}
+        for note_id, created in NoteFile.objects.values_list('note_id', 'created_at'):
+            if note_id and (note_id not in newest or created > newest[note_id]):
+                newest[note_id] = created
+        for pk, created_at in Note.objects.values_list('pk', 'created_at'):
+            stamp = newest.get(pk)
+            if stamp is None or stamp < created_at:
+                stamp = created_at
+            Note.objects.filter(pk=pk).update(updated_at=stamp)
+
+        newer.refresh_from_db(); bare.refresh_from_db()
+        self.assertEqual(newer.updated_at, recent)          # dated from its file
+        self.assertEqual(bare.updated_at, bare.created_at)  # nothing better to say
+
+    def test_last_changed_falls_back_for_a_row_that_predates_the_field(self):
+        Note.objects.filter(pk=self.note.pk).update(updated_at=None)
+        self.note.refresh_from_db()
+        self.assertEqual(self.note.last_changed, self.note.created_at)

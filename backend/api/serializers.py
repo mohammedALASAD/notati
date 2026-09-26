@@ -164,9 +164,9 @@ class NoteSerializer(serializers.ModelSerializer):
             'id', 'course', 'course_name', 'college',
             'chapter_number', 'chapter_title',
             'description', 'price', 'is_free', 'has_access',
-            'pdf_file', 'files', 'created_at',
+            'pdf_file', 'files', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
     def _purchased(self, obj):
         """Read the annotated _user_has_access flag if present, else fall back to DB query."""

@@ -597,6 +597,10 @@ class NoteFileListCreateView(generics.ListCreateAPIView):
             return [IsAdmin()]
         return [IsAuthenticated()]
 
+    def perform_create(self, serializer):
+        nf = serializer.save()
+        _touch(nf.note)
+
     def get_queryset(self):
         user = self.request.user
         qs = NoteFile.objects.select_related('note__course').all()
@@ -611,10 +615,23 @@ class NoteFileListCreateView(generics.ListCreateAPIView):
         return qs
 
 
+def _touch(note):
+    """Mark a chapter as changed. Adding or removing a file changes what the
+    student receives just as much as editing the title does, but it never goes
+    through Note.save(), so the stamp has to be nudged by hand."""
+    if note:
+        Note.objects.filter(pk=note.pk).update(updated_at=timezone.now())
+
+
 class NoteFileDetailView(generics.RetrieveDestroyAPIView):
     queryset = NoteFile.objects.all()
     serializer_class = NoteFileSerializer
     permission_classes = [IsAdmin]
+
+    def perform_destroy(self, instance):
+        note = instance.note
+        super().perform_destroy(instance)
+        _touch(note)
 
 
 class NoteFileDownloadView(APIView):

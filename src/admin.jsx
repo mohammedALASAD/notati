@@ -925,6 +925,7 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
   const [q, setQ] = useStateAd('');
   const [collegeFilter, setCollegeFilter] = useStateAd('all');
   const [priceFilter, setPriceFilter] = useStateAd('all');
+  const [sortBy, setSortBy] = useStateAd('course');
   const [confirmDel, setConfirmDel] = useStateAd(null);
 
   useEffectAd(() => { setQ(topbarSearch || ''); }, [topbarSearch]);
@@ -938,14 +939,19 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
 
   const filtered = useMemoAd(() => {
     const ql = q.trim().toLowerCase();
-    return notes.filter(n => {
+    const rows = notes.filter(n => {
       if (collegeFilter !== 'all' && n.college !== collegeFilter) return false;
       if (priceFilter === 'free' && (n.price && Number(n.price) > 0)) return false;
       if (priceFilter === 'paid' && (!n.price || Number(n.price) === 0)) return false;
       if (!ql) return true;
       return [n.title, n.college, n.courseName, n.chapterTitle, n.description].some(s => (s || '').toLowerCase().includes(ql));
     });
-  }, [q, notes, collegeFilter, priceFilter]);
+    const stamp = n => new Date(n.updatedAt || n.publishedAt).getTime() || 0;
+    if (sortBy === 'updated')   return rows.slice().sort((a, b) => stamp(b) - stamp(a));
+    if (sortBy === 'published') return rows.slice().sort((a, b) =>
+      (new Date(b.publishedAt).getTime() || 0) - (new Date(a.publishedAt).getTime() || 0));
+    return rows;   // the server's own order: course, then chapter number
+  }, [q, notes, collegeFilter, priceFilter, sortBy]);
 
   async function doDelete() {
     if (!confirmDel) return;
@@ -989,6 +995,12 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
               <option value="all">All colleges</option>
               {COLLEGES_AD.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
+            <select className="filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}
+                    title="Order the list">
+              <option value="course">By course</option>
+              <option value="updated">Recently updated</option>
+              <option value="published">Recently published</option>
+            </select>
             <select className="filter-select" value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)}>
               <option value="all">All prices</option>
               <option value="free">Free</option>
@@ -1018,6 +1030,7 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
                     <th>College · Course</th>
                     <th>Price</th>
                     <th>Tags</th>
+                    <th title="When this chapter last changed — a new file, an edited title, a price">Updated</th>
                     <th>Published</th>
                     <th className="r">Actions</th>
                   </tr>
@@ -1050,6 +1063,18 @@ function NotesManager({ user, onEdit, onAddNew, topbarSearch }) {
                           {n.tags.slice(0, 3).map(t => <span key={t} className="tag tag-soft">{t}</span>)}
                           {n.tags.length > 3 ? <span style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>+{n.tags.length - 3}</span> : null}
                         </div>
+                      </td>
+                      {/* Only worth calling out when it differs from the publish
+                          date — otherwise the chapter is simply as first published. */}
+                      <td data-l="Updated" style={{ whiteSpace: 'nowrap' }}>
+                        {n.updatedAt && fmtDate(n.updatedAt) !== fmtDate(n.publishedAt) ? (
+                          <span style={{ fontWeight: 600, color: 'var(--fg-1)' }}
+                                title={new Date(n.updatedAt).toLocaleString()}>
+                            {fmtRelative(n.updatedAt)}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--fg-3)' }}>—</span>
+                        )}
                       </td>
                       <td data-l="Published" style={{ whiteSpace: 'nowrap' }}>{fmtDate(n.publishedAt)}</td>
                       <td className="r" data-l="Actions">
