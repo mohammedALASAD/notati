@@ -1258,6 +1258,10 @@ function UsersList({ topbarSearch }) {
   const [role,        setRole]        = useStateAd('all');
   const [emailTarget, setEmailTarget] = useStateAd(null);
   const [showBroadcast, setShowBroadcast] = useStateAd(false);
+  // Click a column to sort by it; click again to flip the direction. Name
+  // ascending is where the list has always opened, so that stays the default.
+  const [sortKey, setSortKey] = useStateAd('name');
+  const [sortDir, setSortDir] = useStateAd('asc');
 
   const studentCount = users.filter(u => u.role === 'customer').length;
 
@@ -1267,14 +1271,51 @@ function UsersList({ topbarSearch }) {
       .then(([u, up]) => { setUsers(u); setUploads(up); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+  const uploadCount = useMemoAd(() => {
+    const by = {};
+    uploads.forEach(x => { by[x.userId] = (by[x.userId] || 0) + 1; });
+    return by;
+  }, [uploads]);
+
   const filtered = useMemoAd(() => {
     const ql = q.trim().toLowerCase();
-    return users.filter(u => {
+    const rows = users.filter(u => {
       if (role !== 'all' && u.role !== role) return false;
       if (!ql) return true;
       return [u.name, u.email, u.role].some(s => (s || '').toLowerCase().includes(ql));
     });
-  }, [users, q, role]);
+    // The whole list is on the page — the endpoint isn't paginated — so sorting
+    // here really does order every user, not just the ones currently in view.
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const joined = u => new Date(u.joinedAt || u.created_at).getTime() || 0;
+    const text = v => (v || '').toLowerCase();
+    return rows.slice().sort((a, b) => {
+      let cmp;
+      if (sortKey === 'joined')       cmp = joined(a) - joined(b);
+      else if (sortKey === 'uploads') cmp = (uploadCount[a.id] || 0) - (uploadCount[b.id] || 0);
+      else if (sortKey === 'email')   cmp = text(a.email).localeCompare(text(b.email));
+      else                            cmp = text(a.name).localeCompare(text(b.name));
+      // Two people who joined the same day keep a stable, readable order
+      // instead of shuffling about every time the list is redrawn.
+      return cmp !== 0 ? cmp * dir : text(a.name).localeCompare(text(b.name));
+    });
+  }, [users, q, role, sortKey, sortDir, uploadCount]);
+
+  function toggleSort(key) {
+    if (sortKey === key) { setSortDir(d => (d === 'asc' ? 'desc' : 'asc')); return; }
+    setSortKey(key);
+    // Open each column the way it is most useful: newest students first,
+    // busiest uploaders first, but names from A.
+    setSortDir(key === 'joined' || key === 'uploads' ? 'desc' : 'asc');
+  }
+
+  const sortArrow = key => (sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '');
+  const sortable = (key, extra) => ({
+    onClick: () => toggleSort(key),
+    title: 'Click to sort',
+    style: { cursor: 'pointer', userSelect: 'none',
+             color: sortKey === key ? 'var(--fg-1)' : undefined, ...(extra || {}) },
+  });
 
   return (
     <div>
@@ -1322,17 +1363,20 @@ function UsersList({ topbarSearch }) {
               <table className="tbl">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Email</th>
+                    <th {...sortable('name')}>Name{sortArrow('name')}</th>
+                    <th {...sortable('email')}>Email{sortArrow('email')}</th>
                     <th>Role</th>
-                    <th>Joined</th>
-                    <th className="r">Uploads</th>
+                    <th {...sortable('joined', { whiteSpace: 'nowrap' })}
+                        title="Click to sort — newest first, click again for oldest first">
+                      Joined{sortArrow('joined')}
+                    </th>
+                    <th className="r" {...sortable('uploads')}>Uploads{sortArrow('uploads')}</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map(u => {
-                    const ups = uploads.filter(x => x.userId === u.id).length;
+                    const ups = uploadCount[u.id] || 0;
                     return (
                       <tr key={u.id}>
                         <td data-l="Name">
