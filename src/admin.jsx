@@ -3112,23 +3112,228 @@ function _discountEmails(d) {
   return [];
 }
 
+/* A code's fields as the form holds them. Shared by "New code" and the edit
+   dialog so the two can never drift apart — one set of fields, one payload. */
+const _BLANK_DISCOUNT = {
+  code: '', kind: 'percent', percent: '', amount: '',
+  minSpend: '', emails: '', from: '', until: '', maxUses: '',
+};
+
+/* An ISO timestamp as a <input type="datetime-local"> value, in the admin's own
+   timezone — toISOString() would shift it by the UTC offset and quietly move a
+   code's window by a few hours every time it was edited. */
+function _toLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function _discountToForm(d) {
+  return {
+    code: d.code || '',
+    kind: d.kind === 'amount' ? 'amount' : 'percent',
+    percent: d.percent ? String(d.percent) : '',
+    amount: Number(d.amount) > 0 ? Number(d.amount).toFixed(3) : '',
+    minSpend: Number(d.min_subtotal) > 0 ? Number(d.min_subtotal).toFixed(3) : '',
+    emails: _discountEmails(d).join(', '),
+    from: _toLocalInput(d.valid_from),
+    until: _toLocalInput(d.valid_until),
+    maxUses: d.max_uses != null ? String(d.max_uses) : '',
+  };
+}
+
+function _discountPayload(v) {
+  return {
+    code: v.code.trim().toUpperCase(),
+    kind: v.kind,
+    // Only the one that applies carries a value, so a code can never be read
+    // as both a percentage and a flat sum.
+    percent: v.kind === 'percent' ? parseInt(v.percent, 10) : 0,
+    amount:  v.kind === 'amount'  ? Number(v.amount).toFixed(3) : '0.000',
+    min_subtotal: v.minSpend ? Number(v.minSpend).toFixed(3) : null,
+    allowed_emails: v.emails.trim(),
+    valid_from:  v.from  ? new Date(v.from).toISOString()  : null,
+    valid_until: v.until ? new Date(v.until).toISOString() : null,
+    max_uses:    v.maxUses ? parseInt(v.maxUses, 10) : null,
+  };
+}
+
+/* Returns an error to show, or null when the form is good to send. */
+function _discountFormError(v) {
+  if (!v.code.trim()) return 'Type a code first.';
+  if (v.kind === 'percent') {
+    const p = parseInt(v.percent, 10);
+    if (!(p >= 1 && p <= 100)) return 'Percent must be between 1 and 100.';
+  } else if (!(Number(v.amount) > 0)) {
+    return 'Set how many dinars come off.';
+  }
+  if (v.from && v.until && new Date(v.until) < new Date(v.from))
+    return '“Valid until” must be after “valid from”.';
+  return null;
+}
+
+const _DISCOUNT_INPUT = {
+  width: '100%', padding: '10px 12px', borderRadius: 'var(--r-5)',
+  border: '1px solid var(--border-1)', background: 'var(--bg-section)',
+  color: 'var(--fg-1)', font: 'var(--type-body)', fontSize: 14,
+};
+
+function DiscountFields({ v, set, lockCode }) {
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
+        <div className="field">
+          <label>Code</label>
+          <input value={v.code} disabled={lockCode}
+                 onChange={e => set({ code: e.target.value.toUpperCase() })}
+                 placeholder="WELCOME10"
+                 style={{ ..._DISCOUNT_INPUT, letterSpacing: '.05em',
+                          opacity: lockCode ? .6 : 1 }}/>
+        </div>
+        <div className="field">
+          <label>Discount type</label>
+          <select value={v.kind} onChange={e => set({ kind: e.target.value })} style={_DISCOUNT_INPUT}>
+            <option value="percent">Percentage off</option>
+            <option value="amount">Fixed amount off (BD)</option>
+          </select>
+        </div>
+        {v.kind === 'percent' ? (
+          <div className="field">
+            <label>Discount %</label>
+            <input type="number" min="1" max="100" value={v.percent}
+                   onChange={e => set({ percent: e.target.value })} placeholder="10"
+                   style={_DISCOUNT_INPUT}/>
+          </div>
+        ) : (
+          <div className="field">
+            <label>Amount off (BD)</label>
+            <input type="number" min="0.001" step="0.001" value={v.amount}
+                   onChange={e => set({ amount: e.target.value })} placeholder="1.000"
+                   style={_DISCOUNT_INPUT}/>
+          </div>
+        )}
+        <div className="field">
+          <label>Minimum spend (BD) <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
+          <input type="number" min="0" step="0.001" value={v.minSpend}
+                 onChange={e => set({ minSpend: e.target.value })} placeholder="No minimum"
+                 style={_DISCOUNT_INPUT}/>
+        </div>
+        <div className="field">
+          <label>Valid from <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
+          <input type="datetime-local" value={v.from}
+                 onChange={e => set({ from: e.target.value })} style={_DISCOUNT_INPUT}/>
+        </div>
+        <div className="field">
+          <label>Valid until <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
+          <input type="datetime-local" value={v.until}
+                 onChange={e => set({ until: e.target.value })} style={_DISCOUNT_INPUT}/>
+          {v.until && new Date(v.until) < new Date() && (
+            <div style={{ fontSize: 12, color: 'var(--notati-amber)', marginTop: 4 }}>
+              This date has passed — the code stays expired until you change or clear it.
+            </div>
+          )}
+        </div>
+        <div className="field">
+          <label>Max total uses <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
+          <input type="number" min="1" value={v.maxUses}
+                 onChange={e => set({ maxUses: e.target.value })} placeholder="Unlimited"
+                 style={_DISCOUNT_INPUT}/>
+        </div>
+      </div>
+      <div className="field" style={{ marginTop: 14 }}>
+        <label>Only for these students <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
+        <textarea value={v.emails} onChange={e => set({ emails: e.target.value })} rows={2}
+                  placeholder="sara@gmail.com, omar@gmail.com — leave empty for everyone"
+                  style={{ ..._DISCOUNT_INPUT, resize: 'vertical', fontFamily: 'inherit' }}/>
+        <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 4 }}>
+          Separate with commas, spaces or new lines. An email with no account yet still
+          works — the code opens for them as soon as they register.
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* What the code will do, in a sentence, before it is saved. */
+function DiscountSummary({ v }) {
+  const bit = v.kind === 'amount'
+    ? (Number(v.amount) > 0 ? `BD ${Number(v.amount).toFixed(3)} off` : '')
+    : (Number(v.percent) > 0 ? `${parseInt(v.percent, 10)}% off` : '');
+  if (!bit) return null;
+  return (
+    <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+      {bit}
+      {v.minSpend ? `, on baskets of BD ${Number(v.minSpend).toFixed(3)} or more` : ''}.
+      {v.kind === 'amount' ? ' A basket smaller than the discount simply becomes free.' : ''}
+    </span>
+  );
+}
+
+function EditDiscountModal({ open, discount, onClose, onSaved }) {
+  const { toast } = useToast();
+  const [v, setV]       = useStateAd(_BLANK_DISCOUNT);
+  const [saving, setSaving] = useStateAd(false);
+  const [err, setErr]   = useStateAd('');
+
+  useEffectAd(() => {
+    if (open && discount) { setV(_discountToForm(discount)); setErr(''); }
+  }, [open, discount]);
+
+  if (!open || !discount) return null;
+  const set = patch => setV(prev => ({ ...prev, ...patch }));
+
+  async function save() {
+    const problem = _discountFormError(v);
+    if (problem) { setErr(problem); return; }
+    setSaving(true); setErr('');
+    try {
+      const updated = await NotatiAPI.updateDiscount(discount.id, _discountPayload(v));
+      onSaved(updated);
+      toast.success('Code updated', `${updated.code} · ${updated.label}`);
+      if ((updated.unknown_emails || []).length) {
+        toast.info('No account yet',
+          `${updated.unknown_emails.join(', ')} — the code opens for them once they register.`);
+      }
+      onClose();
+    } catch (e) {
+      setErr(e.message || 'Could not save.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} size="lg"
+           title={`Edit ${discount.code}`}
+           subtitle={discount.uses_count > 0
+             ? `Used ${discount.uses_count} time${discount.uses_count === 1 ? '' : 's'} already — those orders keep the discount they were given.`
+             : 'Not used yet.'}
+           footer={
+             <>
+               <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+               <button className="btn btn-primary" onClick={save} disabled={saving}>
+                 {saving ? 'Saving…' : 'Save changes'} <Icons.Check size={15}/>
+               </button>
+             </>
+           }>
+      <DiscountFields v={v} set={set}/>
+      <div style={{ marginTop: 14 }}><DiscountSummary v={v}/></div>
+      {err ? <div className="err" style={{ marginTop: 12 }}>{err}</div> : null}
+    </Modal>
+  );
+}
+
 function DiscountsManager() {
   const { toast } = useToast();
   const [codes,   setCodes]   = useStateAd([]);
   const [loading, setLoading] = useStateAd(true);
   const [busyId,  setBusyId]  = useStateAd(null);
+  const [editing, setEditing] = useStateAd(null);
 
-  // Create form
-  const [code,    setCode]    = useStateAd('');
-  const [kind,    setKind]    = useStateAd('percent');   // 'percent' | 'amount'
-  const [percent, setPercent] = useStateAd('');
-  const [amount,  setAmount]  = useStateAd('');
-  const [minSpend, setMinSpend] = useStateAd('');
-  const [emails,  setEmails]  = useStateAd('');
-  const [from,    setFrom]    = useStateAd('');
-  const [until,   setUntil]   = useStateAd('');
-  const [maxUses, setMaxUses] = useStateAd('');
-  const [saving,  setSaving]  = useStateAd(false);
+  const [form,   setForm]   = useStateAd(_BLANK_DISCOUNT);
+  const [saving, setSaving] = useStateAd(false);
+  const setField = patch => setForm(prev => ({ ...prev, ...patch }));
 
   function load() {
     setLoading(true);
@@ -3138,37 +3343,21 @@ function DiscountsManager() {
   }
   useEffectAd(load, []);
 
+  function replace(updated) {
+    setCodes(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x));
+  }
+
   async function create(e) {
     e.preventDefault();
-    const c = code.trim().toUpperCase();
-    if (!c) { toast.error('Code required', 'Type a code first.'); return; }
-    if (kind === 'percent') {
-      const p = parseInt(percent, 10);
-      if (!(p >= 1 && p <= 100)) { toast.error('Bad percent', 'Percent must be 1–100.'); return; }
-    } else if (!(Number(amount) > 0)) {
-      toast.error('Bad amount', 'Set how many dinars come off.'); return;
-    }
+    const problem = _discountFormError(form);
+    if (problem) { toast.error('Check the form', problem); return; }
     setSaving(true);
     try {
-      const created = await NotatiAPI.createDiscount({
-        code: c,
-        kind,
-        // Send only the one that applies; the other stays at zero so the code
-        // can never be read as both a percentage and a flat sum.
-        percent: kind === 'percent' ? parseInt(percent, 10) : 0,
-        amount:  kind === 'amount'  ? Number(amount).toFixed(3) : '0.000',
-        min_subtotal: minSpend ? Number(minSpend).toFixed(3) : null,
-        allowed_emails: emails.trim(),
-        active: true,
-        valid_from:  from  ? new Date(from).toISOString()  : null,
-        valid_until: until ? new Date(until).toISOString() : null,
-        max_uses:    maxUses ? parseInt(maxUses, 10) : null,
-      });
+      const created = await NotatiAPI.createDiscount({ ..._discountPayload(form), active: true });
       setCodes(prev => [created, ...prev]);
-      setCode(''); setPercent(''); setAmount(''); setMinSpend(''); setEmails('');
-      setFrom(''); setUntil(''); setMaxUses('');
+      setForm(_BLANK_DISCOUNT);
       toast.success('Code created', `${created.code} · ${created.label}`);
-      if (created.unknown_emails && created.unknown_emails.length) {
+      if ((created.unknown_emails || []).length) {
         toast.info('No account yet',
           `${created.unknown_emails.join(', ')} — the code will work once they register.`);
       }
@@ -3182,10 +3371,30 @@ function DiscountsManager() {
   async function toggleActive(d) {
     setBusyId(d.id);
     try {
-      const updated = await NotatiAPI.updateDiscount(d.id, { active: !d.active });
-      setCodes(prev => prev.map(x => x.id === d.id ? { ...x, ...updated } : x));
+      replace(await NotatiAPI.updateDiscount(d.id, { active: !d.active }));
     } catch (err) {
       toast.error('Update failed', err.message);
+    } finally { setBusyId(null); }
+  }
+
+  /* Bring a code that has run out back to life. "Expired" is an end date in the
+     past and "Used up" is a uses cap that has been reached — neither of which
+     the Enable switch touches, so clear whichever is blocking it. */
+  async function reactivate(d) {
+    const st = _discountStatus(d);
+    const expired = st.label === 'Expired';
+    const usedUp  = st.label === 'Used up';
+    const what = expired ? 'clear its end date' : 'remove its uses cap';
+    if (!window.confirm(`Reactivate ${d.code}? This will ${what} and switch it back on. Use Edit if you want a new date or cap instead.`)) return;
+    setBusyId(d.id);
+    try {
+      const patch = { active: true };
+      if (expired) patch.valid_until = null;
+      if (usedUp)  patch.max_uses = null;
+      replace(await NotatiAPI.updateDiscount(d.id, patch));
+      toast.success('Code reactivated', `${d.code} is usable again.`);
+    } catch (err) {
+      toast.error('Could not reactivate', err.message);
     } finally { setBusyId(null); }
   }
 
@@ -3200,12 +3409,6 @@ function DiscountsManager() {
       toast.error('Delete failed', err.message);
     } finally { setBusyId(null); }
   }
-
-  const inputStyle = {
-    width: '100%', padding: '10px 12px', borderRadius: 'var(--r-5)',
-    border: '1px solid var(--border-1)', background: 'var(--bg-section)',
-    color: 'var(--fg-1)', font: 'var(--type-body)', fontSize: 14,
-  };
 
   return (
     <div>
@@ -3223,74 +3426,12 @@ function DiscountsManager() {
       <section className="panel" style={{ marginBottom: 20 }}>
         <div className="panel-head"><h3>New code</h3></div>
         <form className="panel-body" onSubmit={create}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
-            <div className="field">
-              <label>Code</label>
-              <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
-                     placeholder="WELCOME10" style={{ ...inputStyle, letterSpacing: '.05em' }}/>
-            </div>
-            <div className="field">
-              <label>Discount type</label>
-              <select value={kind} onChange={e => setKind(e.target.value)} style={inputStyle}>
-                <option value="percent">Percentage off</option>
-                <option value="amount">Fixed amount off (BD)</option>
-              </select>
-            </div>
-            {kind === 'percent' ? (
-              <div className="field">
-                <label>Discount %</label>
-                <input type="number" min="1" max="100" value={percent}
-                       onChange={e => setPercent(e.target.value)} placeholder="10" style={inputStyle}/>
-              </div>
-            ) : (
-              <div className="field">
-                <label>Amount off (BD)</label>
-                <input type="number" min="0.001" step="0.001" value={amount}
-                       onChange={e => setAmount(e.target.value)} placeholder="1.000" style={inputStyle}/>
-              </div>
-            )}
-            <div className="field">
-              <label>Minimum spend (BD) <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
-              <input type="number" min="0" step="0.001" value={minSpend}
-                     onChange={e => setMinSpend(e.target.value)} placeholder="No minimum" style={inputStyle}/>
-            </div>
-            <div className="field">
-              <label>Valid from <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
-              <input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} style={inputStyle}/>
-            </div>
-            <div className="field">
-              <label>Valid until <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
-              <input type="datetime-local" value={until} onChange={e => setUntil(e.target.value)} style={inputStyle}/>
-            </div>
-            <div className="field">
-              <label>Max total uses <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
-              <input type="number" min="1" value={maxUses} onChange={e => setMaxUses(e.target.value)}
-                     placeholder="Unlimited" style={inputStyle}/>
-            </div>
-          </div>
-          <div className="field" style={{ marginTop: 14 }}>
-            <label>
-              Only for these students <span style={{ color: 'var(--fg-3)' }}>(optional)</span>
-            </label>
-            <textarea value={emails} onChange={e => setEmails(e.target.value)} rows={2}
-                      placeholder="sara@gmail.com, omar@gmail.com — leave empty for everyone"
-                      style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}/>
-            <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 4 }}>
-              Separate with commas, spaces or new lines. An email with no account yet still
-              works — the code opens for them as soon as they register.
-            </div>
-          </div>
-          <div style={{ marginTop: 16 }}>
+          <DiscountFields v={form} set={setField}/>
+          <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <button type="submit" className="btn btn-primary" disabled={saving}>
               <Icons.Plus size={16}/> {saving ? 'Creating…' : 'Create code'}
             </button>
-            <span style={{ marginLeft: 12, fontSize: 12, color: 'var(--fg-3)' }}>
-              {kind === 'amount' && Number(amount) > 0
-                ? `BD ${Number(amount).toFixed(3)} off${minSpend ? `, on baskets of BD ${Number(minSpend).toFixed(3)} or more` : ''}. A basket smaller than the discount simply becomes free.`
-                : kind === 'percent' && Number(percent) > 0
-                  ? `${parseInt(percent, 10)}% off${minSpend ? `, on baskets of BD ${Number(minSpend).toFixed(3)} or more` : ''}.`
-                  : ''}
-            </span>
+            <DiscountSummary v={form}/>
           </div>
         </form>
       </section>
@@ -3319,6 +3460,7 @@ function DiscountsManager() {
                   {codes.map(d => {
                     const st = _discountStatus(d);
                     const only = _discountEmails(d);
+                    const stale = st.label === 'Expired' || st.label === 'Used up';
                     return (
                       <tr key={d.id}>
                         <td data-l="Code"><span style={{ font: 'var(--type-body-bold)', letterSpacing: '.04em' }}>{d.code}</span></td>
@@ -3363,7 +3505,20 @@ function DiscountsManager() {
                           <span style={{ color: 'var(--fg-3)' }}>{d.max_uses != null ? ` / ${d.max_uses}` : ''}</span>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                            {stale && (
+                              <button className="btn btn-primary btn-sm" disabled={busyId === d.id}
+                                      title={st.label === 'Expired'
+                                        ? 'Clear the end date and switch it back on'
+                                        : 'Remove the uses cap and switch it back on'}
+                                      onClick={() => reactivate(d)}>
+                                Reactivate
+                              </button>
+                            )}
+                            <button className="btn btn-soft btn-sm" disabled={busyId === d.id}
+                                    onClick={() => setEditing(d)}>
+                              <Icons.Edit size={13}/> Edit
+                            </button>
                             <button className="btn btn-soft btn-sm" disabled={busyId === d.id}
                                     onClick={() => toggleActive(d)}>
                               {d.active ? 'Disable' : 'Enable'}
@@ -3383,6 +3538,9 @@ function DiscountsManager() {
           </div>
         </section>
       )}
+
+      <EditDiscountModal open={!!editing} discount={editing}
+                         onClose={() => setEditing(null)} onSaved={replace}/>
     </div>
   );
 }

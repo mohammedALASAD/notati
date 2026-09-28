@@ -2739,3 +2739,106 @@ class DiscountReservedForStudentsTests(TestCase):
                                            allowed_emails=['newcomer@x.com'])
         newcomer = User.objects.create_user('newcomer@x.com', 'pw', name='New')
         self.assertTrue(code.allows(newcomer))
+
+
+class DiscountEditingTests(TestCase):
+    """An active code can be changed, and one that has run out can be brought
+    back — 'Expired' is an end date in the past and 'Used up' is a cap that has
+    been reached, neither of which the on/off switch touches."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 11', position=11, is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.course  = Course.objects.create(name='ITIS103', college='IT')
+        self.note    = Note.objects.create(course=self.course, chapter_number=1,
+                                           chapter_title='One', price=Decimal('2.000'))
+        self.code = DiscountCode.objects.create(code='TEST', kind='amount',
+                                                amount=Decimal('0.500'),
+                                                min_subtotal=Decimal('2.000'))
+        cache.clear()
+
+    def _c(self, user=None):
+        c = APIClient(); c.force_authenticate(user or self.admin); return c
+
+    def _edit(self, **patch):
+        return self._c().patch(f'/api/admin/discounts/{self.code.id}/', patch, format='json')
+
+    def _usable(self):
+        resp = self._c(self.student).post('/api/discount/validate/',
+                                          {'code': 'TEST', 'note_ids': [self.note.id]},
+                                          format='json')
+        return resp.status_code == 200, resp.data
+
+    def test_an_active_code_can_be_changed(self):
+        resp = self._edit(kind='percent', percent=25, amount='0.000',
+                          min_subtotal=None, allowed_emails='')
+        self.assertEqual(resp.status_code, 200)
+        self.code.refresh_from_db()
+        self.assertEqual((self.code.kind, self.code.percent, self.code.min_subtotal),
+                         ('percent', 25, None))
+        ok, data = self._usable()
+        self.assertTrue(ok)
+        self.assertEqual(data['discount'], '0.500')      # 25% of 2.000
+
+    def test_keeping_the_same_code_name_is_not_a_duplicate(self):
+        self.assertEqual(self._edit(code='TEST', amount='0.750').status_code, 200)
+
+    def test_an_expired_code_comes_back_when_the_end_date_is_cleared(self):
+        self.code.valid_until = timezone.now() - timedelta(days=1)
+        self.code.save(update_fields=['valid_until'])
+        ok, data = self._usable()
+        self.assertFalse(ok)
+        self.assertIn('expired', data['detail'].lower())
+
+        self.assertEqual(self._edit(active=True, valid_until=None).status_code, 200)
+        self.assertTrue(self._usable()[0])
+
+    def test_a_used_up_code_comes_back_when_the_cap_is_cleared(self):
+        other = User.objects.create_user('o@x.com', 'pw', name='O')
+        DiscountRedemption.objects.create(code=self.code, user=other)
+        self.code.max_uses = 1
+        self.code.save(update_fields=['max_uses'])
+        ok, data = self._usable()
+        self.assertFalse(ok)
+        self.assertIn('usage limit', data['detail'].lower())
+
+        self.assertEqual(self._edit(active=True, max_uses=None).status_code, 200)
+        self.assertTrue(self._usable()[0])
+
+    def test_reactivating_leaves_the_rest_of_the_code_alone(self):
+        self.code.valid_until = timezone.now() - timedelta(days=1)
+        self.code.allowed_emails = ['s@x.com']
+        self.code.save()
+        self._edit(active=True, valid_until=None)
+        self.code.refresh_from_db()
+        self.assertEqual(self.code.amount, Decimal('0.500'))
+        self.assertEqual(self.code.min_subtotal, Decimal('2.000'))
+        self.assertEqual(self.code.allowed_emails, ['s@x.com'])
+
+    def test_editing_a_code_never_rewrites_an_order_already_placed_with_it(self):
+        self._c(self.student).post('/api/orders/', {
+            'note_ids': [self.note.id], 'code': 'REF', 'discount_code': 'TEST',
+        }, format='json')
+        order = Order.objects.get()
+        self.assertEqual(order.discount_amount, Decimal('0.500'))
+
+        self._edit(amount='1.900')
+        order.refresh_from_db()
+        # The order kept what the student was actually given.
+        self.assertEqual((order.discount_amount, order.total),
+                         (Decimal('0.500'), Decimal('1.500')))
+
+    def test_switching_to_an_amount_without_naming_one_is_refused(self):
+        pct = DiscountCode.objects.create(code='PCT', kind='percent', percent=10)
+        resp = self._c().patch(f'/api/admin/discounts/{pct.id}/',
+                               {'kind': 'amount'}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        pct.refresh_from_db()
+        self.assertEqual(pct.kind, 'percent')            # unchanged
+
+    def test_a_student_cannot_edit_a_code(self):
+        resp = self._c(self.student).patch(f'/api/admin/discounts/{self.code.id}/',
+                                           {'amount': '9.000'}, format='json')
+        self.assertEqual(resp.status_code, 403)
