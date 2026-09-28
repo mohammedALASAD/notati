@@ -135,7 +135,8 @@ def _alert_admin_of_activity(kind, user, obj):
             lines = '\n'.join(
                 f'- {i.course_name} Ch.{i.chapter_number}: {i.chapter_title} (BD {i.price})'
                 for i in items)
-            disc = (f'\nDiscount: {obj.discount_code} ({obj.discount_percent}% off)'
+            # Says the money, not the rate: a flat-amount code has no rate.
+            disc = (f'\nDiscount: {obj.discount_code} (-BD {obj.discount_amount:.3f})'
                     if obj.discount_code else '')
             subject = f'New order · {user.name or user.email}'
             message = (f'{who} placed an order.\n\n'
@@ -867,12 +868,15 @@ def admin_sales(request):
     # What each student actually paid per note, from PAID orders (net of any
     # order-level discount). Lets revenue reflect discounts instead of list price.
     paid_map = {}
-    for it in (OrderItem.objects
-               .filter(order__status='paid', note__isnull=False)
-               .select_related('order')):
-        pct = it.order.discount_percent or 0
-        unit = float(it.price) * (100 - pct) / 100.0
-        paid_map[(it.order.user_id, it.note_id)] = (unit, pct > 0)
+    for order in (Order.objects.filter(status='paid')
+                  .prefetch_related('items').only('id', 'user_id', 'discount_amount',
+                                                  'discount_percent')):
+        nets = order.line_nets()
+        discounted = (order.discount_amount or 0) > 0 or (order.discount_percent or 0) > 0
+        for it in order.items.all():
+            if it.note_id:
+                paid_map[(order.user_id, it.note_id)] = (
+                    float(nets.get(it.pk, it.price or 0)), discounted)
 
     notes = (
         Note.objects.select_related('course')
@@ -1195,9 +1199,12 @@ class BagClearView(APIView):
 
 # ── Orders ────────────────────────────────────────────────────────────────────
 
-def _resolve_discount(code_str, user):
-    """Look up a discount code and check it's usable by this user right now.
-    Returns (DiscountCode | None, error_message | None)."""
+def _resolve_discount(code_str, user, subtotal=None):
+    """Look up a discount code and check this student can use it on this basket
+    right now. Returns (DiscountCode | None, error_message | None).
+
+    `subtotal` is the basket before any discount — the figure a minimum spend is
+    measured against. Passing None skips only that check."""
     code_str = (code_str or '').strip().upper()
     if not code_str:
         return None, 'Enter a code.'
@@ -1205,12 +1212,22 @@ def _resolve_discount(code_str, user):
         code = DiscountCode.objects.get(code=code_str)
     except DiscountCode.DoesNotExist:
         return None, 'This code is not valid.'
-    reason = code.reason_invalid(timezone.now())
+    reason = code.reason_invalid(timezone.now(), user=user, subtotal=subtotal)
     if reason:
         return None, reason
     if DiscountRedemption.objects.filter(code=code, user=user).exists():
         return None, 'You have already used this code.'
     return code, None
+
+
+def _bag_subtotal(request, notes=None):
+    """What the basket costs before any discount. Prefers the notes the client
+    says it is buying, falling back to the server-side bag."""
+    if notes is None:
+        ids = request.data.get('note_ids') or []
+        notes = (Note.objects.filter(pk__in=ids) if ids
+                 else Note.objects.filter(bag_items__user=request.user))
+    return sum((n.price or Decimal('0')) for n in notes)
 
 
 class OrderListCreateView(generics.ListCreateAPIView):
@@ -1238,7 +1255,10 @@ class OrderListCreateView(generics.ListCreateAPIView):
         raw_code = request.data.get('discount_code')
         code_obj = None
         if raw_code and str(raw_code).strip():
-            code_obj, err = _resolve_discount(raw_code, request.user)
+            # Checked against this basket, so a minimum spend is enforced on the
+            # server too — not only in the checkout screen that offered it.
+            code_obj, err = _resolve_discount(raw_code, request.user,
+                                              _bag_subtotal(request, notes))
             if err:
                 return Response({'detail': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1263,15 +1283,23 @@ class OrderListCreateView(generics.ListCreateAPIView):
                 )
                 subtotal += n.price
 
-            percent = code_obj.percent if code_obj else 0
-            discount_amount = (subtotal * Decimal(percent) / Decimal(100)).quantize(
-                Decimal('0.001'), rounding=ROUND_HALF_UP) if code_obj else Decimal('0')
+            discount_amount = code_obj.discount_for(subtotal) if code_obj else Decimal('0')
+            # Kept for the receipt and for older code paths: a flat-amount code
+            # has no percent of its own, so record the share it worked out to.
+            if code_obj and code_obj.kind == DiscountCode.PERCENT:
+                percent = code_obj.percent
+            elif discount_amount and subtotal:
+                percent = int((discount_amount * 100 / subtotal).to_integral_value())
+            else:
+                percent = 0
 
             order.subtotal = subtotal
             order.discount_percent = percent
+            order.discount_amount = discount_amount
             order.discount_code = code_obj.code if code_obj else ''
             order.total = subtotal - discount_amount
-            order.save(update_fields=['subtotal', 'discount_percent', 'discount_code', 'total'])
+            order.save(update_fields=['subtotal', 'discount_percent', 'discount_amount',
+                                      'discount_code', 'total'])
 
             # Lock the code to this student (released if the order is cancelled).
             if code_obj:
@@ -1311,14 +1339,16 @@ class AdminOrderDetailView(APIView):
 
         if new_status == 'paid' and order.status != 'paid':
             with transaction.atomic():
-                pct = Decimal(order.discount_percent or 0)
+                # One shared calculation, so the frozen price, the receipt, the
+                # Insights revenue and the workbook can't drift apart — and so a
+                # flat 'BD 1 off' lands correctly across several chapters.
+                nets = order.line_nets()
                 for item in order.items.all():
                     if item.note_id:
                         # The order's own term, not today's — marking an old order
                         # paid must not move it into the current one. The price is
                         # what was actually paid for this line, discount taken off.
-                        paid = item.price - (item.price * pct / Decimal(100)).quantize(
-                            Decimal('0.001'))
+                        paid = nets.get(item.pk, item.price)
                         Access.objects.get_or_create(
                             user=order.user, note_id=item.note_id,
                             defaults={'granted_by': request.user,
@@ -1393,15 +1423,31 @@ class AdminBroadcastEmailView(APIView):
 # ── Discount codes ────────────────────────────────────────────────────────────
 
 class DiscountValidateView(APIView):
-    """A student checks a code before checkout. Returns the percent if usable."""
+    """A student checks a code before checkout.
+
+    Answers with the money it takes off *this* basket, because a flat-amount
+    code and a minimum spend can only be judged against a real subtotal — and
+    because the student should see dinars, not arithmetic."""
     permission_classes = [IsAuthenticated]
     throttle_scope = 'discount'
 
     def post(self, request):
-        code_obj, err = _resolve_discount(request.data.get('code'), request.user)
+        subtotal = _bag_subtotal(request)
+        code_obj, err = _resolve_discount(request.data.get('code'), request.user, subtotal)
         if err:
             return Response({'valid': False, 'detail': err}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({'valid': True, 'code': code_obj.code, 'percent': code_obj.percent})
+        off = code_obj.discount_for(subtotal)
+        return Response({
+            'valid': True,
+            'code': code_obj.code,
+            'kind': code_obj.kind,
+            'percent': code_obj.percent,
+            'amount': f'{code_obj.amount:.3f}',
+            'label': code_obj.label,
+            'subtotal': f'{subtotal:.3f}',
+            'discount': f'{off:.3f}',            # what comes off this basket
+            'total': f'{subtotal - off:.3f}',
+        })
 
 
 class AdminDiscountListCreateView(generics.ListCreateAPIView):

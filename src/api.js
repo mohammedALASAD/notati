@@ -541,9 +541,13 @@
     async updateOrder(id, payload) { return req('PATCH', `/admin/orders/${id}/`, payload); },
 
     /* Discount codes */
-    async validateDiscount(code) {
-      // Throws (with a human message) if the code is not usable.
-      return req('POST', '/discount/validate/', { code });
+    /* Checks a code against the basket the student is actually holding — the
+       server needs it to judge a minimum spend and to work out what a flat
+       BD amount takes off. Throws (with a human message) if not usable. */
+    async validateDiscount(code, noteIds) {
+      const body = { code };
+      if (noteIds && noteIds.length) body.note_ids = noteIds;
+      return req('POST', '/discount/validate/', body);
     },
     async getDiscounts()           { return list(await req('GET', '/admin/discounts/')); },
     async createDiscount(payload)  { return req('POST', '/admin/discounts/', payload); },

@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal, ROUND_HALF_UP
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.db.models.signals import post_delete
@@ -263,6 +264,10 @@ class Order(models.Model):
     subtotal         = models.DecimalField(max_digits=8, decimal_places=3, default=0)  # before discount
     discount_code    = models.CharField(max_length=40, blank=True)
     discount_percent = models.PositiveIntegerField(default=0)
+    # Money actually taken off. The percent alone can't express a flat 'BD 1 off'
+    # code, and every per-chapter figure downstream is derived from this, so it
+    # is the authoritative number. Backfilled from the percent for older orders.
+    discount_amount  = models.DecimalField(max_digits=8, decimal_places=3, default=0)
     total            = models.DecimalField(max_digits=8, decimal_places=3, default=0)  # after discount
     note             = models.CharField(max_length=300, blank=True)   # admin/payment reference
     created_at       = models.DateTimeField(auto_now_add=True)
@@ -273,6 +278,41 @@ class Order(models.Model):
 
     def __str__(self):
         return f'Order #{self.pk} · {self.user.email} · {self.status}'
+
+    def line_nets(self):
+        """{OrderItem id: what that chapter actually cost}, discount included."""
+        return _order_line_nets(self, self.items.all().order_by('pk'))
+
+
+def _order_line_nets(order, items):
+    """What each line of an order actually cost once the discount is spread
+    across it, in proportion to its price.
+
+    One function so the receipt, the access price frozen at confirmation, the
+    Insights revenue and the sales workbook can never disagree. Rounding is
+    settled by giving the last line whatever is left, so the lines add up to
+    the order total exactly rather than drifting a fils apart from it."""
+    items = list(items)
+    subtotal = sum((i.price or Decimal('0')) for i in items)
+    off = Decimal(order.discount_amount or 0)
+    if off <= 0 and order.discount_percent:
+        # An order placed before discount_amount existed: derive it from the
+        # percent, the only record those rows kept.
+        off = (subtotal * Decimal(order.discount_percent) / Decimal(100)).quantize(
+            Decimal('0.001'), rounding=ROUND_HALF_UP)
+    off = min(max(off, Decimal('0')), subtotal)
+    if not items or subtotal <= 0 or off <= 0:
+        return {i.pk: (i.price or Decimal('0')) for i in items}
+
+    nets, spent = {}, Decimal('0')
+    for i in items[:-1]:
+        share = ((i.price or Decimal('0')) * off / subtotal).quantize(
+            Decimal('0.001'), rounding=ROUND_HALF_UP)
+        nets[i.pk] = (i.price or Decimal('0')) - share
+        spent += share
+    last = items[-1]
+    nets[last.pk] = (last.price or Decimal('0')) - (off - spent)
+    return nets
 
 
 class OrderItem(models.Model):
@@ -350,10 +390,23 @@ class Testimonial(models.Model):
 
 
 class DiscountCode(models.Model):
-    """A percentage discount an admin can hand out. Usable once per student,
-    optionally bounded by a date window and a total-redemptions cap."""
+    """A discount an admin can hand out — a percentage off, or a flat sum in
+    dinars. Usable once per student, optionally bounded by a date window, a
+    total-redemptions cap, a minimum spend, and a list of students it is for."""
+    PERCENT, AMOUNT = 'percent', 'amount'
+    KIND_CHOICES = [(PERCENT, 'Percentage off'), (AMOUNT, 'Fixed amount off')]
+
     code        = models.CharField(max_length=40, unique=True)   # stored UPPERCASE
-    percent     = models.PositiveIntegerField()                  # 1..100
+    kind        = models.CharField(max_length=8, choices=KIND_CHOICES, default=PERCENT)
+    percent     = models.PositiveIntegerField(default=0)         # 1..100, when kind=percent
+    amount      = models.DecimalField(max_digits=8, decimal_places=3, default=0)  # BD, when kind=amount
+    # Smallest order this code works on, measured on the subtotal before any
+    # discount. Null = no minimum. 'Spend 5 BD and get the code' lives here.
+    min_subtotal = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    # Lowercased emails this code is reserved for. Empty = open to every student.
+    # Held as a list rather than a table of rows: it is edited as one field, read
+    # as a whole, and an email need not belong to an account that exists yet.
+    allowed_emails = models.JSONField(default=list, blank=True)
     active      = models.BooleanField(default=True)
     valid_from  = models.DateTimeField(null=True, blank=True)    # null = no start bound
     valid_until = models.DateTimeField(null=True, blank=True)    # null = no end bound
@@ -364,13 +417,44 @@ class DiscountCode(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f'{self.code} ({self.percent}%)'
+        return f'{self.code} ({self.label})'
+
+    @property
+    def label(self):
+        """How the discount reads to a person: '10% off' or 'BD 1.500 off'."""
+        if self.kind == self.AMOUNT:
+            return f'BD {self.amount:.3f} off'
+        return f'{self.percent}% off'
 
     def uses_count(self):
         return self.redemptions.count()
 
-    def reason_invalid(self, now):
-        """Return None if usable right now, else a short human reason."""
+    def discount_for(self, subtotal):
+        """Money off a given subtotal.
+
+        Never more than the subtotal itself: a BD 5 code on a BD 3 basket takes
+        the basket to zero, it does not hand out BD 2 of credit."""
+        subtotal = Decimal(subtotal or 0)
+        if self.kind == self.AMOUNT:
+            off = Decimal(self.amount or 0)
+        else:
+            off = (subtotal * Decimal(self.percent or 0) / Decimal(100)).quantize(
+                Decimal('0.001'), rounding=ROUND_HALF_UP)
+        return min(max(off, Decimal('0')), max(subtotal, Decimal('0')))
+
+    def allows(self, user):
+        """Whether this student is one the code was made for."""
+        if not self.allowed_emails:
+            return True
+        email = (getattr(user, 'email', '') or '').strip().lower()
+        return bool(email) and email in self.allowed_emails
+
+    def reason_invalid(self, now, user=None, subtotal=None):
+        """Return None if usable right now, else a short human reason.
+
+        `user` and `subtotal` are optional so a caller with neither still gets
+        the time and cap checks — but a code reserved for named students, or
+        with a minimum spend, can only be fully judged with them."""
         if not self.active:
             return 'This code is no longer active.'
         if self.valid_from and now < self.valid_from:
@@ -379,6 +463,11 @@ class DiscountCode(models.Model):
             return 'This code has expired.'
         if self.max_uses is not None and self.uses_count() >= self.max_uses:
             return 'This code has reached its usage limit.'
+        if user is not None and not self.allows(user):
+            return 'This code is not available on your account.'
+        if self.min_subtotal and subtotal is not None and Decimal(subtotal) < self.min_subtotal:
+            return (f'Spend at least BD {self.min_subtotal:.3f} to use this code '
+                    f'(your basket is BD {Decimal(subtotal):.3f}).')
         return None
 
 

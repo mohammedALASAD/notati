@@ -2497,3 +2497,245 @@ class ChapterLastUpdatedTests(TestCase):
         Note.objects.filter(pk=self.note.pk).update(updated_at=None)
         self.note.refresh_from_db()
         self.assertEqual(self.note.last_changed, self.note.created_at)
+
+
+class DiscountKindsTests(TestCase):
+    """A code takes off a percentage or a flat sum of dinars, and the flat sum
+    has to land correctly across several chapters."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 11', position=11, is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.course  = Course.objects.create(name='ITIS103', college='IT')
+        self.n1 = Note.objects.create(course=self.course, chapter_number=1,
+                                      chapter_title='One', price=Decimal('1.500'))
+        self.n2 = Note.objects.create(course=self.course, chapter_number=2,
+                                      chapter_title='Two', price=Decimal('1.500'))
+        self.n3 = Note.objects.create(course=self.course, chapter_number=3,
+                                      chapter_title='Three', price=Decimal('2.000'))
+        cache.clear()
+
+    def _c(self, user=None):
+        c = APIClient(); c.force_authenticate(user or self.student); return c
+
+    def _order(self, notes, code=None):
+        body = {'note_ids': [n.id for n in notes], 'code': 'REF123'}
+        if code:
+            body['discount_code'] = code
+        return self._c().post('/api/orders/', body, format='json')
+
+    def test_a_percentage_code_works_as_before(self):
+        DiscountCode.objects.create(code='TEN', kind='percent', percent=10)
+        resp = self._order([self.n1, self.n3], 'TEN')          # 3.500
+        self.assertEqual(resp.status_code, 201)
+        order = Order.objects.get()
+        self.assertEqual((order.subtotal, order.discount_amount, order.total),
+                         (Decimal('3.500'), Decimal('0.350'), Decimal('3.150')))
+
+    def test_a_flat_amount_code_takes_exactly_that_many_dinars(self):
+        DiscountCode.objects.create(code='ONEBD', kind='amount', amount=Decimal('1.000'))
+        resp = self._order([self.n1, self.n3], 'ONEBD')        # 3.500
+        self.assertEqual(resp.status_code, 201)
+        order = Order.objects.get()
+        self.assertEqual((order.discount_amount, order.total),
+                         (Decimal('1.000'), Decimal('2.500')))
+
+    def test_a_flat_amount_never_exceeds_the_basket(self):
+        DiscountCode.objects.create(code='BIG', kind='amount', amount=Decimal('5.000'))
+        self._order([self.n1], 'BIG')                          # basket 1.500
+        order = Order.objects.get()
+        self.assertEqual((order.discount_amount, order.total),
+                         (Decimal('1.500'), Decimal('0.000')))  # free, never credit
+
+    def test_the_flat_amount_is_shared_across_chapters_and_adds_up_exactly(self):
+        # 1.000 off a 5.000 basket of 1.5 / 1.5 / 2.0 — the classic case where
+        # naive rounding leaves the lines a fils away from the order total.
+        DiscountCode.objects.create(code='ONEBD', kind='amount', amount=Decimal('1.000'))
+        self._order([self.n1, self.n2, self.n3], 'ONEBD')
+        order = Order.objects.get()
+        nets = order.line_nets()
+        self.assertEqual(sum(nets.values()), order.total)
+        self.assertEqual(sorted(nets.values()),
+                         [Decimal('1.200'), Decimal('1.200'), Decimal('1.600')])
+
+    def test_an_odd_split_still_adds_up_to_the_order_total(self):
+        odd = Note.objects.create(course=self.course, chapter_number=4,
+                                  chapter_title='Odd', price=Decimal('0.333'))
+        DiscountCode.objects.create(code='ODD', kind='amount', amount=Decimal('0.777'))
+        self._order([self.n1, self.n2, odd], 'ODD')
+        order = Order.objects.get()
+        self.assertEqual(sum(order.line_nets().values()), order.total)
+
+    def test_confirming_the_order_freezes_the_discounted_price_per_chapter(self):
+        DiscountCode.objects.create(code='ONEBD', kind='amount', amount=Decimal('1.000'))
+        self._order([self.n1, self.n2, self.n3], 'ONEBD')
+        order = Order.objects.get()
+        self._c(self.admin).patch(f'/api/admin/orders/{order.id}/',
+                                  {'status': 'paid'}, format='json')
+        prices = sorted(Access.objects.filter(user=self.student)
+                        .values_list('price', flat=True))
+        self.assertEqual(prices, [Decimal('1.200'), Decimal('1.200'), Decimal('1.600')])
+        self.assertEqual(sum(prices), order.total)
+
+    def test_insights_and_the_workbook_report_the_same_money(self):
+        from . import workbook
+        DiscountCode.objects.create(code='ONEBD', kind='amount', amount=Decimal('1.000'))
+        self._order([self.n1, self.n2, self.n3], 'ONEBD')
+        order = Order.objects.get()
+        self._c(self.admin).patch(f'/api/admin/orders/{order.id}/',
+                                  {'status': 'paid'}, format='json')
+
+        sales = self._c(self.admin).get('/api/admin/sales/').data
+        self.assertEqual(Decimal(sales['total_revenue']), order.total)
+        self.assertEqual(sales['total_discounted_sales'], 3)
+        ledger = sum(s.value for s in workbook._collect_sales())
+        self.assertEqual(ledger, order.total)
+
+    def test_the_student_is_told_the_money_before_checking_out(self):
+        DiscountCode.objects.create(code='ONEBD', kind='amount', amount=Decimal('1.000'))
+        data = self._c().post('/api/discount/validate/',
+                              {'code': 'ONEBD', 'note_ids': [self.n1.id, self.n3.id]},
+                              format='json').data
+        self.assertEqual((data['discount'], data['subtotal'], data['total']),
+                         ('1.000', '3.500', '2.500'))
+        self.assertEqual(data['label'], 'BD 1.000 off')
+
+    def test_a_code_must_actually_discount_something(self):
+        c = self._c(self.admin)
+        self.assertEqual(c.post('/api/admin/discounts/',
+                                {'code': 'NOAMT', 'kind': 'amount', 'amount': '0'},
+                                format='json').status_code, 400)
+        self.assertEqual(c.post('/api/admin/discounts/',
+                                {'code': 'BADPCT', 'kind': 'percent', 'percent': 0},
+                                format='json').status_code, 400)
+        self.assertEqual(c.post('/api/admin/discounts/',
+                                {'code': 'OK5', 'kind': 'amount', 'amount': '0.500'},
+                                format='json').status_code, 201)
+
+
+class DiscountMinimumSpendTests(TestCase):
+    """'Spend BD 5 or more to use this code' — enforced wherever it is checked,
+    not only in the screen that offered it."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        Semester.objects.create(label='Semester 11', position=11, is_current=True)
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.course  = Course.objects.create(name='ITIS103', college='IT')
+        self.cheap = Note.objects.create(course=self.course, chapter_number=1,
+                                         chapter_title='Cheap', price=Decimal('1.500'))
+        self.dear  = Note.objects.create(course=self.course, chapter_number=2,
+                                         chapter_title='Dear', price=Decimal('6.000'))
+        DiscountCode.objects.create(code='FIVER', kind='amount', amount=Decimal('1.000'),
+                                    min_subtotal=Decimal('5.000'))
+        cache.clear()
+
+    def _c(self):
+        c = APIClient(); c.force_authenticate(self.student); return c
+
+    def test_a_basket_under_the_minimum_is_refused_with_the_figure(self):
+        resp = self._c().post('/api/discount/validate/',
+                              {'code': 'FIVER', 'note_ids': [self.cheap.id]}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('5.000', resp.data['detail'])
+        self.assertIn('1.500', resp.data['detail'])
+
+    def test_a_basket_over_the_minimum_is_allowed(self):
+        resp = self._c().post('/api/discount/validate/',
+                              {'code': 'FIVER', 'note_ids': [self.dear.id]}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['discount'], '1.000')
+
+    def test_checkout_refuses_it_too_even_if_the_page_offered_it(self):
+        # The screen can be stale or tampered with; the order is where it counts.
+        resp = self._c().post('/api/orders/', {
+            'note_ids': [self.cheap.id], 'code': 'REF', 'discount_code': 'FIVER',
+        }, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_the_minimum_is_measured_before_the_discount_not_after(self):
+        # 6.000 basket, 1.000 off → 5.000 paid. Qualifying is about the basket.
+        exact = DiscountCode.objects.create(code='EXACT', kind='amount',
+                                            amount=Decimal('1.000'),
+                                            min_subtotal=Decimal('6.000'))
+        self.assertIsNone(exact.reason_invalid(timezone.now(), self.student,
+                                               Decimal('6.000')))
+
+
+class DiscountReservedForStudentsTests(TestCase):
+    """A code can be reserved for named students by email."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        Semester.objects.create(label='Semester 11', position=11, is_current=True)
+        self.admin  = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.sara   = User.objects.create_user('sara@x.com', 'pw', name='Sara')
+        self.omar   = User.objects.create_user('omar@x.com', 'pw', name='Omar')
+        self.course = Course.objects.create(name='ITIS103', college='IT')
+        self.note   = Note.objects.create(course=self.course, chapter_number=1,
+                                          chapter_title='One', price=Decimal('2.000'))
+        self.code = DiscountCode.objects.create(code='FORSARA', kind='percent', percent=50,
+                                                allowed_emails=['sara@x.com'])
+        cache.clear()
+
+    def _c(self, user):
+        c = APIClient(); c.force_authenticate(user); return c
+
+    def _validate(self, user):
+        return self._c(user).post('/api/discount/validate/',
+                                  {'code': 'FORSARA', 'note_ids': [self.note.id]},
+                                  format='json')
+
+    def test_the_named_student_can_use_it(self):
+        self.assertEqual(self._validate(self.sara).status_code, 200)
+
+    def test_anyone_else_cannot(self):
+        resp = self._validate(self.omar)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('not available on your account', resp.data['detail'])
+
+    def test_checkout_refuses_it_for_anyone_else(self):
+        resp = self._c(self.omar).post('/api/orders/', {
+            'note_ids': [self.note.id], 'code': 'REF', 'discount_code': 'FORSARA',
+        }, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_an_empty_list_means_open_to_everyone(self):
+        DiscountCode.objects.create(code='OPEN', kind='percent', percent=10)
+        resp = self._c(self.omar).post('/api/discount/validate/',
+                                       {'code': 'OPEN', 'note_ids': [self.note.id]},
+                                       format='json')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_emails_are_matched_however_they_were_typed(self):
+        resp = self._c(self.admin).post('/api/admin/discounts/', {
+            'code': 'MIXED', 'kind': 'percent', 'percent': 20,
+            'allowed_emails': '  Sara@X.com , OMAR@x.com\nsara@x.com ',
+        }, format='json')
+        self.assertEqual(resp.status_code, 201)
+        # Lowercased, deduplicated, order kept.
+        self.assertEqual(resp.data['allowed_emails'], ['sara@x.com', 'omar@x.com'])
+
+    def test_a_typo_in_an_email_is_refused(self):
+        resp = self._c(self.admin).post('/api/admin/discounts/', {
+            'code': 'TYPO', 'kind': 'percent', 'percent': 20,
+            'allowed_emails': ['not-an-email'],
+        }, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_the_admin_is_shown_which_emails_have_no_account(self):
+        resp = self._c(self.admin).post('/api/admin/discounts/', {
+            'code': 'GHOST', 'kind': 'percent', 'percent': 20,
+            'allowed_emails': ['sara@x.com', 'nobody@x.com'],
+        }, format='json')
+        self.assertEqual(resp.data['unknown_emails'], ['nobody@x.com'])
+
+    def test_a_reserved_code_still_works_once_the_student_registers_later(self):
+        code = DiscountCode.objects.create(code='FUTURE', kind='percent', percent=25,
+                                           allowed_emails=['newcomer@x.com'])
+        newcomer = User.objects.create_user('newcomer@x.com', 'pw', name='New')
+        self.assertTrue(code.allows(newcomer))

@@ -33,7 +33,7 @@ from openpyxl.utils import get_column_letter
 
 from django.db.models import Count
 
-from .models import Access, Course, OrderItem, Semester
+from .models import Access, Course, OrderItem, Semester, _order_line_nets
 
 HISTORY_PATH = Path(__file__).resolve().parent / 'sales_history.json'
 
@@ -184,12 +184,21 @@ Sale = namedtuple('Sale', 'semester course value when student email college '
                           'chapter_number chapter_title list_price ref paid')
 
 
-def _net(item):
-    """A line's share of its order's discount taken off, so revenue is what
-    actually landed rather than list price."""
-    price = item.price or Decimal('0')
-    pct = Decimal(item.order.discount_percent or 0)
-    return price - (price * pct / Decimal(100)).quantize(Decimal('0.001'))
+def _net_map(items):
+    """{OrderItem id: what that chapter actually cost}, for every order these
+    lines belong to.
+
+    Delegates to the order's own calculation so the workbook, the Insights
+    revenue and the price frozen on each access grant are the same number —
+    including for a flat 'BD 1 off' code, which no single percentage can
+    express once it is spread over several chapters."""
+    by_order = {}
+    for item in items:
+        by_order.setdefault(item.order, []).append(item)
+    nets = {}
+    for order, lines in by_order.items():
+        nets.update(_order_line_nets(order, sorted(lines, key=lambda i: i.pk)))
+    return nets
 
 
 def _collect_sales():
@@ -210,6 +219,7 @@ def _collect_sales():
     items = list(OrderItem.objects
                  .filter(order__status='paid')
                  .select_related('order', 'order__user', 'order__semester'))
+    nets = _net_map(items)
     # Only lines that still point at a chapter can be matched to an access row.
     # A line whose chapter was deleted keeps its snapshotted course and price, so
     # it is counted on its own below rather than being lost.
@@ -231,7 +241,8 @@ def _collect_sales():
         semester, when = grant.semester, grant.granted_at
         if item:
             seen.add((grant.user_id, grant.note_id))
-            value, ref = _net(item), (item.order.code or f'#{item.order_id}')
+            value = nets.get(item.pk, item.price or Decimal('0'))
+            ref = item.order.code or f'#{item.order_id}'
             semester = semester or item.order.semester
             when = when or item.order.paid_at or item.order.created_at
         else:
@@ -263,7 +274,8 @@ def _collect_sales():
         sales.append(Sale(
             semester=order.semester.label if order.semester else 'Unassigned',
             course=item.course_name or '(unknown)',
-            value=_net(item), when=order.paid_at or order.created_at,
+            value=nets.get(item.pk, item.price or Decimal('0')),
+            when=order.paid_at or order.created_at,
             student=order.user.name, email=order.user.email,
             college=order.user.college or '',
             chapter_number=item.chapter_number, chapter_title=item.chapter_title,

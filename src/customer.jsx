@@ -176,7 +176,9 @@ function NoteDetailsModal({ open, note, bag, pendingNoteIds, onAddToBag, onRemov
 function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
   const [copied,     setCopied]     = useStateC(false);
   const [code,       setCode]       = useStateC('');
-  const [applied,    setApplied]    = useStateC(null);   // { code, percent }
+  // { code, label, discount, total } — the money the server worked out for
+  // this exact basket, so a flat BD code and a percentage display alike.
+  const [applied,    setApplied]    = useStateC(null);
   const [checking,   setChecking]   = useStateC(false);
   const [codeErr,    setCodeErr]    = useStateC('');
   const [submitting, setSubmitting] = useStateC(false);
@@ -188,8 +190,9 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
   if (!open || !items || items.length === 0) return null;
 
   const subtotal = items.reduce((s, i) => s + Number(i.price), 0);
-  // Round to 3 dp the same way the backend does, so the displayed and charged totals agree.
-  const discountAmount = applied ? Math.round((subtotal * applied.percent / 100) * 1000) / 1000 : 0;
+  // The server does the arithmetic and sends back dinars, so what is shown here
+  // is exactly what will be charged — no second implementation to drift.
+  const discountAmount = applied ? Number(applied.discount) : 0;
   const total = subtotal - discountAmount;
 
   async function applyCode() {
@@ -197,8 +200,11 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
     if (!c) return;
     setChecking(true); setCodeErr('');
     try {
-      const res = await NotatiAPI.validateDiscount(c);
-      setApplied({ code: res.code, percent: res.percent });
+      // The same ids checkout sends, so the basket the server prices here is
+      // the basket it prices when the order is placed.
+      const res = await NotatiAPI.validateDiscount(
+        c, items.map(i => i._numId).filter(Boolean));
+      setApplied({ code: res.code, label: res.label, discount: res.discount });
       setCodeErr('');
     } catch (e) {
       setApplied(null);
@@ -219,7 +225,7 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
     `- ${i.courseName} Ch.${i.chapterNumber}: ${i.chapterTitle} (BD ${Number(i.price).toFixed(3)})`
   ).join('\n');
   const discountLines = applied
-    ? `\nSubtotal: BD ${subtotal.toFixed(3)}\nDiscount code ${applied.code} (${applied.percent}% off): -BD ${discountAmount.toFixed(3)}`
+    ? `\nSubtotal: BD ${subtotal.toFixed(3)}\nDiscount code ${applied.code} (${applied.label}): -BD ${discountAmount.toFixed(3)}`
     : '';
   const waMsg = encodeURIComponent(
     `Hi, I would like to purchase the following notes:\nOrder code: ${orderCode}\n${itemLines}${discountLines}\nTotal: BD ${total.toFixed(3)}\nMy Notati email: ${user.email}`
@@ -279,7 +285,7 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 14px 0',
                               font: 'var(--type-body)', fontSize: 13, color: 'var(--notati-forest)' }}>
-                  <span>Discount · {applied.code} ({applied.percent}%)</span>
+                  <span>Discount · {applied.code} ({applied.label})</span>
                   <span>−BD {discountAmount.toFixed(3)}</span>
                 </div>
               </>
@@ -304,7 +310,7 @@ function BagCheckoutModal({ open, items, user, onClose, onConfirm }) {
                           padding: '12px 14px', background: 'rgba(122, 155, 107, .12)',
                           border: '1px solid var(--notati-sage)', borderRadius: 'var(--r-5)' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--notati-forest)', fontWeight: 700 }}>
-                <Icons.Check size={15}/> {applied.code} applied · {applied.percent}% off
+                <Icons.Check size={15}/> {applied.code} applied · {applied.label}
               </span>
               <button className="btn btn-ghost btn-sm" onClick={removeCode}>Remove</button>
             </div>

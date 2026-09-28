@@ -375,10 +375,10 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Order
         fields = ['id', 'user', 'user_email', 'user_name', 'code', 'status',
-                  'subtotal', 'discount_code', 'discount_percent', 'total',
+                  'subtotal', 'discount_code', 'discount_percent', 'discount_amount', 'total',
                   'note', 'item_count', 'items', 'created_at', 'paid_at']
         read_only_fields = ['id', 'user', 'user_email', 'user_name', 'code',
-                            'subtotal', 'discount_code', 'discount_percent', 'total',
+                            'subtotal', 'discount_code', 'discount_percent', 'discount_amount', 'total',
                             'item_count', 'items', 'created_at', 'paid_at']
 
     def get_item_count(self, obj):
@@ -389,20 +389,62 @@ class OrderSerializer(serializers.ModelSerializer):
 
 class DiscountCodeSerializer(serializers.ModelSerializer):
     uses_count = serializers.SerializerMethodField()
+    label      = serializers.CharField(read_only=True)
+    # Which of the reserved emails belong to a real account — so the admin can
+    # see a typo before handing the code out, rather than after.
+    unknown_emails = serializers.SerializerMethodField()
 
     def get_uses_count(self, obj):
         return obj.uses_count()
 
+    def get_unknown_emails(self, obj):
+        if not obj.allowed_emails:
+            return []
+        known = set(e.lower() for e in User.objects.filter(
+            email__in=obj.allowed_emails).values_list('email', flat=True))
+        return [e for e in obj.allowed_emails if e not in known]
+
     class Meta:
         model  = DiscountCode
-        fields = ['id', 'code', 'percent', 'active', 'valid_from', 'valid_until',
+        fields = ['id', 'code', 'kind', 'percent', 'amount', 'label',
+                  'min_subtotal', 'allowed_emails', 'unknown_emails',
+                  'active', 'valid_from', 'valid_until',
                   'max_uses', 'uses_count', 'created_at']
-        read_only_fields = ['id', 'uses_count', 'created_at']
+        read_only_fields = ['id', 'label', 'uses_count', 'unknown_emails', 'created_at']
 
     def validate_percent(self, value):
-        if not 1 <= value <= 100:
+        if value and not 1 <= value <= 100:
             raise serializers.ValidationError('Percent must be between 1 and 100.')
         return value
+
+    def validate_amount(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError('Amount cannot be negative.')
+        return value
+
+    def validate_min_subtotal(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError('Minimum spend cannot be negative.')
+        return value
+
+    def validate_allowed_emails(self, value):
+        """Accept a list, or one string of emails separated by commas, spaces or
+        newlines — whichever the form sends. Stored lowercased and deduplicated,
+        because that is how they are matched against the student signing in."""
+        if isinstance(value, str):
+            value = re.split(r'[,;\s]+', value)
+        if not isinstance(value, list):
+            raise serializers.ValidationError('Give a list of email addresses.')
+        out = []
+        for raw in value:
+            email = str(raw or '').strip().lower()
+            if not email:
+                continue
+            if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+                raise serializers.ValidationError(f'“{raw}” is not an email address.')
+            if email not in out:
+                out.append(email)
+        return out
 
     def validate_code(self, value):
         value = (value or '').strip().upper()
@@ -422,6 +464,19 @@ class DiscountCodeSerializer(serializers.ModelSerializer):
         vu = attrs.get('valid_until')
         if vf and vu and vu < vf:
             raise serializers.ValidationError('“Valid until” must be after “valid from”.')
+
+        # Whichever kind this is, the discount it gives has to be a real one.
+        inst = self.instance
+        kind = attrs.get('kind', getattr(inst, 'kind', DiscountCode.PERCENT))
+        percent = attrs.get('percent', getattr(inst, 'percent', 0) or 0)
+        amount = attrs.get('amount', getattr(inst, 'amount', 0) or 0)
+        if kind == DiscountCode.AMOUNT:
+            if not amount or amount <= 0:
+                raise serializers.ValidationError(
+                    {'amount': 'Set how many dinars come off.'})
+        elif not 1 <= (percent or 0) <= 100:
+            raise serializers.ValidationError(
+                {'percent': 'Percent must be between 1 and 100.'})
         return attrs
 
 

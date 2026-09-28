@@ -3101,6 +3101,17 @@ function _discountStatus(d) {
   return { label: 'Active', tone: 'var(--notati-forest)' };
 }
 
+/* The reserved-students list as an array, whatever shape it arrives in. The
+   server stores and returns a list, but the create form posts a free-typed
+   string, and a page that renders straight from a response should not be one
+   unexpected shape away from showing nothing at all. */
+function _discountEmails(d) {
+  const raw = d && d.allowed_emails;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') return raw.split(/[,;\s]+/).filter(Boolean);
+  return [];
+}
+
 function DiscountsManager() {
   const { toast } = useToast();
   const [codes,   setCodes]   = useStateAd([]);
@@ -3109,7 +3120,11 @@ function DiscountsManager() {
 
   // Create form
   const [code,    setCode]    = useStateAd('');
+  const [kind,    setKind]    = useStateAd('percent');   // 'percent' | 'amount'
   const [percent, setPercent] = useStateAd('');
+  const [amount,  setAmount]  = useStateAd('');
+  const [minSpend, setMinSpend] = useStateAd('');
+  const [emails,  setEmails]  = useStateAd('');
   const [from,    setFrom]    = useStateAd('');
   const [until,   setUntil]   = useStateAd('');
   const [maxUses, setMaxUses] = useStateAd('');
@@ -3126,22 +3141,37 @@ function DiscountsManager() {
   async function create(e) {
     e.preventDefault();
     const c = code.trim().toUpperCase();
-    const p = parseInt(percent, 10);
     if (!c) { toast.error('Code required', 'Type a code first.'); return; }
-    if (!(p >= 1 && p <= 100)) { toast.error('Bad percent', 'Percent must be 1–100.'); return; }
+    if (kind === 'percent') {
+      const p = parseInt(percent, 10);
+      if (!(p >= 1 && p <= 100)) { toast.error('Bad percent', 'Percent must be 1–100.'); return; }
+    } else if (!(Number(amount) > 0)) {
+      toast.error('Bad amount', 'Set how many dinars come off.'); return;
+    }
     setSaving(true);
     try {
       const created = await NotatiAPI.createDiscount({
         code: c,
-        percent: p,
+        kind,
+        // Send only the one that applies; the other stays at zero so the code
+        // can never be read as both a percentage and a flat sum.
+        percent: kind === 'percent' ? parseInt(percent, 10) : 0,
+        amount:  kind === 'amount'  ? Number(amount).toFixed(3) : '0.000',
+        min_subtotal: minSpend ? Number(minSpend).toFixed(3) : null,
+        allowed_emails: emails.trim(),
         active: true,
         valid_from:  from  ? new Date(from).toISOString()  : null,
         valid_until: until ? new Date(until).toISOString() : null,
         max_uses:    maxUses ? parseInt(maxUses, 10) : null,
       });
       setCodes(prev => [created, ...prev]);
-      setCode(''); setPercent(''); setFrom(''); setUntil(''); setMaxUses('');
-      toast.success('Code created', `${created.code} · ${created.percent}% off`);
+      setCode(''); setPercent(''); setAmount(''); setMinSpend(''); setEmails('');
+      setFrom(''); setUntil(''); setMaxUses('');
+      toast.success('Code created', `${created.code} · ${created.label}`);
+      if (created.unknown_emails && created.unknown_emails.length) {
+        toast.info('No account yet',
+          `${created.unknown_emails.join(', ')} — the code will work once they register.`);
+      }
     } catch (err) {
       toast.error('Could not create', err.message);
     } finally {
@@ -3183,7 +3213,8 @@ function DiscountsManager() {
         <div className="ttl">
           <h1>Discount codes</h1>
           <p className="sub">
-            Create a percentage code, set when it's valid and an optional total-uses cap.
+            Take off a percentage or a flat sum in dinars. Optionally require a minimum
+            spend, reserve the code for named students, set a date window and a total-uses cap.
             Each student can use a code only once. The code a student used shows on their order and in their WhatsApp message.
           </p>
         </div>
@@ -3199,9 +3230,29 @@ function DiscountsManager() {
                      placeholder="WELCOME10" style={{ ...inputStyle, letterSpacing: '.05em' }}/>
             </div>
             <div className="field">
-              <label>Discount %</label>
-              <input type="number" min="1" max="100" value={percent}
-                     onChange={e => setPercent(e.target.value)} placeholder="10" style={inputStyle}/>
+              <label>Discount type</label>
+              <select value={kind} onChange={e => setKind(e.target.value)} style={inputStyle}>
+                <option value="percent">Percentage off</option>
+                <option value="amount">Fixed amount off (BD)</option>
+              </select>
+            </div>
+            {kind === 'percent' ? (
+              <div className="field">
+                <label>Discount %</label>
+                <input type="number" min="1" max="100" value={percent}
+                       onChange={e => setPercent(e.target.value)} placeholder="10" style={inputStyle}/>
+              </div>
+            ) : (
+              <div className="field">
+                <label>Amount off (BD)</label>
+                <input type="number" min="0.001" step="0.001" value={amount}
+                       onChange={e => setAmount(e.target.value)} placeholder="1.000" style={inputStyle}/>
+              </div>
+            )}
+            <div className="field">
+              <label>Minimum spend (BD) <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
+              <input type="number" min="0" step="0.001" value={minSpend}
+                     onChange={e => setMinSpend(e.target.value)} placeholder="No minimum" style={inputStyle}/>
             </div>
             <div className="field">
               <label>Valid from <span style={{ color: 'var(--fg-3)' }}>(optional)</span></label>
@@ -3217,10 +3268,29 @@ function DiscountsManager() {
                      placeholder="Unlimited" style={inputStyle}/>
             </div>
           </div>
+          <div className="field" style={{ marginTop: 14 }}>
+            <label>
+              Only for these students <span style={{ color: 'var(--fg-3)' }}>(optional)</span>
+            </label>
+            <textarea value={emails} onChange={e => setEmails(e.target.value)} rows={2}
+                      placeholder="sara@gmail.com, omar@gmail.com — leave empty for everyone"
+                      style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}/>
+            <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 4 }}>
+              Separate with commas, spaces or new lines. An email with no account yet still
+              works — the code opens for them as soon as they register.
+            </div>
+          </div>
           <div style={{ marginTop: 16 }}>
             <button type="submit" className="btn btn-primary" disabled={saving}>
               <Icons.Plus size={16}/> {saving ? 'Creating…' : 'Create code'}
             </button>
+            <span style={{ marginLeft: 12, fontSize: 12, color: 'var(--fg-3)' }}>
+              {kind === 'amount' && Number(amount) > 0
+                ? `BD ${Number(amount).toFixed(3)} off${minSpend ? `, on baskets of BD ${Number(minSpend).toFixed(3)} or more` : ''}. A basket smaller than the discount simply becomes free.`
+                : kind === 'percent' && Number(percent) > 0
+                  ? `${parseInt(percent, 10)}% off${minSpend ? `, on baskets of BD ${Number(minSpend).toFixed(3)} or more` : ''}.`
+                  : ''}
+            </span>
           </div>
         </form>
       </section>
@@ -3238,6 +3308,7 @@ function DiscountsManager() {
                   <tr>
                     <th>Code</th>
                     <th>Off</th>
+                    <th>Conditions</th>
                     <th>Status</th>
                     <th>Window</th>
                     <th className="r">Uses</th>
@@ -3247,10 +3318,35 @@ function DiscountsManager() {
                 <tbody>
                   {codes.map(d => {
                     const st = _discountStatus(d);
+                    const only = _discountEmails(d);
                     return (
                       <tr key={d.id}>
                         <td data-l="Code"><span style={{ font: 'var(--type-body-bold)', letterSpacing: '.04em' }}>{d.code}</span></td>
-                        <td data-l="Off">{d.percent}%</td>
+                        <td data-l="Off">
+                          <span style={{ fontWeight: 600 }}>
+                            {d.label || (d.kind === 'amount'
+                              ? `BD ${Number(d.amount).toFixed(3)} off`
+                              : `${d.percent}% off`)}
+                          </span>
+                        </td>
+                        <td data-l="Conditions" style={{ fontSize: 12, color: 'var(--fg-2)' }}>
+                          {Number(d.min_subtotal) > 0 && (
+                            <div>Min spend BD {Number(d.min_subtotal).toFixed(3)}</div>
+                          )}
+                          {only.length > 0 ? (
+                            <div title={only.join(', ')}>
+                              {only.length} student{only.length === 1 ? '' : 's'} only
+                              {(d.unknown_emails || []).length > 0 && (
+                                <span style={{ color: 'var(--notati-amber)' }}>
+                                  {' '}· {d.unknown_emails.length} not registered
+                                </span>
+                              )}
+                            </div>
+                          ) : null}
+                          {!(Number(d.min_subtotal) > 0) && only.length === 0 && (
+                            <span style={{ color: 'var(--fg-3)' }}>Anyone</span>
+                          )}
+                        </td>
                         <td data-l="Status">
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: st.tone, fontWeight: 600, fontSize: 13 }}>
                             <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.tone }}/>
