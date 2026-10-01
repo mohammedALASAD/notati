@@ -483,9 +483,20 @@
     },
 
     /* Testimonials */
-    async getTestimonials() {
-      const data = await req('GET', '/testimonials/');
-      return list(data);
+    /* Approved reviews. Pass a course name to get the ones about that course —
+       the server folds renamed codes together, so 'ITIS103 / ITIS104' finds a
+       review written about plain 'ITIS103'. */
+    async getTestimonials(course) {
+      const q = course ? '?course=' + encodeURIComponent(course) : '';
+      return list(await req('GET', '/testimonials/' + q));
+    },
+    /* Whether to ask this student for a review, and about which course.
+       Answered after they have paid — see ReviewPromptView. */
+    async getReviewPrompt() {
+      return req('GET', '/testimonials/prompt/');
+    },
+    async dismissReviewPrompt() {
+      return req('POST', '/testimonials/prompt/', {});
     },
     async submitTestimonial(payload) {
       return req('POST', '/testimonials/submit/', payload);

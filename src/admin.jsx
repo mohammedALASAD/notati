@@ -1903,12 +1903,30 @@ function TestimonialsManager() {
 
   useEffectAd(load, []);
 
-  async function approve(item) {
+  const [editing, setEditing] = useStateAd(null);   // { id, text }
+
+  function replace(updated) {
+    setItems(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x));
+  }
+
+  async function patch(item, body, said) {
     try {
-      await NotatiAPI.updateTestimonial(item.id, { approved: true });
-      toast.success('Approved', item.user_name);
-      load();
-    } catch(e) { toast.error('Failed', 'Could not approve.'); }
+      replace(await NotatiAPI.updateTestimonial(item.id, body));
+      if (said) toast.success(said, item.user_name);
+    } catch(e) { toast.error('Failed', e.message || 'Could not save.'); }
+  }
+
+  const approve    = item => patch(item, { approved: true },  'Approved');
+  const unapprove  = item => patch(item, { approved: false }, 'Taken down');
+  const toggleStar = item => patch(item, { featured: !item.featured },
+                                   item.featured ? 'Unfeatured' : 'Featured');
+
+  async function saveText() {
+    const item = items.find(x => x.id === editing.id);
+    const text = editing.text.trim();
+    if (text.length < 10) { toast.error('Too short', 'At least 10 characters.'); return; }
+    await patch(item, { text }, 'Review edited');
+    setEditing(null);
   }
 
   async function reject(item) {
@@ -1920,14 +1938,106 @@ function TestimonialsManager() {
   }
 
   const pending  = items.filter(i => !i.approved);
-  const approved = items.filter(i => i.approved);
+  // Featured first, matching the order the public actually sees them in.
+  const approved = items.filter(i => i.approved)
+                        .sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0));
+
+  function row(item) {
+    const isEditing = editing && editing.id === item.id;
+    return (
+      <div key={item.id} className="testimonial-row">
+        <div className="tr-body">
+          {isEditing ? (
+            <textarea value={editing.text} rows={3} maxLength={300} autoFocus
+                      onChange={e => setEditing({ ...editing, text: e.target.value })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--r-4)',
+                               border: '1px solid var(--border-1)', background: 'var(--bg-section)',
+                               color: 'var(--fg-1)', font: 'inherit', fontSize: 14,
+                               resize: 'vertical' }}/>
+          ) : (
+            <div className="tr-text">
+              {item.rating ? (
+                <span style={{ color: 'var(--notati-amber)', marginRight: 6 }}>
+                  {'★'.repeat(item.rating)}
+                </span>
+              ) : null}
+              "{item.text}"
+            </div>
+          )}
+          <div className="tr-meta">
+            {item.user_name}{item.course ? ` · ${item.course}` : ''}{item.user_college ? ` · ${item.user_college}` : ''}
+            {/* The student chose how to be credited; say so, and show the real
+                name, so the admin always knows who actually wrote it. */}
+            {item.name_style && item.name_style !== 'full' && (
+              <span style={{ color: 'var(--fg-3)', marginLeft: 8 }}>
+                (really {item.real_name} — shown as {item.name_style === 'anonymous' ? 'anonymous' : 'first name'})
+              </span>
+            )}
+            {item.verified && (
+              <span style={{ marginLeft: 8, color: 'var(--notati-forest)', fontWeight: 600 }}>
+                ✓ Verified buyer
+              </span>
+            )}
+            {item.featured && (
+              <span style={{ marginLeft: 8, color: 'var(--notati-amber)', fontWeight: 600 }}>
+                ★ Featured
+              </span>
+            )}
+            <span style={{ color: 'var(--fg-3)', marginLeft: 8 }}>{item.user_email}</span>
+          </div>
+        </div>
+        <div className="tr-acts">
+          {isEditing ? (
+            <>
+              <button className="btn btn-primary btn-sm" onClick={saveText}>
+                <Icons.Check size={13}/> Save
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              {!item.approved ? (
+                <button className="btn btn-primary btn-sm" onClick={() => approve(item)}>
+                  <Icons.Check size={13}/> Approve
+                </button>
+              ) : (
+                <>
+                  <button className="btn btn-soft btn-sm" onClick={() => toggleStar(item)}
+                          title="Pin it to the front of the landing page and course pages">
+                    {item.featured ? '★ Unfeature' : '☆ Feature'}
+                  </button>
+                  <button className="btn btn-soft btn-sm" onClick={() => unapprove(item)}
+                          title="Take it off the site without deleting it">
+                    Take down
+                  </button>
+                </>
+              )}
+              <button className="btn btn-soft btn-sm"
+                      onClick={() => setEditing({ id: item.id, text: item.text })}>
+                <Icons.Edit size={13}/> Edit
+              </button>
+              <button className="btn btn-danger btn-sm" onClick={() => reject(item)}>
+                <Icons.Trash size={13}/> Delete
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="page-head">
         <div className="ttl">
           <h1>Testimonials</h1>
-          <p className="sub">Approve student reviews to show them on the login page.</p>
+          <p className="sub">
+            Approve a review to show it on the landing page, on its course, and on the
+            login screen. Feature the best ones to pin them to the front. Nothing is
+            public until you approve it.
+          </p>
         </div>
       </div>
 
@@ -1938,25 +2048,7 @@ function TestimonialsManager() {
         <div className="panel-body">
           {loading ? <PageLoader rows={3}/> : pending.length === 0 ? (
             <EmptyState title="All clear" message="No testimonials waiting for review."/>
-          ) : pending.map(item => (
-            <div key={item.id} className="testimonial-row">
-              <div className="tr-body">
-                <div className="tr-text">"{item.text}"</div>
-                <div className="tr-meta">
-                  {item.user_name}{item.course ? ` · ${item.course}` : ''}{item.user_college ? ` · ${item.user_college}` : ''}
-                  <span style={{ color: 'var(--fg-3)', marginLeft: 8 }}>{item.user_email}</span>
-                </div>
-              </div>
-              <div className="tr-acts">
-                <button className="btn btn-primary btn-sm" onClick={() => approve(item)}>
-                  <Icons.Check size={13}/> Approve
-                </button>
-                <button className="btn btn-danger btn-sm" onClick={() => reject(item)}>
-                  <Icons.Close size={13}/> Remove
-                </button>
-              </div>
-            </div>
-          ))}
+          ) : pending.map(item => row(item))}
         </div>
       </section>
 
@@ -1967,21 +2059,7 @@ function TestimonialsManager() {
         <div className="panel-body">
           {loading ? <PageLoader rows={3}/> : approved.length === 0 ? (
             <EmptyState title="None approved yet" message="Approve some reviews above."/>
-          ) : approved.map(item => (
-            <div key={item.id} className="testimonial-row">
-              <div className="tr-body">
-                <div className="tr-text">"{item.text}"</div>
-                <div className="tr-meta">
-                  {item.user_name}{item.course ? ` · ${item.course}` : ''}{item.user_college ? ` · ${item.user_college}` : ''}
-                </div>
-              </div>
-              <div className="tr-acts">
-                <button className="btn btn-danger btn-sm" onClick={() => reject(item)}>
-                  <Icons.Close size={13}/> Remove
-                </button>
-              </div>
-            </div>
-          ))}
+          ) : approved.map(item => row(item))}
         </div>
       </section>
     </div>

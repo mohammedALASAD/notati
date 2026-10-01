@@ -38,6 +38,10 @@ class User(AbstractUser):
     # a password reset. (See ThrottledLoginView.)
     failed_login_attempts = models.PositiveIntegerField(default=0)
     login_locked_until    = models.DateTimeField(null=True, blank=True)
+    # When this student last said "not now" to the review prompt. Compared
+    # against their newest paid order, so saying no puts it away for that
+    # purchase but a later one asks again.
+    review_prompt_dismissed_at = models.DateTimeField(null=True, blank=True)
 
     USERNAME_FIELD  = 'email'
     REQUIRED_FIELDS = ['name']
@@ -375,11 +379,30 @@ class VerificationCode(models.Model):
         return f'{self.user.email} · {self.purpose}'
 
 
+def _course_key(name):
+    """The bare course code, so 'ITIS103' on a review lines up with the
+    catalogue's 'ITIS103 / ITIS104'. Same folding the sales record uses."""
+    head = re.split(r'[/(]', name or '', maxsplit=1)[0]
+    return head.strip().upper().replace(' ', '') or (name or '').strip().upper()
+
+
 class Testimonial(models.Model):
+    """A student's review. Written by them, shown publicly only once an admin
+    approves it — on the landing page and against the course it names."""
+    FULL, FIRST, ANON = 'full', 'first', 'anonymous'
+    NAME_CHOICES = [(FULL, 'Full name'), (FIRST, 'First name only'),
+                    (ANON, 'No name')]
+
     user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='testimonials')
     text       = models.TextField(max_length=300)
     course     = models.CharField(max_length=200, blank=True)
+    rating     = models.PositiveSmallIntegerField(null=True, blank=True)   # 1..5
+    # How the student wants to be credited. Their name and college go on the
+    # open internet when this is approved, so it is their call, not ours.
+    name_style = models.CharField(max_length=10, choices=NAME_CHOICES, default=FULL)
     approved   = models.BooleanField(default=False)
+    # Pinned to the front wherever reviews are shown, so the best ones lead.
+    featured   = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -387,6 +410,31 @@ class Testimonial(models.Model):
 
     def __str__(self):
         return f'{self.user.name}: {self.text[:50]}'
+
+    @property
+    def display_name(self):
+        """What the public sees — never more than the student agreed to."""
+        name = (self.user.name or '').strip()
+        if self.name_style == self.ANON or not name:
+            return 'A Notati student'
+        if self.name_style == self.FIRST:
+            return name.split()[0]
+        return name
+
+    def is_verified_buyer(self):
+        """Whether this student has actually paid for a chapter of the course
+        they are reviewing — the difference between a review and a claim.
+
+        Falls back to 'has bought anything at all' when the review names no
+        course, and never guesses: no purchase, no badge."""
+        grants = Access.objects.filter(user=self.user, note__price__gt=0)
+        if not self.course:
+            return grants.exists()
+        key = _course_key(self.course)
+        for name in (grants.values_list('note__course__name', flat=True).distinct()):
+            if _course_key(name) == key:
+                return True
+        return False
 
 
 class DiscountCode(models.Model):

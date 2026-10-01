@@ -6,11 +6,14 @@
 
 const { useState: useStateA, useEffect: useEffectA } = React;
 
+/* Shown only until a real, approved review exists. Deliberately not attributed
+   to anybody: an invented quote under an invented student's name is a claim we
+   cannot stand behind, and it was on every login screen. */
 const FALLBACK_QUOTE = {
-  text: 'Chapter 4 made sense in 8 minutes. Worth every minute of revision.',
-  user_name: 'Mariam',
-  course: 'MGMT 233',
-  user_college: 'University of Bahrain',
+  text: 'Chapter-by-chapter notes for University of Bahrain courses, written by students who sat the exam.',
+  user_name: '',
+  course: '',
+  user_college: '',
 };
 
 function AuthShell({ children, switchTo, mode, onGuest, darkMode, onThemeToggle }) {
@@ -50,10 +53,15 @@ function AuthShell({ children, switchTo, mode, onGuest, darkMode, onThemeToggle 
         </div>
 
         <div className="quote">
-          "{q.text}"
-          <span className="by">
-            {q.user_name}{q.course ? `, ${q.course}` : ''}{q.user_college ? ` · ${q.user_college}` : ''}
-          </span>
+          {/* Quotation marks only when a real student said it — the stand-in
+              line is the site describing itself, not somebody's words. */}
+          {q.user_name ? `"${q.text}"` : q.text}
+          {q.user_name ? (
+            <span className="by">
+              {q.user_name}{q.course ? `, ${q.course}` : ''}{q.user_college ? ` · ${q.user_college}` : ''}
+              {q.rating ? ` · ${'★'.repeat(q.rating)}` : ''}
+            </span>
+          ) : null}
           {quotes.length > 1 && (
             <div className="quote-dots">
               {quotes.map((_, i) => (

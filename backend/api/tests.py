@@ -15,7 +15,7 @@ from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 from . import pdfutils, verification
 from .models import (User, Course, Note, NoteFile, Access, BagItem, VerificationCode,
                      Order, OrderItem, DiscountCode, DiscountRedemption, Upload,
-                     UploadFile, Semester, DownloadLog)
+                     UploadFile, Semester, DownloadLog, Testimonial)
 from .serializers import NoteSerializer, RegisterSerializer
 
 
@@ -2841,4 +2841,195 @@ class DiscountEditingTests(TestCase):
     def test_a_student_cannot_edit_a_code(self):
         resp = self._c(self.student).patch(f'/api/admin/discounts/{self.code.id}/',
                                            {'amount': '9.000'}, format='json')
+        self.assertEqual(resp.status_code, 403)
+
+
+class ReviewPromptTests(TestCase):
+    """After paying, a student is asked what they thought — once, about the
+    course they bought, and not again until they buy something else."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 11', position=11, is_current=True)
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara Ali')
+        self.course  = Course.objects.create(name='ITNE233', college='IT')
+        self.other   = Course.objects.create(name='ITIS103', college='IT')
+        self.n1 = Note.objects.create(course=self.course, chapter_number=1,
+                                      chapter_title='One', price=Decimal('2.000'))
+        self.n2 = Note.objects.create(course=self.course, chapter_number=2,
+                                      chapter_title='Two', price=Decimal('2.000'))
+        self.n3 = Note.objects.create(course=self.other, chapter_number=1,
+                                      chapter_title='Solo', price=Decimal('1.500'))
+        cache.clear()
+
+    def _c(self, user=None):
+        c = APIClient(); c.force_authenticate(user or self.student); return c
+
+    def _buy_and_confirm(self, notes):
+        self._c().post('/api/orders/', {'note_ids': [n.id for n in notes],
+                                        'code': 'REF'}, format='json')
+        order = Order.objects.filter(user=self.student).order_by('-id').first()
+        self._c(self.admin).patch(f'/api/admin/orders/{order.id}/',
+                                  {'status': 'paid'}, format='json')
+        return order
+
+    def _prompt(self):
+        return self._c().get('/api/testimonials/prompt/').data
+
+    def test_nobody_is_asked_before_they_have_paid(self):
+        self.assertFalse(self._prompt()['ask'])
+        self._c().post('/api/orders/', {'note_ids': [self.n1.id], 'code': 'R'},
+                       format='json')
+        self.assertFalse(self._prompt()['ask'])      # placed, not yet paid
+
+    def test_paying_asks_about_the_course_they_bought_most_of(self):
+        self._buy_and_confirm([self.n1, self.n2, self.n3])
+        data = self._prompt()
+        self.assertTrue(data['ask'])
+        self.assertEqual(data['course'], 'ITNE233')  # two chapters beats one
+        self.assertEqual(data['chapters'], 3)
+
+    def test_saying_not_now_puts_it_away(self):
+        self._buy_and_confirm([self.n1])
+        self.assertTrue(self._prompt()['ask'])
+        self.assertFalse(self._c().post('/api/testimonials/prompt/').data['ask'])
+        self.assertFalse(self._prompt()['ask'])
+
+    def test_buying_again_asks_again(self):
+        self._buy_and_confirm([self.n1])
+        self._c().post('/api/testimonials/prompt/')          # not now
+        self.assertFalse(self._prompt()['ask'])
+        self._buy_and_confirm([self.n3])                      # a new purchase
+        self.assertTrue(self._prompt()['ask'])
+
+    def test_writing_a_review_stops_the_asking(self):
+        self._buy_and_confirm([self.n1])
+        self._c().post('/api/testimonials/submit/',
+                       {'text': 'Really clear notes, thank you.', 'course': 'ITNE233',
+                        'rating': 5}, format='json')
+        self.assertFalse(self._prompt()['ask'])
+
+    def test_a_guest_is_never_asked(self):
+        self.assertEqual(APIClient().get('/api/testimonials/prompt/').status_code, 401)
+
+    def test_the_unlocked_email_asks_too(self):
+        with patch('api.emails._send_async') as send:
+            self._buy_and_confirm([self.n1])
+        html = send.call_args_list[-1].args[0]['html']
+        self.assertIn('would you tell us how they went', html)
+
+
+class TestimonialPublishingTests(TestCase):
+    """What the public sees: only approved reviews, credited the way the
+    student asked, matched to the course they are about."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.sara  = User.objects.create_user('sara@x.com', 'pw', name='Sara Ali',
+                                              college='College of Information Technology')
+        self.omar  = User.objects.create_user('omar@x.com', 'pw', name='Omar Noor')
+        # The catalogue renamed this course since Sara reviewed it.
+        self.course = Course.objects.create(name='ITIS103 / ITIS104', college='IT')
+        self.paid = Note.objects.create(course=self.course, chapter_number=2,
+                                        chapter_title='Data', price=Decimal('1.500'))
+        Access.objects.create(user=self.sara, note=self.paid, price=Decimal('1.500'))
+        cache.clear()
+
+    def _c(self, user=None):
+        c = APIClient()
+        if user:
+            c.force_authenticate(user)
+        return c
+
+    def _make(self, user, **kw):
+        kw.setdefault('text', 'These notes saved my exam week, genuinely.')
+        kw.setdefault('approved', True)
+        return Testimonial.objects.create(user=user, **kw)
+
+    def _public(self, **params):
+        query = '&'.join(f'{k}={v}' for k, v in params.items())
+        return self._c().get(f'/api/testimonials/?{query}').data
+
+    def test_only_approved_reviews_are_public(self):
+        self._make(self.sara, approved=False)
+        self.assertEqual(len(self._public()), 0)
+        self._make(self.omar, approved=True)
+        self.assertEqual(len(self._public()), 1)
+
+    def test_a_student_is_credited_only_as_they_chose(self):
+        full = self._make(self.sara, name_style='full')
+        first = self._make(self.omar, name_style='first')
+        anon = self._make(self.omar, name_style='anonymous')
+        names = {t['id']: t['user_name'] for t in self._public()}
+        self.assertEqual(names[full.id], 'Sara Ali')
+        self.assertEqual(names[first.id], 'Omar')
+        self.assertEqual(names[anon.id], 'A Notati student')
+        # The real name is never in the public payload for an anonymous review.
+        body = self._c().get('/api/testimonials/').content.decode()
+        self.assertNotIn('Omar Noor', body)
+
+    def test_reviews_are_matched_to_a_course_even_after_it_is_renamed(self):
+        hit = self._make(self.sara, course='ITIS103')
+        self._make(self.omar, course='ITNE233')
+        rows = self._public(course='ITIS103 / ITIS104')
+        self.assertEqual([t['id'] for t in rows], [hit.id])
+
+    def test_a_buyer_of_that_course_is_marked_verified(self):
+        mine = self._make(self.sara, course='ITIS103')     # Sara owns a chapter
+        theirs = self._make(self.omar, course='ITIS103')   # Omar owns nothing
+        flags = {t['id']: t['verified'] for t in self._public()}
+        self.assertTrue(flags[mine.id])
+        self.assertFalse(flags[theirs.id])
+
+    def test_featured_reviews_lead(self):
+        old = self._make(self.sara, featured=True)
+        self._make(self.omar)
+        self.assertEqual(self._public()[0]['id'], old.id)
+
+    def test_a_rating_is_kept_and_has_to_be_sensible(self):
+        c = self._c(self.sara)
+        ok = c.post('/api/testimonials/submit/',
+                    {'text': 'Clear and to the point, thanks.', 'rating': 5},
+                    format='json')
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(Testimonial.objects.get(id=ok.data['id']).rating, 5)
+        self.assertEqual(c.post('/api/testimonials/submit/',
+                                {'text': 'Good notes all round.', 'rating': 9},
+                                format='json').status_code, 400)
+
+    def test_a_review_arrives_unapproved_however_it_is_sent(self):
+        resp = self._c(self.sara).post('/api/testimonials/submit/',
+                                       {'text': 'Trying to self-approve here.',
+                                        'approved': True, 'featured': True},
+                                       format='json')
+        self.assertEqual(resp.status_code, 201)
+        t = Testimonial.objects.get(id=resp.data['id'])
+        self.assertFalse(t.approved)
+        self.assertFalse(t.featured)
+
+    def test_a_one_word_review_is_refused(self):
+        resp = self._c(self.sara).post('/api/testimonials/submit/',
+                                       {'text': 'Good'}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_the_admin_can_approve_feature_unapprove_and_fix_a_typo(self):
+        t = self._make(self.sara, approved=False, text='Grate notes, very helpfull.')
+        c = self._c(self.admin)
+        url = f'/api/admin/testimonials/{t.id}/'
+        self.assertEqual(c.patch(url, {'approved': True, 'featured': True,
+                                       'text': 'Great notes, very helpful.'},
+                                 format='json').status_code, 200)
+        t.refresh_from_db()
+        self.assertEqual((t.approved, t.featured, t.text),
+                         (True, True, 'Great notes, very helpful.'))
+        c.patch(url, {'approved': False}, format='json')
+        t.refresh_from_db()
+        self.assertFalse(t.approved)
+        self.assertEqual(len(self._public()), 0)
+
+    def test_a_student_cannot_approve_or_feature_anything(self):
+        t = self._make(self.sara, approved=False)
+        resp = self._c(self.omar).patch(f'/api/admin/testimonials/{t.id}/',
+                                        {'approved': True}, format='json')
         self.assertEqual(resp.status_code, 403)

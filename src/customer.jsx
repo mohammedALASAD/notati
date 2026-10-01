@@ -78,6 +78,133 @@ function _downloadNote(n, openReader, toast) {
 }
 
 /* ============================================================
+   Landing-page reviews — what students say, shown to people who
+   have not signed up yet. Renders nothing at all until there are
+   approved reviews, so the page never advertises its own silence.
+   ============================================================ */
+function LandingReviews() {
+  const [rows, setRows] = useStateC([]);
+
+  useEffectC(() => {
+    NotatiAPI.getTestimonials().then(setRows).catch(() => {});
+  }, []);
+
+  if (rows.length === 0) return null;
+  const shown = rows.slice(0, 6);
+  const rated = rows.filter(r => r.rating);
+  const average = rated.length
+    ? (rated.reduce((s, r) => s + r.rating, 0) / rated.length) : 0;
+
+  return (
+    <section style={{ padding: '56px 0 8px' }}>
+      <div style={{ textAlign: 'center', marginBottom: 28 }}>
+        <h2 style={{ font: 'var(--type-h2)', color: 'var(--fg-1)', margin: '0 0 8px' }}>
+          What students say
+        </h2>
+        <p style={{ margin: 0, color: 'var(--fg-2)', fontSize: 15 }}>
+          {average > 0 ? (
+            <>
+              <span style={{ color: 'var(--notati-amber)', fontWeight: 700 }}>★ {average.toFixed(1)}</span>
+              {' '}from {rated.length} student{rated.length === 1 ? '' : 's'} at the University of Bahrain
+            </>
+          ) : 'From students at the University of Bahrain'}
+        </p>
+      </div>
+      <div className="grid-3">
+        {shown.map(r => (
+          <div key={r.id} className="notecard" style={{ cursor: 'default' }}>
+            {r.rating ? (
+              <div style={{ color: 'var(--notati-amber)', fontSize: 15, marginBottom: 8 }}>
+                {'★'.repeat(r.rating)}
+              </div>
+            ) : null}
+            <p style={{ margin: '0 0 14px', fontSize: 14, lineHeight: 1.7, color: 'var(--fg-1)' }}>
+              “{r.text}”
+            </p>
+            <div style={{ fontSize: 12, color: 'var(--fg-3)', display: 'flex',
+                          alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <strong style={{ color: 'var(--fg-2)' }}>{r.user_name}</strong>
+              {r.course ? <span>· {r.course}</span> : null}
+              {r.verified && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3,
+                               color: 'var(--notati-forest)', fontWeight: 600 }}>
+                  <Icons.Check size={11}/> Verified buyer
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ============================================================
+   Course reviews — approved student reviews about one course,
+   shown where the buying decision is actually made.
+   ============================================================ */
+function CourseReviews({ course, limit, compact }) {
+  const [rows, setRows] = useStateC(null);   // null until loaded
+
+  useEffectC(() => {
+    let live = true;
+    if (!course) { setRows([]); return; }
+    NotatiAPI.getTestimonials(course)
+      .then(r => { if (live) setRows(r); })
+      .catch(() => { if (live) setRows([]); });
+    return () => { live = false; };
+  }, [course]);
+
+  // Nothing to say is better than an empty "no reviews yet" on a sales page.
+  if (!rows || rows.length === 0) return null;
+  const shown = limit ? rows.slice(0, limit) : rows;
+  const rated = rows.filter(r => r.rating);
+  const average = rated.length
+    ? (rated.reduce((s, r) => s + r.rating, 0) / rated.length) : 0;
+
+  return (
+    <div style={{ marginTop: compact ? 12 : 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ font: 'var(--type-body)', fontSize: 14, fontWeight: 600, color: 'var(--fg-1)' }}>
+          What students said
+        </span>
+        {average > 0 && (
+          <span style={{ fontSize: 13, color: 'var(--notati-amber)', fontWeight: 700 }}>
+            ★ {average.toFixed(1)}
+            <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>
+              {' '}· {rated.length} rating{rated.length === 1 ? '' : 's'}
+            </span>
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {shown.map(r => (
+          <div key={r.id} style={{ padding: '10px 14px', background: 'var(--bg-section)',
+                    border: '1px solid var(--border-2)', borderRadius: 'var(--r-4)' }}>
+            <div style={{ fontSize: 13, color: 'var(--fg-1)', lineHeight: 1.6 }}>
+              “{r.text}”
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 6,
+                          display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {r.rating ? <span style={{ color: 'var(--notati-amber)' }}>{'★'.repeat(r.rating)}</span> : null}
+              <span>{r.user_name}</span>
+              {r.user_college ? <span>· {r.user_college}</span> : null}
+              {/* Only shown when the purchase is on record — never a guess. */}
+              {r.verified && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3,
+                               color: 'var(--notati-forest)', fontWeight: 600 }}>
+                  <Icons.Check size={11}/> Verified buyer
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    Note Details Modal — lets a student preview a locked note before
    buying: its description + how many files it includes, plus quick
    Sample / Add to bag actions.
@@ -165,6 +292,7 @@ function NoteDetailsModal({ open, note, bag, pendingNoteIds, onAddToBag, onRemov
             </div>
           )}
         </div>
+        <CourseReviews course={note.courseName} limit={3}/>
       </div>
     </Modal>
   );
@@ -617,33 +745,135 @@ function CustomerDashboard({ user, onNav, onOpenNote, onShowDetails, bag, onAddT
           </div>
         </section>
 
-      <TestimonialForm user={user}/>
+      <ReviewAsk user={user}/>
     </div>
+  );
+}
+
+/* ============================================================
+   Review ask — shown after a payment is confirmed
+   The moment a student has the notes in hand is the moment their
+   opinion is worth having, and the only moment they will give it
+   without being chased. Quiet until then, and gone once answered.
+   ============================================================ */
+function ReviewAsk({ user }) {
+  const [prompt, setPrompt] = useStateC(null);   // null = not asked yet
+  const [open,   setOpen]   = useStateC(false);
+  const [gone,   setGone]   = useStateC(false);
+
+  useEffectC(() => {
+    NotatiAPI.getReviewPrompt()
+      .then(setPrompt)
+      .catch(() => setPrompt({ ask: false }));
+  }, []);
+
+  function notNow() {
+    setGone(true);
+    NotatiAPI.dismissReviewPrompt().catch(() => {});
+  }
+
+  const asking = prompt && prompt.ask && !gone;
+
+  return (
+    <>
+      {asking && !open && (
+        <section className="panel" style={{ marginTop: 24,
+                  border: '1px solid var(--notati-amber)' }}>
+          <div className="panel-body" style={{ display: 'flex', gap: 16,
+                    alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+              <div style={{ font: 'var(--type-h3)', color: 'var(--fg-1)', marginBottom: 4 }}>
+                How were {prompt.course ? prompt.course : 'your'} notes?
+              </div>
+              <p style={{ margin: 0, fontSize: 14, color: 'var(--fg-2)', lineHeight: 1.6 }}>
+                You unlocked {prompt.chapters} chapter{prompt.chapters === 1 ? '' : 's'}.
+                A sentence or two helps the next student decide — and tells us what to write next.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button className="btn btn-ghost btn-sm" onClick={notNow}>Not now</button>
+              <button className="btn btn-primary" onClick={() => setOpen(true)}>
+                Write a review <Icons.ArrowRight size={15}/>
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* The form itself: open on request, and always available further down
+          the dashboard for anyone who wants to write without being asked. */}
+      {(open || !asking) && (
+        <TestimonialForm user={user}
+                         initialCourse={asking || (prompt && prompt.course) ? (prompt ? prompt.course : '') : ''}
+                         onSubmitted={() => { setGone(true); setOpen(false); }}/>
+      )}
+    </>
   );
 }
 
 /* ============================================================
    Testimonial submit form (shown on student dashboard)
    ============================================================ */
-function TestimonialForm({ user }) {
+/* Five clickable stars. Optional — a review with words and no score is still
+   worth having, so nothing here is required. */
+function StarPicker({ value, onChange }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      {[1, 2, 3, 4, 5].map(n => (
+        <button key={n} type="button" aria-label={`${n} star${n === 1 ? '' : 's'}`}
+                onClick={() => onChange(value === n ? 0 : n)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                         padding: '0 2px', lineHeight: 1, fontSize: 24,
+                         color: n <= value ? 'var(--notati-amber)' : 'var(--border-2)' }}>
+          ★
+        </button>
+      ))}
+      {value > 0 && (
+        <button type="button" onClick={() => onChange(0)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                         fontSize: 12, color: 'var(--fg-3)', marginLeft: 6 }}>
+          clear
+        </button>
+      )}
+    </div>
+  );
+}
+
+function TestimonialForm({ user, initialCourse, onSubmitted }) {
   const { toast } = useToast();
   const [text,    setText]    = useStateC('');
-  const [course,  setCourse]  = useStateC('');
+  const [course,  setCourse]  = useStateC(initialCourse || '');
+  const [rating,  setRating]  = useStateC(0);
+  const [nameStyle, setNameStyle] = useStateC('full');
   const [sending, setSending] = useStateC(false);
   const [done,    setDone]    = useStateC(false);
 
+  // When the dashboard learns which course to ask about, fill it in — unless
+  // the student has already typed something of their own.
+  useEffectC(() => {
+    if (initialCourse) setCourse(prev => prev || initialCourse);
+  }, [initialCourse]);
+
+  const firstName = ((user && user.name) || '').trim().split(' ')[0] || 'you';
+
   async function submit(e) {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (text.trim().length < 10) {
+      toast.error('A little more, please', 'Tell us what actually helped — a sentence is plenty.');
+      return;
+    }
     setSending(true);
     try {
-      await NotatiAPI.submitTestimonial({ text: text.trim(), course: course.trim() });
+      await NotatiAPI.submitTestimonial({
+        text: text.trim(), course: course.trim(),
+        rating: rating || null, name_style: nameStyle,
+      });
       setDone(true);
-      setText('');
-      setCourse('');
+      setText(''); setCourse(''); setRating(0); setNameStyle('full');
+      onSubmitted && onSubmitted();
       toast.success('Review submitted', 'Thanks! It will appear once approved.');
     } catch(e) {
-      toast.error('Could not submit', 'Please try again.');
+      toast.error('Could not submit', e.message || 'Please try again.');
     } finally {
       setSending(false);
     }
@@ -679,6 +909,22 @@ function TestimonialForm({ user }) {
               <label>Course <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>(optional, e.g. MGMT 233)</span></label>
               <input type="text" maxLength={50} placeholder="MGMT 233"
                      value={course} onChange={e => setCourse(e.target.value)}/>
+            </div>
+            <div className="field">
+              <label>Rating <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>(optional)</span></label>
+              <StarPicker value={rating} onChange={setRating}/>
+            </div>
+            <div className="field">
+              <label>Show my name as</label>
+              <select value={nameStyle} onChange={e => setNameStyle(e.target.value)}>
+                <option value="full">{(user && user.name) || 'My full name'}</option>
+                <option value="first">{firstName} — first name only</option>
+                <option value="anonymous">A Notati student — no name</option>
+              </select>
+              <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 4 }}>
+                Approved reviews are public. Your college is shown alongside; your
+                email never is.
+              </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button className="btn btn-primary" type="submit" disabled={sending || !text.trim()}>
@@ -1872,6 +2118,8 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
               )}
           </div>
         </section>
+
+        <LandingReviews/>
       </main>
 
       {/* ── Footer ── */}

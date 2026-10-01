@@ -38,6 +38,7 @@ from .serializers import (
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly
 from . import pdfutils, verification, emails, tracing, downloads
+from .models import _course_key as models_course_key
 from datetime import timedelta
 
 
@@ -1134,11 +1135,62 @@ def admin_trace(request):
 # ── Testimonials ──────────────────────────────────────────────────────────────
 
 class TestimonialPublicView(generics.ListAPIView):
+    """Approved reviews, for the landing page and for the course a student is
+    deciding on. ?course=ITIS103 narrows to that course, folding renamed codes
+    together the way the sales record does, so a review of 'ITIS103' shows on
+    'ITIS103 / ITIS104'. Featured ones lead, then the newest."""
     serializer_class   = TestimonialSerializer
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        return Testimonial.objects.select_related('user').filter(approved=True)
+        qs = (Testimonial.objects.select_related('user')
+              .filter(approved=True).order_by('-featured', '-created_at'))
+        course = (self.request.query_params.get('course') or '').strip()
+        if course:
+            key = models_course_key(course)
+            ids = [t.id for t in qs if models_course_key(t.course) == key]
+            qs = qs.filter(id__in=ids)
+        return qs
+
+
+class ReviewPromptView(APIView):
+    """Should we ask this student for a review, and about what?
+
+    Asked for after they have paid, because that is the moment they have the
+    notes in hand and an opinion worth having. Saying 'not now' puts it away
+    for that purchase; a later order asks again."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        order = (Order.objects.filter(user=user, status='paid', paid_at__isnull=False)
+                 .order_by('-paid_at').first())
+        if not order:
+            return Response({'ask': False})
+        if user.review_prompt_dismissed_at and user.review_prompt_dismissed_at >= order.paid_at:
+            return Response({'ask': False})
+        # Already said their piece since paying? Then nothing more to ask.
+        if Testimonial.objects.filter(user=user, created_at__gte=order.paid_at).exists():
+            return Response({'ask': False})
+        # Suggest the course they bought most of, so the form opens filled in.
+        counts = {}
+        for it in order.items.all():
+            if it.course_name:
+                counts[it.course_name] = counts.get(it.course_name, 0) + 1
+        course = max(counts, key=counts.get) if counts else ''
+        return Response({
+            'ask': True,
+            'course': course,
+            'chapters': order.items.count(),
+            'paid_at': order.paid_at,
+        })
+
+    def post(self, request):
+        """'Not now.' Remembered on the account, so it does not reappear on
+        the next device or the next page load."""
+        request.user.review_prompt_dismissed_at = timezone.now()
+        request.user.save(update_fields=['review_prompt_dismissed_at'])
+        return Response({'ask': False})
 
 
 class TestimonialCreateView(generics.CreateAPIView):

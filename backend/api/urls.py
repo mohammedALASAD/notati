@@ -73,6 +73,7 @@ urlpatterns = [
     # Testimonials
     path('testimonials/',              views.TestimonialPublicView.as_view(),       name='testimonial-list'),
     path('testimonials/submit/',       views.TestimonialCreateView.as_view(),       name='testimonial-submit'),
+    path('testimonials/prompt/',       views.ReviewPromptView.as_view(),            name='testimonial-prompt'),
     path('admin/testimonials/',        views.TestimonialAdminListView.as_view(),    name='admin-testimonial-list'),
     path('admin/testimonials/<int:pk>/', views.TestimonialAdminDetailView.as_view(), name='admin-testimonial-detail'),
     path('admin/send-email/',            views.AdminSendEmailView.as_view(),          name='admin-send-email'),

@@ -323,13 +323,32 @@ class UploadAdminSerializer(UploadSerializer):
 
 
 class TestimonialSerializer(serializers.ModelSerializer):
-    user_name    = serializers.CharField(source='user.name', read_only=True)
+    # The public name is whatever the student chose to be credited as — never
+    # `user.name` directly, or "no name" would leak on the next field added.
+    user_name    = serializers.CharField(source='display_name', read_only=True)
     user_college = serializers.CharField(source='user.college', read_only=True)
+    verified     = serializers.SerializerMethodField()
+
+    def get_verified(self, obj):
+        return obj.is_verified_buyer()
 
     class Meta:
         model  = Testimonial
-        fields = ['id', 'user_name', 'user_college', 'text', 'course', 'approved', 'created_at']
-        read_only_fields = ['id', 'user_name', 'user_college', 'approved', 'created_at']
+        fields = ['id', 'user_name', 'user_college', 'text', 'course', 'rating',
+                  'name_style', 'verified', 'featured', 'approved', 'created_at']
+        read_only_fields = ['id', 'user_name', 'user_college', 'verified',
+                            'featured', 'approved', 'created_at']
+
+    def validate_rating(self, value):
+        if value is not None and not 1 <= value <= 5:
+            raise serializers.ValidationError('Rating must be between 1 and 5.')
+        return value
+
+    def validate_text(self, value):
+        value = (value or '').strip()
+        if len(value) < 10:
+            raise serializers.ValidationError('Tell us a little more — at least 10 characters.')
+        return value
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
@@ -337,10 +356,14 @@ class TestimonialSerializer(serializers.ModelSerializer):
 
 
 class TestimonialAdminSerializer(TestimonialSerializer):
+    """The admin sees who wrote it, and can approve, feature or fix a typo."""
     user_email = serializers.EmailField(source='user.email', read_only=True)
+    real_name  = serializers.CharField(source='user.name', read_only=True)
 
     class Meta(TestimonialSerializer.Meta):
-        fields = TestimonialSerializer.Meta.fields + ['user_email']
+        fields = TestimonialSerializer.Meta.fields + ['user_email', 'real_name']
+        read_only_fields = ['id', 'user_name', 'user_college', 'verified',
+                            'user_email', 'real_name', 'created_at']
         read_only_fields = ['id', 'user_name', 'user_email', 'user_college', 'created_at']
 
 

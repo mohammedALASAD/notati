@@ -220,6 +220,11 @@ def _build_order_ready_html(to_name, chapters, url):
           </table>
           {button}
           <hr style="margin:28px 0 20px;border:0;border-top:1px solid {_CREAM};" role="presentation"/>
+          <p style="margin:0 0 18px;font-family:{font};font-size:15px;color:#5C4A3A;line-height:1.8;">
+            Once you've studied them, would you tell us how they went? One or two
+            honest lines on your dashboard helps the next student decide — and tells
+            us what to write next.
+          </p>
           <p style="margin:0;font-family:{font};font-size:15px;color:#5C4A3A;line-height:1.7;">
             Happy studying,<br/><strong style="color:{_BARK};">The Notati Team</strong>
           </p>
@@ -297,6 +302,11 @@ def _build_chapter_updated_html(to_name, chapter_label, url):
           </p>
           {button}
           <hr style="margin:28px 0 20px;border:0;border-top:1px solid {_CREAM};" role="presentation"/>
+          <p style="margin:0 0 18px;font-family:{font};font-size:15px;color:#5C4A3A;line-height:1.8;">
+            Once you've studied them, would you tell us how they went? One or two
+            honest lines on your dashboard helps the next student decide — and tells
+            us what to write next.
+          </p>
           <p style="margin:0;font-family:{font};font-size:15px;color:#5C4A3A;line-height:1.7;">
             Happy studying,<br/><strong style="color:{_BARK};">The Notati Team</strong>
           </p>
