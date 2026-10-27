@@ -457,6 +457,12 @@
       return list(data).map(toUser);
     },
 
+    // Everything about one student — contact details, the paid chapters they
+    // own, what they spent, their orders and how much they actually read.
+    async getUserProfile(id) {
+      return req('GET', `/admin/users/${id}/profile/`);
+    },
+
     async getStats() {
       return req('GET', '/admin/stats/');
     },

@@ -3033,3 +3033,166 @@ class TestimonialPublishingTests(TestCase):
         resp = self._c(self.omar).patch(f'/api/admin/testimonials/{t.id}/',
                                         {'approved': True}, format='json')
         self.assertEqual(resp.status_code, 403)
+
+
+class UserProfilePageTests(TestCase):
+    """Clicking a student opens everything known about them — and the money
+    on that page has to be the same money the Sales page attributes to them."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem = Semester.objects.create(label='Semester 11', position=11,
+                                           is_current=True)
+        self.admin = User.objects.create_user('admin@x.com', 'pw', name='Admin',
+                                              role='admin')
+        self.student = User.objects.create_user('sara@x.com', 'pw', name='Sara',
+                                                phone='3300 0000', college='IT')
+        self.course = Course.objects.create(name='ITNE233', college='IT')
+        self.one = Note.objects.create(course=self.course, chapter_number=1,
+                                       chapter_title='Routing', price=Decimal('2.000'))
+        self.two = Note.objects.create(course=self.course, chapter_number=2,
+                                       chapter_title='Switching', price=Decimal('3.000'))
+        self.free = Note.objects.create(course=self.course, chapter_number=3,
+                                        chapter_title='Intro', price=Decimal('0'))
+
+    def _admin(self):
+        c = APIClient(); c.force_authenticate(self.admin); return c
+
+    def _profile(self, user=None):
+        resp = self._admin().get(f'/api/admin/users/{(user or self.student).id}/profile/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        return resp.data
+
+    def _paid_order(self, notes, discount=Decimal('0')):
+        """A paid order for `notes`, with the grants it would have created."""
+        subtotal = sum(n.price for n in notes)
+        order = Order.objects.create(user=self.student, semester=self.sem,
+                                     status='paid', subtotal=subtotal,
+                                     discount_amount=discount,
+                                     total=subtotal - discount,
+                                     paid_at=timezone.now())
+        for n in notes:
+            OrderItem.objects.create(order=order, note=n, course_name=n.course.name,
+                                     chapter_number=str(n.chapter_number),
+                                     chapter_title=n.chapter_title, price=n.price)
+        nets = order.line_nets()
+        for it in order.items.all():
+            Access.objects.create(user=self.student, note=it.note, semester=self.sem,
+                                  price=nets[it.pk])
+        return order
+
+    # ── who they are ──────────────────────────────────────────────────────
+
+    def test_it_shows_the_contact_details_the_list_hides(self):
+        data = self._profile()
+        self.assertEqual(data['name'], 'Sara')
+        self.assertEqual(data['email'], 'sara@x.com')
+        self.assertEqual(data['phone'], '3300 0000')
+        self.assertEqual(data['college'], 'IT')
+
+    def test_a_student_who_has_bought_nothing_reads_as_zero_not_as_an_error(self):
+        data = self._profile()
+        self.assertEqual(data['spend']['total'], '0.000')
+        self.assertEqual(data['spend']['paid_chapters'], 0)
+        self.assertEqual(data['chapters'], [])
+        self.assertIsNone(data['spend']['last_purchase'])
+
+    def test_only_an_admin_can_open_someone_elses_page(self):
+        c = APIClient(); c.force_authenticate(self.student)
+        self.assertEqual(c.get(f'/api/admin/users/{self.student.id}/profile/').status_code, 403)
+        self.assertEqual(APIClient().get(f'/api/admin/users/{self.student.id}/profile/').status_code, 401)
+
+    def test_an_unknown_id_is_a_404_rather_than_a_crash(self):
+        self.assertEqual(self._admin().get('/api/admin/users/999999/profile/').status_code, 404)
+
+    # ── what they own ─────────────────────────────────────────────────────
+
+    def test_it_lists_the_paid_chapters_with_what_each_one_cost(self):
+        self._paid_order([self.one, self.two])
+        data = self._profile()
+        self.assertEqual([c['chapter_title'] for c in data['chapters']],
+                         ['Routing', 'Switching'])
+        self.assertEqual([c['paid'] for c in data['chapters']], ['2.000', '3.000'])
+        self.assertEqual(data['spend']['total'], '5.000')
+        self.assertEqual(data['spend']['paid_chapters'], 2)
+
+    def test_a_free_chapter_is_never_counted_as_a_purchase(self):
+        # Free chapters need no grant, but one can survive a price drop.
+        Access.objects.create(user=self.student, note=self.free, semester=self.sem)
+        data = self._profile()
+        self.assertEqual(data['chapters'], [])
+        self.assertEqual(data['spend']['total'], '0.000')
+        self.assertEqual(data['spend']['free_chapters_held'], 1)
+
+    def test_a_discount_is_reflected_in_what_the_student_actually_paid(self):
+        self._paid_order([self.one, self.two], discount=Decimal('1.000'))
+        data = self._profile()
+        self.assertEqual(data['spend']['total'], '4.000')      # 5.000 − 1.000
+        self.assertEqual(data['spend']['list_total'], '5.000')
+        self.assertEqual(data['spend']['saved'], '1.000')
+        # The discount is spread over the lines, not dumped on one of them.
+        self.assertEqual([c['paid'] for c in data['chapters']], ['1.600', '2.400'])
+
+    def test_a_hand_unlocked_chapter_says_so_and_is_valued_at_its_frozen_price(self):
+        Access.objects.create(user=self.student, note=self.one, semester=self.sem,
+                              price=Decimal('2.000'), granted_by=self.admin)
+        data = self._profile()
+        self.assertEqual(data['chapters'][0]['source'], 'hand')
+        self.assertEqual(data['spend']['total'], '2.000')
+
+    def test_a_later_price_rise_does_not_revalue_a_sale_already_made(self):
+        self._paid_order([self.one])
+        self.one.price = Decimal('9.000')
+        self.one.save()
+        data = self._profile()
+        self.assertEqual(data['spend']['total'], '2.000')      # what they paid
+        self.assertEqual(data['spend']['list_total'], '9.000')  # what it costs now
+
+    # ── the number has to match the Sales page ────────────────────────────
+
+    def test_the_total_matches_what_the_sales_page_attributes_to_this_student(self):
+        self._paid_order([self.one, self.two], discount=Decimal('1.000'))
+        Access.objects.create(user=self.student, note=self.free, semester=self.sem)
+        profile = self._profile()
+        sales = self._admin().get('/api/admin/sales/').data
+        # Sara is the only buyer, so the whole page is hers.
+        self.assertEqual(profile['spend']['total'], sales['total_revenue'])
+        self.assertEqual(profile['spend']['paid_chapters'], sales['total_sales'])
+
+    # ── orders and activity ───────────────────────────────────────────────
+
+    def test_a_pending_order_is_shown_but_is_not_money_in_the_bank(self):
+        Order.objects.create(user=self.student, semester=self.sem, status='pending',
+                             subtotal=Decimal('2.000'), total=Decimal('2.000'))
+        data = self._profile()
+        self.assertEqual(data['spend']['orders_pending'], 1)
+        self.assertEqual(data['spend']['orders_paid'], 0)
+        self.assertEqual(data['spend']['total'], '0.000')
+        self.assertEqual([o['status'] for o in data['orders']], ['pending'])
+
+    def test_reading_is_counted_by_chapter_not_by_click(self):
+        for _ in range(3):
+            DownloadLog.objects.create(user=self.student, note=self.one, kind='open')
+        DownloadLog.objects.create(user=self.student, note=self.two, kind='preview')
+        data = self._profile()
+        self.assertEqual(data['activity']['opens'], 3)
+        self.assertEqual(data['activity']['chapters_opened'], 1)
+        self.assertEqual(data['activity']['previews'], 1)
+        self.assertIsNotNone(data['activity']['last_seen'])
+
+    def test_their_review_is_shown_even_before_it_is_approved(self):
+        Testimonial.objects.create(user=self.student, text='Saved my semester, truly.',
+                                   course='ITNE233', rating=5, approved=False)
+        data = self._profile()
+        self.assertEqual(data['review']['rating'], 5)
+        self.assertFalse(data['review']['approved'])
+
+    def test_the_whole_page_is_one_request_not_one_per_chapter(self):
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+        self._paid_order([self.one, self.two])
+        c = self._admin()
+        with CaptureQueriesContext(connection) as ctx:
+            c.get(f'/api/admin/users/{self.student.id}/profile/')
+        # Generous, but it catches a loop over chapters or orders.
+        self.assertLess(len(ctx.captured_queries), 15, len(ctx.captured_queries))

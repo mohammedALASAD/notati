@@ -1250,6 +1250,237 @@ function BroadcastEmailModal({ studentCount, onClose }) {
   );
 }
 
+const ORDER_STATUS_STYLE = {
+  pending:   { background: 'var(--notati-bark, #8a6d3b)', color: 'var(--notati-paper)' },
+  paid:      { background: 'var(--notati-forest)',        color: 'var(--notati-paper)' },
+  cancelled: { background: 'var(--bg-card-2)',            color: 'var(--fg-3)' },
+};
+
+/* ============================================================
+   One student's page — opened by clicking their row in Users
+   ============================================================ */
+function UserPageFact({ label, children }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 11, color: 'var(--fg-3)', fontWeight: 600,
+                    textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 14, color: 'var(--fg-1)', overflowWrap: 'anywhere' }}>
+        {children || <span style={{ color: 'var(--fg-3)' }}>—</span>}
+      </div>
+    </div>
+  );
+}
+
+function UserPageStat({ label, value, sub, color }) {
+  return (
+    <div style={{ flex: 1, minWidth: 140, background: 'var(--bg-section)',
+                  border: '1px solid var(--border-1)', borderRadius: 'var(--r-5)',
+                  padding: '14px 16px' }}>
+      <div style={{ fontSize: 11, color: 'var(--fg-3)', fontWeight: 600,
+                    textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: color || 'var(--fg-1)', lineHeight: 1 }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 5 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function UserPageSection({ title, note, children }) {
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap',
+                    marginBottom: 10 }}>
+        <h4 style={{ margin: 0, font: 'var(--type-h3)', color: 'var(--fg-1)' }}>{title}</h4>
+        {note && <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>{note}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function UserDetailModal({ userId, onClose, onEmail }) {
+  const [data,    setData]    = useStateAd(null);
+  const [loading, setLoading] = useStateAd(true);
+  const [error,   setError]   = useStateAd('');
+
+  useEffectAd(() => {
+    if (!userId) { setData(null); return; }
+    let live = true;
+    setLoading(true); setError(''); setData(null);
+    NotatiAPI.getUserProfile(userId)
+      .then(d => { if (live) setData(d); })
+      .catch(e => { if (live) setError(e.message || 'Could not load this student.'); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [userId]);
+
+  const bd = v => `BD ${Number(v || 0).toFixed(3)}`;
+  const spend = (data && data.spend) || {};
+  const act   = (data && data.activity) || {};
+
+  return (
+    <Modal open={!!userId} onClose={onClose} size="lg"
+           title={data ? data.name : 'Student'}
+           subtitle={data ? `${data.email}${data.role === 'admin' ? ' · Admin' : ''}` : ''}
+           footer={data && data.role !== 'admin' && onEmail ? (
+             <button className="btn btn-primary" onClick={() => onEmail(data)}>
+               <Icons.Mail size={16}/> Send email
+             </button>
+           ) : null}>
+      {loading ? <PageLoader rows={4}/> : error ? (
+        <EmptyState title="Could not open this student" message={error}/>
+      ) : !data ? null : (
+        <div>
+          {/* Who they are */}
+          <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                        background: 'var(--bg-section)', border: '1px solid var(--border-1)',
+                        borderRadius: 'var(--r-5)', padding: '14px 16px' }}>
+            <UserPageFact label="Email">{data.email}</UserPageFact>
+            <UserPageFact label="Phone">{data.phone}</UserPageFact>
+            <UserPageFact label="College">{data.college}</UserPageFact>
+            <UserPageFact label="Joined">{fmtDate(data.joined_at)}</UserPageFact>
+          </div>
+
+          {/* The money */}
+          <div style={{ display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
+            <UserPageStat label="Total spent" value={bd(spend.total)}
+                       color="var(--notati-walnut)"
+                       sub={Number(spend.saved) > 0 ? `${bd(spend.saved)} off list price` : 'after discounts'}/>
+            <UserPageStat label="Chapters owned" value={String(spend.paid_chapters || 0)}
+                       color="var(--notati-amber)" sub="paid chapters"/>
+            <UserPageStat label="Orders" value={String(spend.orders_paid || 0)}
+                       color="var(--notati-forest)"
+                       sub={spend.orders_pending ? `${spend.orders_pending} still pending` : 'paid'}/>
+            <UserPageStat label="Last bought"
+                       value={spend.last_purchase ? fmtDate(spend.last_purchase) : '—'}
+                       sub={spend.first_purchase ? `first ${fmtDate(spend.first_purchase)}` : 'never bought'}/>
+          </div>
+
+          {/* What they own */}
+          <UserPageSection title="Chapters owned"
+                        note={spend.free_chapters_held
+                              ? `paid chapters only · ${spend.free_chapters_held} free chapter${spend.free_chapters_held !== 1 ? 's' : ''} also held`
+                              : 'paid chapters only'}>
+            {(data.chapters || []).length === 0 ? (
+              <p style={{ color: 'var(--fg-3)', fontSize: 13, margin: 0 }}>
+                Hasn't bought anything yet.
+              </p>
+            ) : (
+              <div className="scroll-table">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>Chapter</th>
+                      <th>Semester</th>
+                      <th>How</th>
+                      <th className="r">Paid</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.chapters.map(c => (
+                      <tr key={c.id}>
+                        <td data-l="Chapter">
+                          <span style={{ font: 'var(--type-body-bold)' }}>{c.course_name}</span>
+                          {' '}Ch.{c.chapter_number}
+                          <span style={{ color: 'var(--fg-3)' }}>: {c.chapter_title}</span>
+                        </td>
+                        <td data-l="Semester" style={{ whiteSpace: 'nowrap', color: 'var(--fg-2)' }}>
+                          {c.semester || '—'}
+                        </td>
+                        <td data-l="How">
+                          <span className={`tag ${c.source === 'hand' ? 'tag-soft' : 'tag-bark'}`}>
+                            {c.source === 'hand' ? 'By hand' : 'Bought'}
+                          </span>
+                        </td>
+                        <td className="r" data-l="Paid" style={{ whiteSpace: 'nowrap' }}>
+                          {bd(c.paid)}
+                          {Number(c.paid) !== Number(c.list_price) && (
+                            <div style={{ fontSize: 11, color: 'var(--fg-3)' }}>
+                              lists at {bd(c.list_price)}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </UserPageSection>
+
+          {/* Their orders */}
+          {(data.orders || []).length > 0 && (
+            <UserPageSection title="Orders">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {data.orders.map(o => (
+                  <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between',
+                                           alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                                           padding: '8px 12px', background: 'var(--bg-section)',
+                                           border: '1px solid var(--border-1)',
+                                           borderRadius: 'var(--r-4)', fontSize: 13 }}>
+                    <span style={{ color: 'var(--fg-2)' }}>
+                      <strong style={{ color: 'var(--fg-1)' }}>#{o.id}</strong>
+                      {o.code ? ` · ${o.code}` : ''} · {o.item_count} chapter{o.item_count !== 1 ? 's' : ''}
+                      {o.discount_code ? ` · code ${o.discount_code}` : ''}
+                      <span style={{ color: 'var(--fg-3)' }}> · {fmtDate(o.paid_at || o.created_at)}</span>
+                    </span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10,
+                                   whiteSpace: 'nowrap' }}>
+                      <span style={{ ...ORDER_STATUS_STYLE[o.status], font: 'var(--type-label)', fontSize: 10,
+                                     padding: '2px 9px', borderRadius: 'var(--r-pill)',
+                                     textTransform: 'uppercase' }}>
+                        {o.status}
+                      </span>
+                      <strong>{bd(o.total)}</strong>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </UserPageSection>
+          )}
+
+          {/* What they actually read */}
+          <UserPageSection title="Activity">
+            <p style={{ color: 'var(--fg-2)', fontSize: 13, margin: 0, lineHeight: 1.7 }}>
+              Opened <strong>{act.chapters_opened || 0}</strong> chapter{act.chapters_opened !== 1 ? 's' : ''}
+              {' '}({act.opens || 0} time{act.opens !== 1 ? 's' : ''} in all)
+              {act.previews ? <>, previewed <strong>{act.previews}</strong></> : null}.
+              {act.last_seen ? <> Last seen {fmtDate(act.last_seen)}.</> : <> Has never opened a chapter.</>}
+              {act.uploads ? <> Sent in <strong>{act.uploads}</strong> upload{act.uploads !== 1 ? 's' : ''}
+                {act.uploads_approved ? ` (${act.uploads_approved} published)` : ''}.</> : null}
+            </p>
+          </UserPageSection>
+
+          {/* Their review */}
+          {data.review && (
+            <UserPageSection title="Their review"
+                          note={data.review.approved ? 'published' : 'waiting for approval'}>
+              <blockquote style={{ margin: 0, padding: '10px 14px', fontSize: 13,
+                                   borderLeft: '3px solid var(--notati-amber)',
+                                   background: 'var(--bg-section)', color: 'var(--fg-2)' }}>
+                {data.review.rating ? (
+                  <div style={{ color: 'var(--notati-amber)', marginBottom: 4 }}>
+                    {'★'.repeat(data.review.rating)}{'☆'.repeat(5 - data.review.rating)}
+                  </div>
+                ) : null}
+                {data.review.text}
+                <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 6 }}>
+                  {data.review.course ? `${data.review.course} · ` : ''}{fmtDate(data.review.created_at)}
+                </div>
+              </blockquote>
+            </UserPageSection>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function UsersList({ topbarSearch }) {
   const [users,       setUsers]       = useStateAd([]);
   const [uploads,     setUploads]     = useStateAd([]);
@@ -1258,6 +1489,9 @@ function UsersList({ topbarSearch }) {
   const [role,        setRole]        = useStateAd('all');
   const [emailTarget, setEmailTarget] = useStateAd(null);
   const [showBroadcast, setShowBroadcast] = useStateAd(false);
+  // Which student's page is open. Held as an id, not the row, so the page
+  // always shows what the server says rather than the stale list row.
+  const [openUser,    setOpenUser]    = useStateAd(null);
   // Click a column to sort by it; click again to flip the direction. Name
   // ascending is where the list has always opened, so that stays the default.
   const [sortKey, setSortKey] = useStateAd('name');
@@ -1378,7 +1612,9 @@ function UsersList({ topbarSearch }) {
                   {filtered.map(u => {
                     const ups = uploadCount[u.id] || 0;
                     return (
-                      <tr key={u.id}>
+                      <tr key={u.id} style={{ cursor: 'pointer' }}
+                          title="Open this student"
+                          onClick={() => setOpenUser(u.id)}>
                         <td data-l="Name">
                           <div className="uploader-cell">
                             <span className="avatar-sm">{u.name.charAt(0)}</span>
@@ -1400,7 +1636,7 @@ function UsersList({ topbarSearch }) {
                         <td>
                           {u.role !== 'admin' && (
                             <button className="btn-icon" title="Send email"
-                                    onClick={() => setEmailTarget(u)}>
+                                    onClick={(e) => { e.stopPropagation(); setEmailTarget(u); }}>
                               <Icons.Mail size={15}/>
                             </button>
                           )}
@@ -1415,6 +1651,8 @@ function UsersList({ topbarSearch }) {
         </div>
       </section>
 
+      <UserDetailModal userId={openUser} onClose={() => setOpenUser(null)}
+                       onEmail={(u) => { setOpenUser(null); setEmailTarget(u); }}/>
       <SendEmailModal user={emailTarget} onClose={() => setEmailTarget(null)}/>
       {showBroadcast && (
         <BroadcastEmailModal studentCount={studentCount} onClose={() => setShowBroadcast(false)}/>
@@ -1467,11 +1705,6 @@ function OrdersManager() {
     { id: 'cancelled', label: 'Cancelled' },
     { id: 'all',       label: 'All' },
   ];
-  const STATUS_STYLE = {
-    pending:   { background: 'var(--notati-bark, #8a6d3b)', color: 'var(--notati-paper)' },
-    paid:      { background: 'var(--notati-forest)',        color: 'var(--notati-paper)' },
-    cancelled: { background: 'var(--bg-card-2)',            color: 'var(--fg-3)' },
-  };
 
   const needle = q.trim().toLowerCase();
   const shown = needle
@@ -1544,7 +1777,7 @@ function OrdersManager() {
                     </div>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <span style={{ ...STATUS_STYLE[o.status], font: 'var(--type-label)', fontSize: 10,
+                    <span style={{ ...ORDER_STATUS_STYLE[o.status], font: 'var(--type-label)', fontSize: 10,
                                    padding: '3px 10px', borderRadius: 'var(--r-pill)', textTransform: 'uppercase' }}>
                       {o.status}
                     </span>

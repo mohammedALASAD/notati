@@ -828,6 +828,142 @@ class AdminUserDetailView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAdmin]
 
 
+class AdminUserProfileView(APIView):
+    """Everything known about one student, on one page.
+
+    The money here has to agree with Insights and the sales record, so a
+    chapter is valued exactly the way `admin_sales` values it: the net price
+    from the paid order that bought it, failing that the price frozen on the
+    grant, failing that today's list price (only for grants older than that
+    field). Anything else and the same student would be worth one number here
+    and a different one on the Sales page."""
+    permission_classes = [IsAdmin]
+
+    def get(self, request, pk):
+        from django.db.models import Count, Max
+
+        user = User.objects.filter(pk=pk, is_active=True).first()
+        if not user:
+            return Response({'detail': 'No such user.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        orders = list(Order.objects.filter(user=user)
+                      .prefetch_related('items').order_by('-created_at'))
+        # What each chapter in a *paid* order actually cost, discount included.
+        # Keyed by note: a student can only hold one grant per chapter, so a
+        # repeat purchase of the same chapter can't happen.
+        paid_unit = {}
+        for order in orders:
+            if order.status != 'paid':
+                continue
+            nets = order.line_nets()
+            for it in order.items.all():
+                if it.note_id:
+                    paid_unit[it.note_id] = nets.get(it.pk, it.price or Decimal('0'))
+
+        grants = (Access.objects.filter(user=user)
+                  .select_related('note__course', 'semester')
+                  .order_by('note__course__name', 'note__chapter_number'))
+
+        chapters, spent, listed, free_held = [], Decimal('0'), Decimal('0'), 0
+        for g in grants:
+            note = g.note
+            if note.is_free:
+                # A grant on a chapter that is free today — it was paid for and
+                # later made free, or granted before the price was dropped.
+                # It cost nothing now, so it stays out of the spend.
+                free_held += 1
+                continue
+            unit = paid_unit.get(note.id)
+            # No paid order line for it means the admin unlocked it by hand.
+            bought = unit is not None
+            if unit is None:
+                unit = g.price if g.price is not None else note.price
+            spent += unit
+            listed += note.price
+            chapters.append({
+                'id': note.id,
+                'course_name': note.course.name,
+                'college': note.course.college,
+                'chapter_number': note.chapter_number,
+                'chapter_title': note.chapter_title,
+                'list_price': str(note.price),
+                'paid': f'{unit:.3f}',
+                'source': 'order' if bought else 'hand',
+                'semester': g.semester.label if g.semester else '',
+                'granted_at': g.granted_at,
+            })
+
+        paid_orders = [o for o in orders if o.status == 'paid']
+        paid_dates = [o.paid_at or o.created_at for o in paid_orders]
+
+        # Reading activity: how much of what they hold they actually open.
+        log = DownloadLog.objects.filter(user=user, note__isnull=False)
+        activity = log.aggregate(
+            opens=Count('id', filter=Q(kind='open')),
+            chapters_opened=Count('note_id', distinct=True, filter=Q(kind='open')),
+            previews=Count('id', filter=Q(kind='preview')),
+            last_seen=Max('created_at'),
+        )
+
+        review = user.testimonials.order_by('-created_at').first()
+        uploads = Upload.objects.filter(user=user)
+
+        return Response({
+            'id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'phone': user.phone,
+            'college': user.college,
+            'role': user.role,
+            'joined_at': user.created_at,
+            'spend': {
+                # What they actually handed over, after every discount.
+                'total': f'{spent:.3f}',
+                # What the same chapters list at today — the gap is what
+                # discounts and price changes have given away.
+                'list_total': f'{listed:.3f}',
+                'saved': f'{listed - spent:.3f}',
+                'paid_chapters': len(chapters),
+                'free_chapters_held': free_held,
+                'orders_paid': len(paid_orders),
+                'orders_pending': sum(1 for o in orders if o.status == 'pending'),
+                'orders_cancelled': sum(1 for o in orders if o.status == 'cancelled'),
+                'first_purchase': min(paid_dates) if paid_dates else None,
+                'last_purchase': max(paid_dates) if paid_dates else None,
+            },
+            'chapters': chapters,
+            'orders': [{
+                'id': o.id,
+                'code': o.code,
+                'status': o.status,
+                'subtotal': str(o.subtotal),
+                'discount_code': o.discount_code,
+                'discount_amount': str(o.discount_amount or 0),
+                'total': str(o.total),
+                'item_count': len(o.items.all()),
+                'created_at': o.created_at,
+                'paid_at': o.paid_at,
+            } for o in orders],
+            'activity': {
+                'opens': activity['opens'] or 0,
+                'chapters_opened': activity['chapters_opened'] or 0,
+                'previews': activity['previews'] or 0,
+                'last_seen': activity['last_seen'],
+                'uploads': uploads.count(),
+                'uploads_approved': uploads.filter(status='approved').count(),
+            },
+            'review': {
+                'id': review.id,
+                'rating': review.rating,
+                'text': review.text,
+                'course': review.course,
+                'approved': review.approved,
+                'created_at': review.created_at,
+            } if review else None,
+        })
+
+
 # ── Stats (admin dashboard) ───────────────────────────────────────────────────
 
 @api_view(['GET'])
