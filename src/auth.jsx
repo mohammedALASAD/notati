@@ -324,7 +324,7 @@ function SignupView({ onAuth, switchTo, onGuest, darkMode, onThemeToggle }) {
             <label htmlFor="name">Full name</label>
             <input id="name" autoFocus value={name}
                    onChange={(e) => setName(e.target.value)}
-                   placeholder="Mariam Al-Khalifa" required/>
+                   placeholder="Student" required/>
           </div>
           <div className="field">
             <label htmlFor="email2">Email</label>
