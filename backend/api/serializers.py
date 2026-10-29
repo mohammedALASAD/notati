@@ -289,6 +289,10 @@ class UploadSerializer(serializers.ModelSerializer):
     user_name     = serializers.CharField(source='user.name', read_only=True)
     file_url      = serializers.SerializerMethodField()
     auto_delete_at = serializers.SerializerMethodField()
+    # How many files actually arrived. Zero means the submission is empty and
+    # there is nothing to publish from it — the admin needs to see that in the
+    # list, not discover it after opening the dialog.
+    file_count    = serializers.SerializerMethodField()
 
     class Meta:
         model = Upload
@@ -296,9 +300,16 @@ class UploadSerializer(serializers.ModelSerializer):
             'id', 'user', 'user_email', 'user_name',
             'file', 'file_url', 'title', 'description',
             'college', 'course_name', 'chapter_number', 'chapter_title',
-            'status', 'note', 'delete_after', 'auto_delete_at', 'created_at',
+            'status', 'note', 'delete_after', 'auto_delete_at', 'file_count',
+            'created_at',
         ]
-        read_only_fields = ['id', 'user', 'status', 'note', 'auto_delete_at', 'created_at']
+        read_only_fields = ['id', 'user', 'status', 'note', 'auto_delete_at',
+                            'file_count', 'created_at']
+
+    def get_file_count(self, obj):
+        # Counts the legacy single file too, so an old submission that predates
+        # the files table isn't reported as empty.
+        return obj.files.count() + (1 if obj.file else 0)
 
     def get_auto_delete_at(self, obj):
         return obj.auto_delete_at().isoformat()

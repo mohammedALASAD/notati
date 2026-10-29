@@ -172,6 +172,7 @@
       sizeKB:        0,
       noteId:        u.note ? String(u.note) : null,
       uploadedAt:    u.created_at,
+      fileCount:     u.file_count == null ? null : Number(u.file_count),
       deleteAfter:   u.delete_after || null,
       autoDeleteAt:  u.auto_delete_at || null,
     };

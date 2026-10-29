@@ -5,7 +5,8 @@ import urllib.request
 from decimal import Decimal, ROUND_HALF_UP
 from rest_framework import generics, status, filters
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import (AuthenticationFailed, PermissionDenied,
+                                      ValidationError as DRFValidationError)
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,6 +21,9 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.conf import settings
+
+
 def health(request):
     return JsonResponse({'status': 'ok'})
 from .models import (
@@ -52,6 +56,43 @@ def _cleanup_expired_uploads():
     )
     for upload in expired:
         upload.delete()  # post_delete signal cleans up Cloudinary files
+
+
+# ── Student submissions ───────────────────────────────────────────────────────
+# A submission is the file, not the form around it. Creating the Upload row
+# first and attaching the files afterwards meant that when the second step
+# failed — a file over Cloudinary's limit, a dropped connection, a worker
+# recycled mid-request — the row survived with nothing in it. The admin saw a
+# submission in the inbox, opened it, and found no file; the student saw an
+# error and submitted again, leaving another empty row behind. So the whole
+# submission is now made in one request, inside one transaction.
+
+def _upload_file_error(f):
+    """Why this file can't be accepted, or None if it can.
+
+    Checked here as well as in the browser: the browser copy is there to fail
+    fast, this one is there because a stale page or a direct POST can skip it."""
+    max_mb = getattr(settings, 'MAX_UPLOAD_MB', 10)
+    allowed = getattr(settings, 'ALLOWED_UPLOAD_EXTENSIONS', ['pdf', 'pptx', 'docx'])
+    name = getattr(f, 'name', '') or 'file'
+    ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+    if ext not in allowed:
+        pretty = ', '.join('.' + e for e in allowed)
+        return f'"{name}" is not a kind of file we can use. We accept {pretty}.'
+    size = getattr(f, 'size', 0) or 0
+    if size > max_mb * 1024 * 1024:
+        return (f'"{name}" is {size / (1024 * 1024):.1f} MB. '
+                f'The largest file we can take is {max_mb} MB — '
+                f'please compress it or split it into parts.')
+    if size == 0:
+        return f'"{name}" is empty.'
+    return None
+
+
+# A submission that arrived with no file is kept, not swept: it is the only
+# trace that a student tried and we lost it, and deleting it would also delete
+# the course and chapter they typed. The admin list marks it instead, and the
+# admin decides whether to chase the student or bin it.
 
 
 # Pending orders older than this are auto-cancelled so the admin's Pending list
@@ -696,6 +737,22 @@ class UploadFileListCreateView(generics.ListCreateAPIView):
     serializer_class = UploadFileSerializer
     permission_classes = [IsAuthenticated]
 
+    def perform_create(self, serializer):
+        """Attach a file to a submission that is yours, if we can accept it.
+
+        The form sends its files with the submission now, so this is the path
+        for adding one to a submission that already exists. It used to take
+        any upload id at all, which let one student bolt a file onto another
+        student's submission."""
+        upload = serializer.validated_data.get('upload')
+        user = self.request.user
+        if upload and user.role != 'admin' and upload.user_id != user.id:
+            raise PermissionDenied('That submission is not yours.')
+        problem = _upload_file_error(serializer.validated_data.get('file'))
+        if problem:
+            raise DRFValidationError({'detail': problem})
+        serializer.save()
+
     def get_queryset(self):
         user = self.request.user
         qs = UploadFile.objects.select_related('upload').all()
@@ -779,17 +836,62 @@ class UploadListCreateView(generics.ListCreateAPIView):
         user = self.request.user
         if user.role == 'admin':
             _cleanup_expired_uploads()
-            return Upload.objects.select_related('user').all()
-        return Upload.objects.filter(user=user)
+            return Upload.objects.select_related('user').prefetch_related('files').all()
+        return Upload.objects.filter(user=user).prefetch_related('files')
 
     def get_serializer_class(self):
         if self.request.user.role == 'admin':
             return UploadAdminSerializer
         return UploadSerializer
 
-    def perform_create(self, serializer):
-        upload = serializer.save()
-        _alert_admin_of_activity('upload', self.request.user, upload)
+    def create(self, request, *args, **kwargs):
+        """Take the whole submission — details and files — in one request.
+
+        The files arrive as repeated `files` parts, with their labels in the
+        matching `file_labels` parts. Everything is written inside one
+        transaction, so a file the storage refuses takes the submission row
+        down with it instead of leaving an empty one in the admin's inbox."""
+        files = request.FILES.getlist('files')
+        labels = request.data.getlist('file_labels') if hasattr(request.data, 'getlist') else []
+
+        # Reject the whole submission before writing anything, and name every
+        # bad file at once — fixing them one round-trip at a time is miserable.
+        problems = [msg for msg in (_upload_file_error(f) for f in files) if msg]
+        if problems:
+            return Response({'detail': ' '.join(problems)},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        stored = []
+        try:
+            with transaction.atomic():
+                upload = serializer.save()
+                for i, f in enumerate(files):
+                    uf = UploadFile.objects.create(
+                        upload=upload, file=f,
+                        label=(labels[i] if i < len(labels) else '') or '')
+                    stored.append(uf.file)
+        except Exception as exc:
+            # The rows are gone with the transaction; the bytes may already be
+            # at the storage provider, so take those back too rather than
+            # leaving them to be paid for and never used.
+            for f in stored:
+                try:
+                    f.storage.delete(f.name)
+                except Exception:
+                    pass
+            return Response(
+                {'detail': 'We could not store your file, so nothing was saved. '
+                           'Please try again — if it keeps failing, email us and '
+                           f'we will take it by hand. ({exc.__class__.__name__})'},
+                status=status.HTTP_502_BAD_GATEWAY)
+
+        # Only now is there something for the admin to look at.
+        _alert_admin_of_activity('upload', request.user, upload)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class UploadDetailView(generics.RetrieveUpdateDestroyAPIView):

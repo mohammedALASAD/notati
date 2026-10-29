@@ -96,6 +96,15 @@ if _cloudinary_cloud:
     }
     DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.RawMediaCloudinaryStorage'
 
+# The largest file a student may send us. Cloudinary's free plan refuses raw
+# files over 10 MB, and a refusal that arrives after a four-minute upload is
+# worse than a refusal that arrives before it starts — so the browser and the
+# server both check against this figure first. Raise it here (and on the plan)
+# together, never one without the other.
+MAX_UPLOAD_MB = config('MAX_UPLOAD_MB', default=10, cast=int)
+# What we can actually turn into notes.
+ALLOWED_UPLOAD_EXTENSIONS = ['pdf', 'pptx', 'docx']
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ── Django REST Framework ──────────────────────────────────────────────────────

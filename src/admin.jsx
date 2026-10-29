@@ -359,7 +359,15 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
                             );
                           })()}
                         </td>
-                        <td data-l="Status"><StatusBadge status={up.status}/></td>
+                        <td data-l="Status">
+                          {up.fileCount === 0 && !up.fileUrl ? (
+                            <span className="tag" title="The student's file never reached us — nothing here can be published"
+                                  style={{ background: 'rgba(176, 58, 58, .14)',
+                                         color: 'var(--notati-crimson)', whiteSpace: 'nowrap' }}>
+                              No file
+                            </span>
+                          ) : <StatusBadge status={up.status}/>}
+                        </td>
                         <td className="r" data-l="Actions">
                           <div className="row-actions">
                             {up.fileUrl ? (<>
@@ -370,8 +378,13 @@ function ContentInbox({ user, onPublish, topbarSearch }) {
                                 <Icons.Download size={15}/>
                               </button>
                             </>) : (
-                              <button className="btn btn-soft btn-sm" onClick={() => setViewFilesUpload(up)} title="View submitted files">
+                              <button className="btn btn-soft btn-sm" onClick={() => setViewFilesUpload(up)}
+                                      disabled={up.fileCount === 0}
+                                      title={up.fileCount === 0
+                                              ? 'Nothing was attached to this submission'
+                                              : 'View submitted files'}>
                                 <Icons.File size={13}/> Files
+                                {up.fileCount > 1 && <span style={{ opacity: .7 }}> ({up.fileCount})</span>}
                               </button>
                             )}
                             {up.status === 'pending'
@@ -545,7 +558,12 @@ function ViewUploadFilesModal({ open, upload, onClose }) {
            footer={<button className="btn btn-ghost" onClick={onClose}>Close</button>}>
       {loading ? <PageLoader rows={3}/> : files.length === 0 ? (
         <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
-          No files found for this submission.
+          <strong style={{ color: 'var(--notati-crimson)' }}>Nothing was attached to this submission.</strong>
+          <div style={{ marginTop: 6, color: 'var(--fg-2)', textAlign: 'left', lineHeight: 1.7 }}>
+            The student filled in the form but their file never reached our storage —
+            usually because it was larger than we can accept. There is nothing here to
+            publish. Email them and ask for the file again, or for a smaller version.
+          </div>
         </div>
       ) : files.map((f, i) => {
         const ext = f.file ? (String(f.file).split('.').pop() || '').toLowerCase() : '';

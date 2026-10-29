@@ -20,6 +20,17 @@ const COLLEGES = [
   'College of Science'
 ];
 
+// The largest file our storage will take. Kept in step with MAX_UPLOAD_MB on
+// the server — the server is the one that enforces it; this copy exists so a
+// student is told before a long upload rather than after it.
+const MAX_UPLOAD_MB = 10;
+
+function fileTooBig(f) {
+  if (!f || !f.size || f.size <= MAX_UPLOAD_MB * 1024 * 1024) return '';
+  return `"${f.name}" is ${(f.size / (1024 * 1024)).toFixed(1)} MB. The largest file `
+       + `we can take is ${MAX_UPLOAD_MB} MB — please compress it or split it into parts.`;
+}
+
 const CONTACT = {
   benefitpay:   '+973 3930 9797',
   whatsapp:     '97339309797',
@@ -978,6 +989,8 @@ function UploadContent({ user, onDone }) {
     if (!['pdf', 'pptx', 'docx'].includes(ext)) {
       setErr('We only accept .pdf, .pptx, or .docx for now.'); return;
     }
+    const big = fileTooBig(f);
+    if (big) { setErr(big); return; }
     setErr('');
     setPendingFiles(prev => prev.map((pf, i) => i === pickingForIdx ? { ...pf, file: f } : pf));
     setPickingForIdx(null);
@@ -998,6 +1011,10 @@ function UploadContent({ user, onDone }) {
     if (!chapterNumber.trim()) { setErr('Enter the chapter number.');  setBusy(false); return; }
     if (!chapterTitle.trim())  { setErr('Enter the chapter title.');   setBusy(false); return; }
     if (pickedFiles.length === 0) { setErr('Add at least one file before submitting.'); setBusy(false); return; }
+    // Catch an oversized file here rather than after a long upload that the
+    // storage was always going to refuse.
+    const tooBig = pickedFiles.map(pf => fileTooBig(pf.file)).filter(Boolean);
+    if (tooBig.length) { setErr(tooBig.join(' ')); setBusy(false); return; }
     try {
       const fd = new FormData();
       fd.append('title', `${courseName} - Ch.${chapterNumber}: ${chapterTitle}`);
@@ -1006,10 +1023,15 @@ function UploadContent({ user, onDone }) {
       fd.append('course_name', courseName);
       fd.append('chapter_number', chapterNumber);
       fd.append('chapter_title', chapterTitle);
-      const upload = await NotatiAPI.submitUpload(fd);
+      // The files travel with the submission. Sent separately, a file the
+      // server refused used to leave an empty submission behind in the admin's
+      // inbox — the student saw an error, the admin saw a file that was never
+      // there. One request means it either all lands or none of it does.
       for (const pf of pickedFiles) {
-        await NotatiAPI.addUploadFile(upload.id, pf.file, pf.label);
+        fd.append('files', pf.file);
+        fd.append('file_labels', pf.label || '');
       }
+      await NotatiAPI.submitUpload(fd);
       toast.success('Submitted for review', "We will be in touch when your Note is ready.");
       clearForm();
       setTimeout(() => { setBusy(false); onDone && onDone(); }, 300);
@@ -1068,8 +1090,9 @@ function UploadContent({ user, onDone }) {
                              background: 'var(--bg-card)', color: 'var(--fg-1)' }}/>
                   {pf.file ? (
                     <span style={{ fontSize: 12, color: 'var(--fg-3)', whiteSpace: 'nowrap',
-                                   maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                   maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {pf.file.name}
+                      <span style={{ opacity: .75 }}> · {(pf.file.size / (1024 * 1024)).toFixed(1)} MB</span>
                     </span>
                   ) : (
                     <button type="button" className="btn btn-soft btn-sm"
@@ -1090,6 +1113,10 @@ function UploadContent({ user, onDone }) {
                 </div>
               ))
             )}
+            <p style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 10, marginBottom: 0 }}>
+              .pdf, .pptx or .docx, up to {MAX_UPLOAD_MB} MB each. Bigger than that?
+              Split it by chapter, or send it to us on WhatsApp.
+            </p>
             <input ref={fileInputRef} type="file" style={{ display: 'none' }}
                    accept=".pdf,.pptx,.docx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                    onChange={handleFilePicked}/>

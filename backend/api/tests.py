@@ -3196,3 +3196,172 @@ class UserProfilePageTests(TestCase):
             c.get(f'/api/admin/users/{self.student.id}/profile/')
         # Generous, but it catches a loop over chapters or orders.
         self.assertLess(len(ctx.captured_queries), 15, len(ctx.captured_queries))
+
+
+class SubmissionIsAllOrNothingTests(TestCase):
+    """A submission the admin can see must have a file in it.
+
+    Six of the first seven real submissions arrived empty: the Upload row was
+    written first and the files were sent afterwards, so when the second step
+    failed the row stayed. The student saw an error and tried again — one of
+    them four times — and the admin opened an inbox full of submissions with
+    nothing inside them."""
+
+    def setUp(self):
+        self.student = User.objects.create_user('sara@x.com', 'pw', name='Sara')
+        self.admin = User.objects.create_user('admin@x.com', 'pw', name='Admin',
+                                              role='admin')
+
+    def _c(self, user=None):
+        c = APIClient(); c.force_authenticate(user or self.student); return c
+
+    def _form(self, files=None, labels=None):
+        data = {'title': 'ACC231 - Ch.1: Demand for Audit', 'description': '',
+                'college': 'College of Business Administration',
+                'course_name': 'ACC231', 'chapter_number': '1',
+                'chapter_title': 'Demand for Audit'}
+        if files:
+            data['files'] = files
+        if labels:
+            data['file_labels'] = labels
+        return data
+
+    def _pdf(self, name='notes.pdf', size=1024):
+        return SimpleUploadedFile(name, b'x' * size, content_type='application/pdf')
+
+    # ── the happy path ────────────────────────────────────────────────────
+
+    def test_the_file_arrives_with_the_submission_in_one_request(self):
+        resp = self._c().post('/api/uploads/', self._form(files=[self._pdf()]),
+                              format='multipart')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        upload = Upload.objects.get(pk=resp.data['id'])
+        self.assertEqual(upload.files.count(), 1)
+        self.assertEqual(resp.data['file_count'], 1)
+
+    def test_several_files_keep_the_labels_they_were_sent_with(self):
+        resp = self._c().post('/api/uploads/',
+                              self._form(files=[self._pdf('a.pdf'), self._pdf('b.pdf')],
+                                         labels=['Slides', 'Reading']),
+                              format='multipart')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        upload = Upload.objects.get(pk=resp.data['id'])
+        self.assertEqual([f.label for f in upload.files.all()], ['Slides', 'Reading'])
+
+    # ── the failure that actually happened ────────────────────────────────
+
+    def test_a_file_the_storage_refuses_leaves_no_submission_behind(self):
+        before = Upload.objects.count()
+        with patch.object(UploadFile.objects, 'create',
+                          side_effect=OSError('Cloudinary said no')):
+            resp = self._c().post('/api/uploads/', self._form(files=[self._pdf()]),
+                                  format='multipart')
+        self.assertEqual(resp.status_code, 502)
+        self.assertEqual(Upload.objects.count(), before)   # nothing left behind
+
+    def test_the_admin_is_not_emailed_about_a_submission_that_failed(self):
+        with patch('api.views._alert_admin_of_activity') as alert:
+            with patch.object(UploadFile.objects, 'create',
+                              side_effect=OSError('Cloudinary said no')):
+                self._c().post('/api/uploads/', self._form(files=[self._pdf()]),
+                               format='multipart')
+            alert.assert_not_called()
+
+    def test_the_admin_is_emailed_once_the_files_are_safely_stored(self):
+        with patch('api.views._alert_admin_of_activity') as alert:
+            self._c().post('/api/uploads/', self._form(files=[self._pdf()]),
+                           format='multipart')
+            self.assertEqual(alert.call_count, 1)
+
+    # ── saying no early, and saying why ───────────────────────────────────
+
+    def test_a_file_over_the_limit_is_refused_before_anything_is_written(self):
+        big = SimpleUploadedFile('huge.pdf', b'x' * (11 * 1024 * 1024),
+                                 content_type='application/pdf')
+        before = Upload.objects.count()
+        resp = self._c().post('/api/uploads/', self._form(files=[big]),
+                              format='multipart')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('11.0 MB', resp.data['detail'])
+        self.assertIn('10 MB', resp.data['detail'])
+        self.assertEqual(Upload.objects.count(), before)
+
+    def test_every_bad_file_is_named_at_once_not_one_per_attempt(self):
+        big = SimpleUploadedFile('huge.pdf', b'x' * (11 * 1024 * 1024),
+                                 content_type='application/pdf')
+        wrong = SimpleUploadedFile('notes.txt', b'hello', content_type='text/plain')
+        resp = self._c().post('/api/uploads/', self._form(files=[big, wrong]),
+                              format='multipart')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('huge.pdf', resp.data['detail'])
+        self.assertIn('notes.txt', resp.data['detail'])
+
+    def test_a_file_type_we_cannot_use_is_refused(self):
+        bad = SimpleUploadedFile('notes.exe', b'MZ', content_type='application/exe')
+        resp = self._c().post('/api/uploads/', self._form(files=[bad]),
+                              format='multipart')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('.pdf', resp.data['detail'])
+
+    def test_an_empty_file_is_refused(self):
+        empty = SimpleUploadedFile('notes.pdf', b'', content_type='application/pdf')
+        resp = self._c().post('/api/uploads/', self._form(files=[empty]),
+                              format='multipart')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('empty', resp.data['detail'])
+
+    # ── what the admin sees ───────────────────────────────────────────────
+
+    def test_the_admin_list_reports_how_many_files_each_submission_has(self):
+        self._c().post('/api/uploads/',
+                       self._form(files=[self._pdf('a.pdf'), self._pdf('b.pdf')]),
+                       format='multipart')
+        rows = self._c(self.admin).get('/api/uploads/').data
+        rows = rows['results'] if isinstance(rows, dict) else rows
+        self.assertEqual(rows[0]['file_count'], 2)
+
+    def test_an_empty_submission_is_reported_as_empty_not_hidden(self):
+        # The six real ones are kept deliberately: they are the only record
+        # that a student tried and we lost it. The list has to say so.
+        orphan = Upload.objects.create(user=self.student, title='Empty one')
+        rows = self._c(self.admin).get('/api/uploads/').data
+        rows = rows['results'] if isinstance(rows, dict) else rows
+        mine = next(r for r in rows if r['id'] == orphan.pk)
+        self.assertEqual(mine['file_count'], 0)
+
+    def test_nothing_deletes_an_empty_submission_behind_the_admins_back(self):
+        orphan = Upload.objects.create(user=self.student, title='Empty one')
+        Upload.objects.filter(pk=orphan.pk).update(
+            created_at=timezone.now() - timedelta(days=2))
+        self._c(self.admin).get('/api/uploads/')
+        self._c(self.admin).get('/api/uploads/')
+        self.assertTrue(Upload.objects.filter(pk=orphan.pk).exists())
+
+    # ── attaching a file afterwards ───────────────────────────────────────
+
+    def test_you_cannot_bolt_a_file_onto_someone_elses_submission(self):
+        other = User.objects.create_user('omar@x.com', 'pw', name='Omar')
+        mine = Upload.objects.create(user=self.student, title='Mine')
+        resp = self._c(other).post('/api/upload-files/',
+                                   {'upload': mine.pk, 'file': self._pdf(), 'label': ''},
+                                   format='multipart')
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(mine.files.count(), 0)
+
+    def test_adding_a_file_later_is_held_to_the_same_limit(self):
+        mine = Upload.objects.create(user=self.student, title='Mine')
+        big = SimpleUploadedFile('huge.pdf', b'x' * (11 * 1024 * 1024),
+                                 content_type='application/pdf')
+        resp = self._c().post('/api/upload-files/',
+                              {'upload': mine.pk, 'file': big, 'label': ''},
+                              format='multipart')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(mine.files.count(), 0)
+
+    def test_adding_a_file_to_your_own_submission_still_works(self):
+        mine = Upload.objects.create(user=self.student, title='Mine')
+        resp = self._c().post('/api/upload-files/',
+                              {'upload': mine.pk, 'file': self._pdf(), 'label': 'Extra'},
+                              format='multipart')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(mine.files.count(), 1)
