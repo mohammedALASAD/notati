@@ -92,7 +92,7 @@ class CourseSerializer(serializers.ModelSerializer):
         vs 'ITIS103'), a lowercase copy, a code typed with extra digits
         ('ITIS10333'), and the plain code of a course that is now listed with
         its merged partners ('ACC112' vs 'ACC112 / ACA112')."""
-        from .workbook import _course_key
+        from .history import _course_key
         value = ' '.join((value or '').split())          # tidy the whitespace only
         if not value:
             raise serializers.ValidationError('Give the course a name.')
@@ -129,14 +129,35 @@ def _file_url(file_field, request=None):
 
 class NoteFileSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
+    preview  = serializers.SerializerMethodField()
 
     class Meta:
         model = NoteFile
-        fields = ['id', 'note', 'label', 'file', 'file_url', 'order', 'created_at']
+        fields = ['id', 'note', 'label', 'file', 'file_url', 'preview', 'order', 'created_at']
         read_only_fields = ['id', 'created_at']
 
     def get_file_url(self, obj):
         return _file_url(obj.file, self.context.get('request'))
+
+    def get_preview(self, obj):
+        """A link that opens this file in a browser tab, through our server.
+
+        `file_url` points straight at Cloudinary, and this account refuses
+        direct PDF delivery — the link answers 401 with an empty body, which
+        Safari shows as a blank white page. Going through our download view
+        uses Cloudinary's private API instead, which it does allow. Only for
+        someone who may read the file; the token stands in for the login,
+        which a plain link can't carry."""
+        from . import downloads
+        request = self.context.get('request')
+        user = request.user if request and request.user.is_authenticated else None
+        if not obj.file or not user:
+            return None
+        note = obj.note
+        if user.role != 'admin' and not note.is_free \
+                and not note.access_grants.filter(user=user).exists():
+            return None
+        return downloads.link(f'note-files/{obj.id}/download/', user, 'file', obj.id) + '&inline=1'
 
 
 class UploadFileSerializer(serializers.ModelSerializer):
@@ -528,7 +549,15 @@ class SemesterSerializer(serializers.ModelSerializer):
         """Copies sold under this semester — shown so the admin can see which
         terms carry real data before renaming or deleting one. Counted the way
         the Sales page and the workbook count: one per access grant on a paid
-        chapter, plus whatever the hand-kept record has for the term."""
-        from .workbook import history_copies_for
-        live = Access.objects.filter(semester=obj, note__price__gt=0).count()
+        chapter, plus whatever the hand-kept record has for the term.
+
+        The list view hands every semester's count over in one query as
+        `sales_counts`; counting here one semester at a time was fourteen
+        queries every time Insights opened."""
+        from .history import history_copies_for
+        counts = self.context.get('sales_counts')
+        if counts is not None:
+            live = counts.get(obj.pk, 0)
+        else:
+            live = Access.objects.filter(semester=obj, note__price__gt=0).count()
         return live + (history_copies_for(obj.label) or 0)

@@ -254,7 +254,13 @@ def _note_file_response(file_field, request, note, user=None, label=''):
             pass
 
     response = HttpResponse(content, content_type=content_type)
-    response['Content-Disposition'] = content_disposition_header(True, filename)
+    # ?inline=1 asks to read it rather than save it: the browser shows the PDF
+    # in a tab. That is how Preview works on a phone — a real link the browser
+    # opens itself, where a JavaScript blob in a new tab is unreliable on iOS
+    # and impossible inside the Instagram and WhatsApp browsers.
+    inline = request.query_params.get('inline') in ('1', 'true') if hasattr(request, 'query_params') \
+        else request.GET.get('inline') in ('1', 'true')
+    response['Content-Disposition'] = content_disposition_header(not inline, filename)
     return response
 
 
@@ -1087,6 +1093,11 @@ def _semester_filter(request):
     raw = (request.query_params.get('semester') or '').strip()
     if not raw or raw == 'all':
         return None, True
+    # 'current' lets Insights ask for this term's numbers straight away,
+    # instead of first fetching the semester list just to learn its id.
+    if raw == 'current':
+        semester = Semester.current()
+        return semester, semester is not None
     semester = Semester.objects.filter(pk=raw).first() if raw.isdigit() else None
     return semester, semester is not None
 
@@ -1171,7 +1182,7 @@ def admin_sales(request):
     # The semesters before the website, from the hand-kept record, so picking
     # an old term shows what sold then and 'all semesters' really is all of
     # them. None for the website's own terms — the page reads as before.
-    from .workbook import history_for_insights
+    from .history import history_for_insights
     return Response({
         'total_revenue': f'{total_revenue:.3f}',          # net of discounts
         'total_gross_revenue': f'{total_gross:.3f}',
@@ -1322,10 +1333,16 @@ class SemesterListView(generics.ListCreateAPIView):
     queryset = Semester.objects.all()
 
     def list(self, request, *args, **kwargs):
+        from django.db.models import Count
         current = Semester.current()        # may advance itself past a start date
+        # Every semester's sales in one grouped query, not one query each.
+        counts = dict(Access.objects.filter(note__price__gt=0, semester__isnull=False)
+                      .values('semester').annotate(n=Count('id'))
+                      .values_list('semester', 'n'))
+        ctx = {'sales_counts': counts}
         return Response({
-            'current': SemesterSerializer(current).data if current else None,
-            'semesters': SemesterSerializer(self.get_queryset(), many=True).data,
+            'current': SemesterSerializer(current, context=ctx).data if current else None,
+            'semesters': SemesterSerializer(self.get_queryset(), many=True, context=ctx).data,
         })
 
     def perform_create(self, serializer):

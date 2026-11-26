@@ -836,12 +836,21 @@ function UploadNoteModal({ open, onClose, upload, user, onPublished, existingNot
             <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
               {ef.label || (ef.file ? String(ef.file).split('/').pop() : '') || 'File'}
             </span>
-            {ef.file_url && (
-              <a href={ef.file_url} target="_blank" rel="noopener noreferrer"
-                 className="btn btn-ghost btn-sm" title="Preview">
+            {/* Through our server, never straight to Cloudinary: this account
+                refuses direct PDF links, which answer with an empty 401 that
+                Safari shows as a blank white page. */}
+            {ef.preview ? (
+              <a href={NotatiAPI.apiUrl(ef.preview)} target="_blank" rel="noopener noreferrer"
+                 className="btn btn-ghost btn-sm" title="Open this file">
                 <Icons.Eye size={13}/>
               </a>
-            )}
+            ) : ef.id ? (
+              <button type="button" className="btn btn-ghost btn-sm" title="Open this file"
+                      onClick={() => NotatiAPI.previewNoteFileById(ef.id)
+                        .catch(e => toast.error('Could not open the file', e.message))}>
+                <Icons.Eye size={13}/>
+              </button>
+            ) : null}
             <button type="button" className="btn btn-danger btn-sm" title="Remove"
                     onClick={() => markDeleted(ef.id)}>
               <Icons.Trash size={13}/>
@@ -2320,11 +2329,32 @@ function TestimonialsManager() {
 /* ============================================================
    Sales View — revenue breakdown by college / course / chapter
    ============================================================ */
+// How many courses Insights draws at once. The rest wait behind 'Load more',
+// so opening a tab draws a screenful rather than every course and chapter.
+const INSIGHTS_PAGE = 15;
+
+/* The 'Load more' row under a long Insights list. */
+function LoadMoreRow({ colSpan, remaining, onMore, indent }) {
+  if (remaining <= 0) return null;
+  return (
+    <tr>
+      <td colSpan={colSpan} style={{ textAlign: 'center', padding: '10px 12px' }}>
+        <button className="btn btn-soft btn-sm" style={{ marginLeft: indent || 0 }}
+                onClick={e => { e.stopPropagation(); onMore(); }}>
+          Load more <span style={{ opacity: .7 }}>({remaining} more)</span>
+        </button>
+      </td>
+    </tr>
+  );
+}
+
 function SalesView({ salesData, loading, semesterLabel }) {
   const [collegeFilter,    setCollegeFilter]    = useStateAd('all');
   const [sortBy,           setSortBy]           = useStateAd('revenue');
   const [expandedColleges, setExpandedColleges] = useStateAd(() => new Set());
   const [expandedCourses,  setExpandedCourses]  = useStateAd(() => new Set());
+  // Courses drawn per opened college, before 'Load more'.
+  const [courseLimit,      setCourseLimit]      = useStateAd({});
 
   // The hand-kept record for the semesters before the website (null for the
   // website's own terms). Its course rows sit in the same tree as the live
@@ -2549,8 +2579,9 @@ function SalesView({ salesData, loading, semesterLabel }) {
                         </td>
                       </tr>
                     ];
+                    const limit = courseLimit[college] || INSIGHTS_PAGE;
                     if (colExpanded) {
-                      courseEntries.forEach(([course, coData]) => {
+                      courseEntries.slice(0, limit).forEach(([course, coData]) => {
                         const courseKey = `${college}::${course}`;
                         const coExpanded = expandedCourses.has(courseKey);
                         const chapters = [...coData.chapters].sort((a, b) => a.chapter_number - b.chapter_number);
@@ -2667,6 +2698,12 @@ function SalesView({ salesData, loading, semesterLabel }) {
                           });
                         }
                       });
+                      // The rest of this college's courses wait behind a button.
+                      rows.push(
+                        <LoadMoreRow key={`more-${college}`} colSpan={3} indent={24}
+                                     remaining={courseEntries.length - limit}
+                                     onMore={() => setCourseLimit(m => ({ ...m, [college]: limit + INSIGHTS_PAGE }))}/>
+                      );
                     }
                     return rows;
                   })}
@@ -2776,6 +2813,10 @@ function NoteViews({ semester }) {
   const [sortKey, setSortKey] = useStateAd('readers');
   const [sortDir, setSortDir] = useStateAd('desc');
   const [expanded, setExpanded] = useStateAd(() => new Set());
+  // Courses drawn before 'Load more'. A new filter or sort starts from the top.
+  const [shownCourses, setShownCourses] = useStateAd(INSIGHTS_PAGE);
+  useEffectAd(() => { setShownCourses(INSIGHTS_PAGE); },
+              [from, to, semester, college, priceF, q, sortKey, sortDir]);
 
   const hasRange = !!(from || to);
   // Today in the admin's own timezone — toISOString() would shift the date.
@@ -3027,7 +3068,7 @@ function NoteViews({ semester }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {grouped.map(g => {
+                  {grouped.slice(0, shownCourses).map(g => {
                     const open = expanded.has(g.course);
                     const rows = [
                       <tr key={`c-${g.course}`} onClick={() => toggleCourse(g.course)}
@@ -3123,6 +3164,8 @@ function NoteViews({ semester }) {
                     ));
                     return rows;
                   })}
+                  <LoadMoreRow colSpan={6} remaining={grouped.length - shownCourses}
+                               onMore={() => setShownCourses(n => n + INSIGHTS_PAGE)}/>
                 </tbody>
               </table>
             </div>
@@ -3327,36 +3370,32 @@ function ChapterInsights() {
   const [salesData,    setSalesData]    = useStateAd(null);
   const [loadingSales, setLoadingSales] = useStateAd(false);
   // One semester picker shared by Views and Sales, so switching tabs keeps you
-  // looking at the same term. '' means every semester at once. It opens on the
-  // current term — that is what you want to see almost every time — so the
-  // tabs wait for the list before fetching, rather than showing every semester
-  // for a moment and then jumping.
-  const [semester,     setSemester]     = useStateAd('');
+  // looking at the same term. '' means every semester at once. It opens on
+  // 'current', which the server understands by itself — so the tabs fetch
+  // straight away, side by side with the semester list, instead of waiting
+  // for the list just to learn the current term's id.
+  const [semester,     setSemester]     = useStateAd('current');
   const [semesters,    setSemesters]    = useStateAd([]);
-  const [ready,        setReady]        = useStateAd(false);
-  const picked = useRefAd(false);          // the admin chose one themselves
 
   useEffectAd(() => {
     NotatiAPI.getSemesters()
-      .then(d => {
-        const list = d.semesters || [];
-        setSemesters(list);
-        const cur = list.find(x => x.is_current);
-        if (cur && !picked.current) setSemester(String(cur.id));
-      })
-      .catch(() => {})
-      .finally(() => setReady(true));
+      .then(d => setSemesters(d.semesters || []))
+      .catch(() => {});
   }, []);
+
+  // The current term is offered as 'current' rather than its id, so picking
+  // it from the list is the same choice the page opened on and refetches nothing.
+  const optionValue = x => (x.is_current ? 'current' : String(x.id));
 
   // Refetch whenever the tab opens or the semester changes — the totals are
   // recomputed on the server, so this is a real filter, not a client-side hide.
   useEffectAd(() => {
-    if (insightsTab !== 'sales' || !ready) return;
+    if (insightsTab !== 'sales') return;
     setLoadingSales(true);
     NotatiAPI.getSalesData(semester)
       .then(setSalesData).catch(() => {})
       .finally(() => setLoadingSales(false));
-  }, [insightsTab, semester, ready]);
+  }, [insightsTab, semester]);
 
   const scoped = insightsTab === 'views' || insightsTab === 'sales';
   const current = semesters.find(x => x.is_current);
@@ -3376,10 +3415,11 @@ function ChapterInsights() {
             {scoped && (
               <select className="filter-select" value={semester}
                       title="Show one semester at a time"
-                      onChange={e => { picked.current = true; setSemester(e.target.value); }}>
+                      onChange={e => setSemester(e.target.value)}>
                 <option value="">All semesters</option>
+                {semesters.length === 0 && <option value="current">Current semester</option>}
                 {semesters.map(x => (
-                  <option key={x.id} value={x.id}>
+                  <option key={x.id} value={optionValue(x)}>
                     {x.label}{x.is_current ? ' — current' : ''}
                   </option>
                 ))}
@@ -3403,11 +3443,11 @@ function ChapterInsights() {
 
       {insightsTab === 'trace' && <LeakTrace/>}
 
-      {insightsTab === 'views' && (ready ? <NoteViews semester={semester}/> : <PageLoader rows={5}/>)}
+      {insightsTab === 'views' && <NoteViews semester={semester}/>}
 
       {insightsTab === 'sales' && (
-        <SalesView salesData={salesData} loading={loadingSales || !ready}
-                   semesterLabel={(semesters.find(x => String(x.id) === semester) || {}).label}/>
+        <SalesView salesData={salesData} loading={loadingSales}
+                   semesterLabel={(semesters.find(x => optionValue(x) === semester) || {}).label}/>
       )}
 
       {insightsTab === 'record' && <SalesRecord/>}

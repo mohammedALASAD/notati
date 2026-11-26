@@ -3365,3 +3365,134 @@ class SubmissionIsAllOrNothingTests(TestCase):
                               format='multipart')
         self.assertEqual(resp.status_code, 201, resp.data)
         self.assertEqual(mine.files.count(), 1)
+
+
+class ReadingAFileInATabTests(TestCase):
+    """Preview opens the file in a browser tab through our server, as a plain
+    link. That is what makes it work on a phone — and the admin's Edit screen
+    used to link straight to Cloudinary instead, which this account refuses:
+    an empty 401 that Safari shows as a blank white page."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.sem     = Semester.objects.create(label='Semester 11', position=11, is_current=True)
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.other   = User.objects.create_user('o@x.com', 'pw', name='Omar')
+        self.admin   = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.course  = Course.objects.create(name='ITIS103', college='College of Information Technology')
+        self.paid    = Note.objects.create(course=self.course, chapter_number=2,
+                                           chapter_title='Global e-business', price=Decimal('1.500'))
+        self.notes   = NoteFile.objects.create(note=self.paid, label='',
+                                               file=SimpleUploadedFile('ch2.pdf', _make_pdf(2)))
+        self.qbank   = NoteFile.objects.create(note=self.paid, label='Questions',
+                                               file=SimpleUploadedFile('ch2q.pdf', _make_pdf(1)))
+        Access.objects.create(user=self.student, note=self.paid, semester=self.sem,
+                              price=Decimal('1.500'))
+        cache.clear()
+
+    def _get(self, link):
+        with patch('api.views._fetch_file_bytes',
+                   return_value=(_make_pdf(2), 'application/pdf')):
+            return APIClient().get('/api/' + link)
+
+    def _admin_file_rows(self):
+        c = APIClient(); c.force_authenticate(self.admin)
+        rows = c.get(f'/api/note-files/?note={self.paid.id}').data
+        return rows['results'] if isinstance(rows, dict) else rows
+
+    def test_inline_asks_the_browser_to_show_the_file_not_save_it(self):
+        link = _serialize_note(self.paid, self.student)['files'][0]['download']
+        shown = self._get(link + '&inline=1')
+        saved = self._get(link)
+        self.assertEqual(shown.status_code, 200)
+        self.assertTrue(shown['Content-Disposition'].startswith('inline'))
+        self.assertTrue(saved['Content-Disposition'].startswith('attachment'))
+
+    def test_the_admin_gets_a_preview_link_for_every_file_and_it_opens(self):
+        rows = self._admin_file_rows()
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertTrue(row['preview'].startswith(f"note-files/{row['id']}/download/?t="))
+            self.assertTrue(row['preview'].endswith('&inline=1'))
+            resp = self._get(row['preview'])
+            self.assertEqual(resp.status_code, 200, row)
+            self.assertTrue(resp['Content-Disposition'].startswith('inline'))
+
+    def test_the_admin_preview_never_goes_to_cloudinary_directly(self):
+        for row in self._admin_file_rows():
+            self.assertNotIn('cloudinary', row['preview'])
+
+    def test_a_student_without_the_chapter_gets_no_preview_link(self):
+        c = APIClient(); c.force_authenticate(self.other)
+        rows = c.get(f'/api/note-files/?note={self.paid.id}').data
+        rows = rows['results'] if isinstance(rows, dict) else rows
+        self.assertTrue(all(r['preview'] is None for r in rows))
+
+    def test_every_file_of_a_chapter_can_be_sampled_not_just_the_first(self):
+        files = _serialize_note(self.paid)['files']
+        self.assertEqual(len(files), 2)
+        with patch('api.views._fetch_file_bytes',
+                   return_value=(_make_pdf(4), 'application/pdf')):
+            for f in files:
+                resp = APIClient().get(f"/api/note-files/{f['id']}/sample/")
+                self.assertEqual(resp.status_code, 200, f)
+                self.assertEqual(resp['Content-Type'], 'application/pdf')
+
+
+class InsightsLoadFastTests(TestCase):
+    """Insights waited on the semester list before any tab could fetch, and
+    that list cost one query per semester. 'current' lets the tabs start at
+    once; the list costs the same however many terms there are."""
+
+    def setUp(self):
+        Semester.objects.all().delete()
+        self.admin = User.objects.create_user('a@x.com', 'pw', name='A', role='admin')
+        self.student = User.objects.create_user('s@x.com', 'pw', name='Sara')
+        self.old = Semester.objects.create(label='Semester 10', position=10)
+        self.now = Semester.objects.create(label='Semester 11', position=11, is_current=True)
+        course = Course.objects.create(name='ITNE233', college='IT')
+        self.ch1 = Note.objects.create(course=course, chapter_number=1, chapter_title='A',
+                                       price=Decimal('1.000'))
+        self.ch2 = Note.objects.create(course=course, chapter_number=2, chapter_title='B',
+                                       price=Decimal('1.000'))
+        Access.objects.create(user=self.student, note=self.ch1, semester=self.old, price=Decimal('1.000'))
+        Access.objects.create(user=self.student, note=self.ch2, semester=self.now, price=Decimal('1.000'))
+        DownloadLog.objects.create(user=self.student, note=self.ch1, kind='open', semester=self.old)
+        DownloadLog.objects.create(user=self.student, note=self.ch2, kind='open', semester=self.now)
+
+    def _c(self):
+        c = APIClient(); c.force_authenticate(self.admin); return c
+
+    def test_current_means_the_current_semester_for_sales(self):
+        by_current = self._c().get('/api/admin/sales/?semester=current').data
+        by_id = self._c().get(f'/api/admin/sales/?semester={self.now.id}').data
+        self.assertEqual(by_current['total_sales'], 1)
+        self.assertEqual(by_current['total_revenue'], by_id['total_revenue'])
+
+    def test_current_means_the_current_semester_for_views(self):
+        rows = self._c().get('/api/admin/note-views/?semester=current').data
+        self.assertEqual([r['id'] for r in rows], [self.ch2.id])
+
+    def test_the_semester_list_counts_every_term_as_it_did_one_by_one(self):
+        # The grouped count must agree with the old per-semester count it
+        # replaced — serializing without the grouped figures takes that path.
+        from .serializers import SemesterSerializer
+        data = self._c().get('/api/admin/semesters/').data
+        for row in data['semesters']:
+            one_by_one = SemesterSerializer(Semester.objects.get(pk=row['id'])).data
+            self.assertEqual(row['sales_count'], one_by_one['sales_count'], row['label'])
+        self.assertEqual(data['current']['label'], 'Semester 11')
+
+    def test_the_semester_list_does_not_grow_a_query_per_semester(self):
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+
+        def cost():
+            with CaptureQueriesContext(connection) as ctx:
+                self._c().get('/api/admin/semesters/')
+            return len(ctx.captured_queries)
+
+        few = cost()
+        for i in range(12, 30):
+            Semester.objects.create(label=f'Semester {i}', position=i)
+        self.assertEqual(cost(), few)

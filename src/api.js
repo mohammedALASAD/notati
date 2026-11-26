@@ -382,6 +382,28 @@
       const w = window.open(url, '_blank');
       return !!w;
     },
+    /* Plain links, for <a href> rather than window.open. A link the visitor
+       taps is never caught by a pop-up blocker, and it is the only kind the
+       browsers inside Instagram and WhatsApp follow reliably. */
+    sampleFileUrl(fileId) {
+      return fileId ? BASE + `/note-files/${fileId}/sample/` : null;
+    },
+    noteSampleUrl(noteId) {
+      return noteId ? BASE + `/notes/${noteId}/sample/` : null;
+    },
+    /* The same download link, asking to be shown in a tab instead of saved. */
+    inlineUrl(downloadUrl) {
+      if (!downloadUrl) return null;
+      return downloadUrl + (downloadUrl.includes('?') ? '&' : '?') + 'inline=1';
+    },
+    /* A path the server returned relative to the API root, made absolute. */
+    apiUrl(path) {
+      return path ? BASE + '/' + String(path).replace(/^\/+/, '') : null;
+    },
+    /* Phones and tablets: one download per tap is all they reliably allow. */
+    isTouchDevice() {
+      try { return window.matchMedia('(pointer: coarse)').matches; } catch (e) { return false; }
+    },
     /* Sample a specific file by id. Returns false if blocked / no id. */
     openSampleFile(fileId) {
       if (!fileId) return false;

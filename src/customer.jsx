@@ -51,6 +51,101 @@ function _buildNoteFilename(nf) {
   return nf.filename || 'file.pdf';
 }
 
+/* What to call a file on screen. The stored name carries Cloudinary's random
+   suffix ('ITIS103_Chapter_1_Questions_po9syf.pdf'); a label the admin typed
+   wins, else the stored name is tidied to 'ITIS103 Chapter 1 Questions'. */
+function _fileDisplayName(f, i) {
+  if (f && f.label) return f.label;
+  const raw = (f && f.filename) || '';
+  if (!raw) return `File ${i + 1}`;
+  const stem = raw.replace(/\.[^.]+$/, '').replace(/_[a-z0-9]{6}$/i, '');
+  return stem.replace(/[_]+/g, ' ').trim() || `File ${i + 1}`;
+}
+
+/* How many files a chapter has, as a short label for its row. */
+function _fileCountLabel(n) {
+  const k = (n.files || []).length;
+  return k > 1 ? `${k} files` : '';
+}
+
+/* The '2 files' chip on a chapter row. Without it a chapter's notes and its
+   question bank looked like one file, and only the first could be sampled. */
+function ChapterFileCount({ note }) {
+  const label = _fileCountLabel(note);
+  if (!label) return null;
+  return (
+    <span title="This chapter comes with more than one file"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8,
+                   padding: '1px 8px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 700,
+                   fontStyle: 'normal', background: 'var(--bg-section)', color: 'var(--fg-2)',
+                   border: '1px solid var(--border-2)', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+      <Icons.Folder size={11}/> {label}
+    </span>
+  );
+}
+
+/* Sample a locked chapter. One file: open its sample straight away. More than
+   one: show the list, so each file can be sampled — the old button only ever
+   reached the first. A plain link, so no pop-up blocker can swallow it. */
+function SampleAction({ note, onShowFiles }) {
+  const files = note.files || [];
+  const stop = e => e.stopPropagation();
+  if (files.length > 1 && onShowFiles) {
+    return (
+      <button className="btn btn-ghost btn-sm" title="Preview the first pages of each file"
+              onClick={e => { stop(e); onShowFiles(note); }}>
+        <Icons.Eye size={13}/> Sample
+      </button>
+    );
+  }
+  const href = files[0] && files[0].id ? NotatiAPI.sampleFileUrl(files[0].id)
+             : NotatiAPI.noteSampleUrl(note._numId);
+  if (!href) return null;
+  return (
+    <a className="btn btn-ghost btn-sm" title="Preview the first pages"
+       href={href} target="_blank" rel="noopener" onClick={stop}>
+      <Icons.Eye size={13}/> Sample
+    </a>
+  );
+}
+
+/* Download a chapter the visitor may read. One file: a plain link the browser
+   saves itself — the only kind that works on every phone. More than one: open
+   the file list, one Download per file, because a phone saves one file per
+   tap and silently drops the rest. */
+function DownloadAction({ note, onShowFiles, toast }) {
+  const files = note.files || [];
+  const stop = e => e.stopPropagation();
+  if (files.length > 1 && onShowFiles) {
+    return (
+      <button className="btn btn-ghost btn-sm" title={`Download — ${files.length} files`}
+              onClick={e => { stop(e); onShowFiles(note); }}>
+        <Icons.Download size={14}/>
+      </button>
+    );
+  }
+  const live = _liveDownload(files[0]);
+  if (live) {
+    return (
+      <a className="btn btn-ghost btn-sm" title="Download" href={live} download onClick={stop}>
+        <Icons.Download size={14}/>
+      </a>
+    );
+  }
+  return (
+    <button className="btn btn-ghost btn-sm" title="Download"
+            onClick={e => { stop(e); _downloadNote(note, null, toast); }}>
+      <Icons.Download size={14}/>
+    </button>
+  );
+}
+
+/* A file's download link, if it is still live. Links last twelve hours from
+   page load; past that the server would show an 'expired' page. */
+function _liveDownload(f) {
+  return f && f.downloadUrl && f.downloadExpires > Date.now() / 1000 + 60 ? f.downloadUrl : null;
+}
+
 function _previewNote(n, openReader, toast) {
   const files = n.files || [];
   if (files.length === 0) { toast.info('No file', 'No PDF attached yet.'); return; }
@@ -220,7 +315,7 @@ function CourseReviews({ course, limit, compact }) {
    buying: its description + how many files it includes, plus quick
    Sample / Add to bag actions.
    ============================================================ */
-function NoteDetailsModal({ open, note, bag, pendingNoteIds, onAddToBag, onRemoveFromBag, onClose }) {
+function NoteDetailsModal({ open, note, bag, pendingNoteIds, onAddToBag, onRemoveFromBag, onClose, onSignup }) {
   const { toast } = useToast();
   if (!open || !note) return null;
 
@@ -241,7 +336,12 @@ function NoteDetailsModal({ open, note, bag, pendingNoteIds, onAddToBag, onRemov
            subtitle={`${note.courseName}${note.college ? ' · ' + note.college : ''}`}
            footer={<>
              <button className="btn btn-ghost" onClick={onClose}>Close</button>
-             {!isFree && (pending ? (
+             {/* A visitor without an account can look, but buying needs one. */}
+             {!isFree && onSignup ? (
+               <button className="btn btn-primary" onClick={onSignup}>
+                 <Icons.Lock size={14}/> Create account to buy
+               </button>
+             ) : !isFree && (pending ? (
                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 14px',
                               color: 'var(--notati-bark, #8a6d3b)', fontWeight: 700 }}>
                  <Icons.Clock size={15}/> Waiting for approval
@@ -292,12 +392,20 @@ function NoteDetailsModal({ open, note, bag, pendingNoteIds, onAddToBag, onRemov
                               borderRadius: 'var(--r-4)', fontSize: 13, color: 'var(--fg-2)' }}>
                   <FileTypeChip type="pdf"/>
                   <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {f.filename || f.label || `File ${i + 1}`}
+                    {_fileDisplayName(f, i)}
                   </span>
-                  <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}
-                          onClick={() => sampleFile(f)}>
-                    <Icons.Eye size={13}/> Sample
-                  </button>
+                  {f.id ? (
+                    <a className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}
+                       href={NotatiAPI.sampleFileUrl(f.id)} target="_blank" rel="noopener"
+                       title="The first pages clear, the rest blurred">
+                      <Icons.Eye size={13}/> Sample
+                    </a>
+                  ) : (
+                    <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}
+                            onClick={() => sampleFile(f)}>
+                      <Icons.Eye size={13}/> Sample
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -1494,7 +1602,7 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
                       Ch.{n.chapterNumber}: {n.chapterTitle}
                     </div>
                     <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-                      {n.title}
+                      {n.title}<ChapterFileCount note={n}/>
                     </div>
                   </div>
 
@@ -1528,17 +1636,11 @@ function NotesLibrary({ user, onOpenNote, onShowDetails, bag, onAddToBag, onRemo
                       </button>
                     )}
                     {!canRead && !isFree && (
-                      <button className="btn btn-ghost btn-sm" title="Preview the first pages"
-                              onClick={(e) => { e.stopPropagation(); if (!NotatiAPI.openSample(n)) toast.error('Preview blocked', 'Please allow pop-ups for this site, then try again.'); }}>
-                        <Icons.Eye size={13}/> Sample
-                      </button>
+                      <SampleAction note={n} onShowFiles={onShowDetails}/>
                     )}
                     {canRead && (
                       <>
-                        <button className="btn btn-ghost btn-sm" title="Download"
-                                onClick={(e) => { e.stopPropagation(); _downloadNote(n, onOpenNote, toast); }}>
-                          <Icons.Download size={14}/>
-                        </button>
+                        <DownloadAction note={n} onShowFiles={onOpenNote} toast={toast}/>
                         <button className="btn btn-soft btn-sm"
                                 onClick={(e) => { e.stopPropagation(); onOpenNote(n); }}>
                           <Icons.Eye size={13}/> Preview
@@ -1696,6 +1798,10 @@ function NoteReader({ note, open, onClose }) {
   }
 
   const isFreeNote = note.isFree || Number(note.price || 0) === 0;
+  // A phone saves one file per tap and quietly drops the rest, so it gets a
+  // Download button on every file below rather than one that promises all.
+  const touch = NotatiAPI.isTouchDevice();
+  const single = files.length === 1 ? _liveDownload(files[0]) : null;
 
   return (
     <Modal open={open} onClose={onClose} size="lg"
@@ -1704,12 +1810,16 @@ function NoteReader({ note, open, onClose }) {
            footer={<>
              <button className="btn btn-ghost" onClick={onClose}>Close</button>
              {files.length > 1
-               ? <button className="btn btn-primary" onClick={downloadAll}>
+               ? (!touch && <button className="btn btn-primary" onClick={downloadAll}>
                    <Icons.Download size={15}/> Download all ({files.length})
-                 </button>
-               : <button className="btn btn-primary" onClick={() => files[0] ? downloadFile(files[0]) : downloadAll()}>
-                   <Icons.Download size={15}/> Download
-                 </button>}
+                 </button>)
+               : single
+                 ? <a className="btn btn-primary" href={single} download>
+                     <Icons.Download size={15}/> Download
+                   </a>
+                 : <button className="btn btn-primary" onClick={() => files[0] ? downloadFile(files[0]) : downloadAll()}>
+                     <Icons.Download size={15}/> Download
+                   </button>}
            </>}>
 
       {/* Note info grid */}
@@ -1764,25 +1874,43 @@ function NoteReader({ note, open, onClose }) {
                         color: 'var(--fg-3)', marginBottom: 8, fontSize: 10 }}>
             Files ({files.length})
           </div>
-          {files.map((nf, i) => (
-            <div key={nf.id || i} className="note-file-row">
-              <FileTypeChip type="pdf"/>
-              <span className="note-file-name">
-                {nf.label || nf.filename || `File ${i + 1}`}
-              </span>
-              <div className="note-file-actions">
-                <button className="btn btn-ghost btn-sm"
-                        onClick={() => nf.id
-                          ? NotatiAPI.previewNoteFileById(nf.id).catch(e => toast.error('Preview failed', e.message))
-                          : NotatiAPI.previewNoteFile(note._numId).catch(e => toast.error('Preview failed', e.message))}>
-                  Quick look <Icons.ArrowRight size={13}/>
-                </button>
-                <button className="btn btn-soft btn-sm" onClick={() => downloadFile(nf)}>
-                  <Icons.Download size={13}/> Download
-                </button>
+          {files.map((nf, i) => {
+            // Real links whenever we have a live one: the browser follows them
+            // itself, which works on every phone and inside the Instagram and
+            // WhatsApp browsers. The JavaScript route is only the fallback for
+            // a page left open long enough for its links to lapse.
+            const live = _liveDownload(nf);
+            return (
+              <div key={nf.id || i} className="note-file-row">
+                <FileTypeChip type="pdf"/>
+                <span className="note-file-name">{_fileDisplayName(nf, i)}</span>
+                <div className="note-file-actions">
+                  {live ? (
+                    <a className="btn btn-ghost btn-sm" href={NotatiAPI.inlineUrl(live)}
+                       target="_blank" rel="noopener">
+                      Preview <Icons.ArrowRight size={13}/>
+                    </a>
+                  ) : (
+                    <button className="btn btn-ghost btn-sm"
+                            onClick={() => nf.id
+                              ? NotatiAPI.previewNoteFileById(nf.id).catch(e => toast.error('Preview failed', e.message))
+                              : NotatiAPI.previewNoteFile(note._numId).catch(e => toast.error('Preview failed', e.message))}>
+                      Preview <Icons.ArrowRight size={13}/>
+                    </button>
+                  )}
+                  {live ? (
+                    <a className="btn btn-soft btn-sm" href={live} download>
+                      <Icons.Download size={13}/> Download
+                    </a>
+                  ) : (
+                    <button className="btn btn-soft btn-sm" onClick={() => downloadFile(nf)}>
+                      <Icons.Download size={13}/> Download
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </Modal>
@@ -1803,6 +1931,8 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
   const [selectedCourse, setSelectedCourse] = useStateC(null);
   const [priceFilter, setPriceFilter]       = useStateC('all');
   const [readingNote, setReadingNote]       = useStateC(null);
+  // A chapter's files, for a visitor sampling one that has several.
+  const [detailsNote, setDetailsNote] = useStateC(null);
 
   useEffectC(() => {
     NotatiAPI.getNotes()
@@ -1846,7 +1976,6 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
       .sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber));
   }, [notes, selectedCourse, priceFilter]);
 
-  function handleDownload(n) { _downloadNote(n, setReadingNote, toast); }
   function handleQuickLook(n) { _previewNote(n, setReadingNote, toast); }
 
   const freeCount = notes.filter(n => !n.price || Number(n.price) === 0).length;
@@ -1945,7 +2074,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                         Ch.{n.chapterNumber}: {n.chapterTitle}
                       </div>
                       <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-                        {n.title}
+                        {n.title}<ChapterFileCount note={n}/>
                       </div>
                     </div>
                     <div className="chapter-row-actions">
@@ -1954,10 +2083,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                           <span style={{ background: 'var(--notati-sage)', color: 'var(--notati-paper)',
                                          font: 'var(--type-label)', fontSize: 10, padding: '3px 10px',
                                          borderRadius: 'var(--r-pill)' }}>FREE</span>
-                          <button className="btn btn-ghost btn-sm" title="Download PDF"
-                                  onClick={() => handleDownload(n)}>
-                            <Icons.Download size={14}/>
-                          </button>
+                          <DownloadAction note={n} onShowFiles={setReadingNote} toast={toast}/>
                           <button className="btn btn-soft btn-sm" onClick={() => setReadingNote(n)}>
                             <Icons.Eye size={13}/> Preview
                           </button>
@@ -1967,10 +2093,7 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
                           <span className="tag tag-bark" style={{ fontWeight: 700 }}>
                             BD {Number(n.price).toFixed(3)}
                           </span>
-                          <button className="btn btn-ghost btn-sm" title="Preview the first pages"
-                                  onClick={() => { if (!NotatiAPI.openSample(n)) toast.error('Preview blocked', 'Please allow pop-ups for this site, then try again.'); }}>
-                            <Icons.Eye size={13}/> Sample
-                          </button>
+                          <SampleAction note={n} onShowFiles={setDetailsNote}/>
                           <button className="btn btn-primary btn-sm" onClick={onSignup}>
                             <Icons.Lock size={12}/> Create account
                           </button>
@@ -1984,6 +2107,9 @@ function LandingPage({ onLogin, onSignup, darkMode, onThemeToggle }) {
           </section>
         </div>
         <NoteReader open={!!readingNote} note={readingNote} onClose={() => setReadingNote(null)}/>
+        <NoteDetailsModal open={!!detailsNote} note={detailsNote}
+                          onClose={() => setDetailsNote(null)}
+                          onSignup={() => { setDetailsNote(null); onSignup(); }}/>
       </div>
     );
   }
@@ -2312,16 +2438,26 @@ function MyNotesPage({ user, onOpenNote }) {
                       Ch.{n.chapterNumber}: {n.chapterTitle || n.title}
                     </div>
                     <div style={{ font: 'var(--type-caption)', fontStyle: 'normal', fontSize: 12, color: 'var(--fg-3)' }}>
-                      {n.title}
+                      {n.title}<ChapterFileCount note={n}/>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                     <button className="btn btn-soft btn-sm" onClick={() => onOpenNote(n)}>
                       <Icons.Eye size={13}/> Read
                     </button>
-                    {(n.files || []).length > 0 && (
+                    {(n.files || []).length > 1 ? (
+                      // Several files: the list, one Download each — a phone
+                      // saves one file per tap and drops the rest.
+                      <button className="btn btn-outline btn-sm" onClick={() => onOpenNote(n)}>
+                        <Icons.Download size={13}/> Files
+                      </button>
+                    ) : (n.files || []).length === 1 && _liveDownload(n.files[0]) ? (
+                      <a className="btn btn-outline btn-sm" href={_liveDownload(n.files[0])} download>
+                        <Icons.Download size={13}/> PDF
+                      </a>
+                    ) : (n.files || []).length === 1 && (
                       <button className="btn btn-outline btn-sm" onClick={() => download(n)}>
-                        <Icons.Download size={13}/> {(n.files || []).length > 1 ? 'Files' : 'PDF'}
+                        <Icons.Download size={13}/> PDF
                       </button>
                     )}
                   </div>
