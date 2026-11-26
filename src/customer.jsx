@@ -127,9 +127,10 @@ function DownloadAction({ note, onShowFiles, toast }) {
   const live = _liveDownload(files[0]);
   if (live) {
     return (
-      <a className="btn btn-ghost btn-sm" title="Download" {..._downloadLinkProps(live, toast)}>
+      <SaveFileLink className="btn btn-ghost btn-sm" title="Download" compact
+                    url={live} name={_saveName(note, files[0], 0)} toast={toast}>
         <Icons.Download size={14}/>
-      </a>
+      </SaveFileLink>
     );
   }
   return (
@@ -149,18 +150,100 @@ function _isIOS() {
 
 const IOS_SAVE_HINT = ['Opened in a new tab', 'To keep it: tap Share, then "Save to Files".'];
 
-/* The props for a Download link. Everywhere but iOS it is a plain download.
-   On an iPhone, Safari handles a file sent as a download badly — it may save
-   it silently to Files with nothing on screen, and the Instagram and WhatsApp
-   browsers drop it altogether — while the same PDF opened in a tab always
-   works, and the iPhone's own Share button saves it. So on iOS, Download
-   opens it, and says how to keep it. */
-function _downloadLinkProps(live, toast) {
-  if (_isIOS()) {
-    return { href: NotatiAPI.inlineUrl(live), target: '_blank', rel: 'noopener',
-             onClick: e => { e.stopPropagation(); toast && toast.info(IOS_SAVE_HINT[0], IOS_SAVE_HINT[1]); } };
+/* Can this browser hand a file to the phone's share sheet? Safari on iOS 15+
+   can; the browsers inside Instagram and WhatsApp generally cannot. */
+function _canShareFiles() {
+  try {
+    return !!(navigator.share && navigator.canShare &&
+              navigator.canShare({ files: [new File(['x'], 'x.pdf', { type: 'application/pdf' })] }));
+  } catch (e) { return false; }
+}
+
+/* The name the file is saved under: 'ITCE352 Ch.1 - Introduction to Computer
+   Networks.pdf', like the server's own download name. */
+function _saveName(note, f, i) {
+  const files = (note && note.files) || [];
+  const body = (f && f.label) || (files.length > 1 ? _fileDisplayName(f, i || 0) : note.chapterTitle) || '';
+  const ext = (((f && f.filename) || '').split('.').pop() || 'pdf').toLowerCase();
+  const name = `${note.courseName} Ch.${note.chapterNumber}${body ? ' - ' + body : ''}`
+    .replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+  return `${name}.${ext}`;
+}
+
+/* A Download control.
+
+   Everywhere but iOS it is a plain link the browser saves.
+
+   On an iPhone a plain download does nothing — Safari neither saves it nor
+   says why — so the file is fetched and handed to the iPhone's own share
+   sheet, where "Save to Files" keeps it. iOS only lets a page open that sheet
+   straight from a tap; if the file takes long enough to arrive that the tap
+   has gone stale, the button turns into "Save to Files" and the next tap
+   opens the sheet at once, the file already in hand. A browser that cannot
+   share files at all opens the PDF in a tab instead, where the Share button
+   does the same job. */
+function SaveFileLink({ url, name, className, title, toast, compact, children }) {
+  const [state, setState] = useStateC('idle');     // idle | busy | ready
+  const fileRef = useRefC(null);                   // the fetched file, once it is here
+
+  if (!_isIOS()) {
+    return (
+      <a className={className} title={title} href={url} download
+         onClick={e => e.stopPropagation()}>{children}</a>
+    );
   }
-  return { href: live, download: true, onClick: e => e.stopPropagation() };
+
+  function openInTab() {
+    window.open(NotatiAPI.inlineUrl(url), '_blank');
+    toast && toast.info(IOS_SAVE_HINT[0], IOS_SAVE_HINT[1]);
+  }
+
+  // true when the sheet opened (or the student closed it); false when iOS
+  // refused because the tap had gone stale.
+  async function share(file) {
+    try { await navigator.share({ files: [file] }); return true; }
+    catch (e) {
+      if (e && e.name === 'AbortError') return true;
+      if (e && e.name === 'NotAllowedError') return false;
+      throw e;
+    }
+  }
+
+  async function onClick(e) {
+    e.stopPropagation();
+    if (!_canShareFiles()) { openInTab(); return; }
+    if (fileRef.current) {
+      // Already fetched: open the sheet straight from this tap.
+      share(fileRef.current).catch(() =>
+        toast && toast.error('Could not save', 'Tap Preview, then Share → "Save to Files".'));
+      return;
+    }
+    if (state === 'busy') return;
+    setState('busy');
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      const file = new File([blob], name, { type: blob.type || 'application/pdf' });
+      fileRef.current = file;
+      const opened = await share(file);
+      setState(opened ? 'idle' : 'ready');
+      if (!opened) toast && toast.info('Ready to save', 'Tap "Save to Files" to keep it.');
+    } catch (err) {
+      setState('idle');
+      toast && toast.error('Could not prepare the file', 'Tap Preview, then Share → "Save to Files".');
+    }
+  }
+
+  const label = state === 'busy' ? (compact ? null : 'Preparing…')
+              : state === 'ready' ? (compact ? null : 'Save to Files') : null;
+  return (
+    <button type="button" className={className} onClick={onClick} disabled={state === 'busy'}
+            title={state === 'ready' ? 'Save to Files' : (title || 'Download')}
+            style={state === 'busy' ? { opacity: .6 } : undefined}>
+      {label ? <><Icons.Download size={compact ? 14 : 13}/> {label}</> : children}
+    </button>
+  );
 }
 
 /* A file's download link, if it is still live. Links last twelve hours from
@@ -191,7 +274,7 @@ function _saveNoteFiles(n, files, toast) {
   const now = Date.now() / 1000;
   const live = files.filter(f => f.downloadUrl && f.downloadExpires > now + 60);
   if (live.length === 1 && files.length === 1 && _isIOS()) {
-    // Same reasoning as _downloadLinkProps: on an iPhone, open it in a tab.
+    // No live link to fetch from: on an iPhone, open it in a tab instead.
     window.open(NotatiAPI.inlineUrl(live[0].downloadUrl), '_blank');
     toast.info(IOS_SAVE_HINT[0], IOS_SAVE_HINT[1]);
     return;
@@ -1843,9 +1926,10 @@ function NoteReader({ note, open, onClose }) {
                    <Icons.Download size={15}/> Download all ({files.length})
                  </button>)
                : single
-                 ? <a className="btn btn-primary" {..._downloadLinkProps(single, toast)}>
+                 ? <SaveFileLink className="btn btn-primary" url={single}
+                                 name={_saveName(note, files[0], 0)} toast={toast}>
                      <Icons.Download size={15}/> Download
-                   </a>
+                   </SaveFileLink>
                  : <button className="btn btn-primary" onClick={() => files[0] ? downloadFile(files[0]) : downloadAll()}>
                      <Icons.Download size={15}/> Download
                    </button>}
@@ -1928,9 +2012,10 @@ function NoteReader({ note, open, onClose }) {
                     </button>
                   )}
                   {live ? (
-                    <a className="btn btn-soft btn-sm" {..._downloadLinkProps(live, toast)}>
+                    <SaveFileLink className="btn btn-soft btn-sm" url={live}
+                                  name={_saveName(note, nf, i)} toast={toast}>
                       <Icons.Download size={13}/> Download
-                    </a>
+                    </SaveFileLink>
                   ) : (
                     <button className="btn btn-soft btn-sm" onClick={() => downloadFile(nf)}>
                       <Icons.Download size={13}/> Download
@@ -2481,9 +2566,10 @@ function MyNotesPage({ user, onOpenNote }) {
                         <Icons.Download size={13}/> Files
                       </button>
                     ) : (n.files || []).length === 1 && _liveDownload(n.files[0]) ? (
-                      <a className="btn btn-outline btn-sm" {..._downloadLinkProps(_liveDownload(n.files[0]), toast)}>
+                      <SaveFileLink className="btn btn-outline btn-sm" url={_liveDownload(n.files[0])}
+                                    name={_saveName(n, n.files[0], 0)} toast={toast}>
                         <Icons.Download size={13}/> PDF
-                      </a>
+                      </SaveFileLink>
                     ) : (n.files || []).length === 1 && (
                       <button className="btn btn-outline btn-sm" onClick={() => download(n)}>
                         <Icons.Download size={13}/> PDF
