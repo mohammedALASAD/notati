@@ -127,7 +127,7 @@ function DownloadAction({ note, onShowFiles, toast }) {
   const live = _liveDownload(files[0]);
   if (live) {
     return (
-      <a className="btn btn-ghost btn-sm" title="Download" href={live} download onClick={stop}>
+      <a className="btn btn-ghost btn-sm" title="Download" {..._downloadLinkProps(live, toast)}>
         <Icons.Download size={14}/>
       </a>
     );
@@ -138,6 +138,29 @@ function DownloadAction({ note, onShowFiles, toast }) {
       <Icons.Download size={14}/>
     </button>
   );
+}
+
+/* iPhone and iPad (iPadOS reports itself as a Mac, so touch gives it away). */
+function _isIOS() {
+  const ua = (navigator && navigator.userAgent) || '';
+  return /iPad|iPhone|iPod/.test(ua)
+      || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+}
+
+const IOS_SAVE_HINT = ['Opened in a new tab', 'To keep it: tap Share, then "Save to Files".'];
+
+/* The props for a Download link. Everywhere but iOS it is a plain download.
+   On an iPhone, Safari handles a file sent as a download badly — it may save
+   it silently to Files with nothing on screen, and the Instagram and WhatsApp
+   browsers drop it altogether — while the same PDF opened in a tab always
+   works, and the iPhone's own Share button saves it. So on iOS, Download
+   opens it, and says how to keep it. */
+function _downloadLinkProps(live, toast) {
+  if (_isIOS()) {
+    return { href: NotatiAPI.inlineUrl(live), target: '_blank', rel: 'noopener',
+             onClick: e => { e.stopPropagation(); toast && toast.info(IOS_SAVE_HINT[0], IOS_SAVE_HINT[1]); } };
+  }
+  return { href: live, download: true, onClick: e => e.stopPropagation() };
 }
 
 /* A file's download link, if it is still live. Links last twelve hours from
@@ -167,6 +190,12 @@ function _saveNoteFiles(n, files, toast) {
   if (files.length === 0) { toast.info('No file', 'No PDF attached yet.'); return; }
   const now = Date.now() / 1000;
   const live = files.filter(f => f.downloadUrl && f.downloadExpires > now + 60);
+  if (live.length === 1 && files.length === 1 && _isIOS()) {
+    // Same reasoning as _downloadLinkProps: on an iPhone, open it in a tab.
+    window.open(NotatiAPI.inlineUrl(live[0].downloadUrl), '_blank');
+    toast.info(IOS_SAVE_HINT[0], IOS_SAVE_HINT[1]);
+    return;
+  }
   if (live.length === files.length) {
     NotatiAPI.saveFiles(live.map(f => f.downloadUrl));
     toast.info(files.length > 1 ? `Downloading ${files.length} files` : 'Downloading',
@@ -1814,7 +1843,7 @@ function NoteReader({ note, open, onClose }) {
                    <Icons.Download size={15}/> Download all ({files.length})
                  </button>)
                : single
-                 ? <a className="btn btn-primary" href={single} download>
+                 ? <a className="btn btn-primary" {..._downloadLinkProps(single, toast)}>
                      <Icons.Download size={15}/> Download
                    </a>
                  : <button className="btn btn-primary" onClick={() => files[0] ? downloadFile(files[0]) : downloadAll()}>
@@ -1899,7 +1928,7 @@ function NoteReader({ note, open, onClose }) {
                     </button>
                   )}
                   {live ? (
-                    <a className="btn btn-soft btn-sm" href={live} download>
+                    <a className="btn btn-soft btn-sm" {..._downloadLinkProps(live, toast)}>
                       <Icons.Download size={13}/> Download
                     </a>
                   ) : (
@@ -2452,7 +2481,7 @@ function MyNotesPage({ user, onOpenNote }) {
                         <Icons.Download size={13}/> Files
                       </button>
                     ) : (n.files || []).length === 1 && _liveDownload(n.files[0]) ? (
-                      <a className="btn btn-outline btn-sm" href={_liveDownload(n.files[0])} download>
+                      <a className="btn btn-outline btn-sm" {..._downloadLinkProps(_liveDownload(n.files[0]), toast)}>
                         <Icons.Download size={13}/> PDF
                       </a>
                     ) : (n.files || []).length === 1 && (
